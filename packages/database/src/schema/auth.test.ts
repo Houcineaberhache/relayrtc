@@ -29,4 +29,8 @@ describe("Better Auth schema", () => {
     expect(userId.notNull).toBe(true);
     expect(foreignKey?.onDelete).toBe("cascade");
   });
+
+  it("stores the active organization on the session", () => {
+    expect(getTableColumns(session).activeOrganizationId.dataType).toBe("string");
+  });
 });
