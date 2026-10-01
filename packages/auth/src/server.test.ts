@@ -191,4 +191,40 @@ describe("createRelayKitAuth", () => {
 
     await database.close();
   });
+
+  it.each([
+    ["GET", "/api/auth/organization/list", undefined],
+    [
+      "POST",
+      "/api/auth/organization/set-active",
+      JSON.stringify({ organizationId: "organization_123" }),
+    ],
+  ])("requires a session for organization access through %s %s", async (method, path, body) => {
+    const database = createDatabase("postgresql://relaykit:password@127.0.0.1:1/relaykit");
+    const auth = createRelayKitAuth({
+      baseUrl: "http://localhost:3000",
+      database: database.db,
+      oauthProviders,
+      secret: "0123456789abcdef0123456789abcdef",
+    });
+    const handler = createRelayKitAuthHandler(auth);
+    const response = await handler(
+      new Request(`http://localhost:3000${path}`, {
+        ...(body ? { body } : {}),
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+        },
+        method,
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      code: "SESSION_REQUIRED",
+      description: "Sign in to continue",
+    });
+
+    await database.close();
+  });
 });

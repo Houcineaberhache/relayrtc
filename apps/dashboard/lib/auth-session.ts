@@ -5,3 +5,8 @@ export const getCurrentSession = async () =>
   getAuthRuntime().auth.api.getSession({
     headers: await headers(),
   })
+
+export const getCurrentOrganizations = async () =>
+  getAuthRuntime().auth.api.listOrganizations({
+    headers: await headers(),
+  })
