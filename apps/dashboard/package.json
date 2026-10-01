@@ -16,6 +16,7 @@
   "dependencies": {
     "@relayrtc/auth": "workspace:*",
     "@relayrtc/ui": "workspace:*",
+    "@relayrtc/validation": "workspace:*",
     "better-auth": "^1.7.7",
     "lucide-react": "^1.49.0",
     "next": "16.3.6",

@@ -1,4 +1,5 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { CreateOrganizationForm } from "@/components/organizations/create-organization-form"
 import { getCurrentSession } from "@/lib/auth-session"
 import {
   Avatar,
@@ -50,10 +51,23 @@ export default async function Page() {
             Hello, {session.user.name}
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            Your RelayRTC account is ready. Organizations and projects will
-            appear here as they are created in the next phase.
+            Create an organization to establish the workspace for your team
+            and projects.
           </p>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Create an organization</CardTitle>
+            <CardDescription>
+              Organizations contain members, projects, and their realtime
+              infrastructure.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CreateOrganizationForm />
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <Card>
