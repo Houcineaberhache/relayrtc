@@ -1,0 +1,12 @@
+{
+  "name": "@relaykit/signaling",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "go build -o bin/signaling ./cmd/signaling",
+    "clean": "go clean && rimraf bin",
+    "lint": "go vet ./...",
+    "test": "go test ./...",
+    "typecheck": "go vet ./..."
+  }
+}

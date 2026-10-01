@@ -1,0 +1,13 @@
+{
+  "name": "@relaykit/workspace-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "clean": "rimraf dist coverage",
+    "lint": "eslint .",
+    "test": "vitest run --pool=threads --exclude dist/**",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}
