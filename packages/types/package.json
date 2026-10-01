@@ -1,0 +1,29 @@
+{
+  "name": "@relaykit/types",
+  "version": "0.0.0",
+  "description": "Shared domain contracts for RelayKit.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "clean": "rimraf dist coverage",
+    "lint": "eslint .",
+    "test": "vitest run --pool=threads --exclude dist/**",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
