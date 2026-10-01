@@ -22,6 +22,9 @@ export const authErrorCodes = [
   "ORGANIZATION_CREATION_FORBIDDEN",
   "ORGANIZATION_LIMIT_REACHED",
   "ORGANIZATION_CREATION_FAILED",
+  "ORGANIZATION_NOT_FOUND",
+  "ORGANIZATION_ACCESS_DENIED",
+  "ORGANIZATION_SWITCH_FAILED",
 ] as const;
 
 export type AuthErrorCode = (typeof authErrorCodes)[number];
@@ -56,6 +59,9 @@ const authErrorDescriptions: Readonly<Record<AuthErrorCode, string>> = {
   ORGANIZATION_CREATION_FORBIDDEN: "You are not allowed to create an organization",
   ORGANIZATION_LIMIT_REACHED: "You have reached the organization limit",
   ORGANIZATION_CREATION_FAILED: "The organization could not be created",
+  ORGANIZATION_NOT_FOUND: "The organization could not be found",
+  ORGANIZATION_ACCESS_DENIED: "You do not have access to this organization",
+  ORGANIZATION_SWITCH_FAILED: "The active organization could not be changed",
 };
 
 export const authError = (code: AuthErrorCode): AuthError => ({
@@ -91,6 +97,10 @@ const betterAuthCodeMap: Readonly<Record<string, AuthErrorCode>> = {
   ORGANIZATION_SLUG_ALREADY_TAKEN: "ORGANIZATION_SLUG_TAKEN",
   YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION: "ORGANIZATION_CREATION_FORBIDDEN",
   YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS: "ORGANIZATION_LIMIT_REACHED",
+  ORGANIZATION_NOT_FOUND: "ORGANIZATION_NOT_FOUND",
+  USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION: "ORGANIZATION_ACCESS_DENIED",
+  YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION: "ORGANIZATION_ACCESS_DENIED",
+  YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION: "ORGANIZATION_ACCESS_DENIED",
   access_denied: "OAUTH_ACCESS_DENIED",
   account_already_linked_to_different_user: "OAUTH_ACCOUNT_CONFLICT",
   account_not_linked: "OAUTH_ACCOUNT_CONFLICT",
@@ -181,6 +191,14 @@ export const toAuthError = (error: unknown, responseStatus?: number): AuthError 
   }
 
   return authError("AUTHENTICATION_FAILED");
+};
+
+export const toOrganizationSwitchError = (error: unknown): AuthError => {
+  const normalized = toAuthError(error);
+
+  return normalized.code === "AUTHENTICATION_FAILED"
+    ? authError("ORGANIZATION_SWITCH_FAILED")
+    : normalized;
 };
 
 export type AuthResult<T> = { data: T; error: null } | { data: null; error: AuthError };

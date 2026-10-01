@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { authError, toAuthError, toAuthResult } from "./errors.js";
+import {
+  authError,
+  toAuthError,
+  toAuthResult,
+  toOrganizationSwitchError,
+} from "./errors.js";
 
 describe("authentication errors", () => {
   it.each([
@@ -30,6 +35,9 @@ describe("authentication errors", () => {
       "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS",
       "ORGANIZATION_LIMIT_REACHED",
     ],
+    ["ORGANIZATION_NOT_FOUND", "ORGANIZATION_NOT_FOUND"],
+    ["USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
+    ["YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
@@ -97,6 +105,13 @@ describe("authentication errors", () => {
         code: "USER_EXISTS",
         description: "A user already exists with this email address",
       },
+    });
+  });
+
+  it("uses a stable fallback for organization switching failures", () => {
+    expect(toOrganizationSwitchError({ code: "DATABASE_CONNECTION_FAILED" })).toEqual({
+      code: "ORGANIZATION_SWITCH_FAILED",
+      description: "The active organization could not be changed",
     });
   });
 });
