@@ -1,6 +1,80 @@
 name: relaykit
 
 services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/dashboard.Dockerfile
+      target: runner
+    restart: unless-stopped
+    environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3001}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID must be set in .env}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET must be set in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID must be set in .env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in .env}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - 127.0.0.1:${DASHBOARD_PORT:-3001}:3001
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --quiet --spider http://127.0.0.1:3001/api/health
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/dashboard.Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: *default-logging
+
+  signaling:
+    build:
+      context: ./services/signaling
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RELAYKIT_SIGNALING_ADDRESS: :8081
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: *default-logging
+
   postgres:
     image: postgres:17.11-alpine
     restart: unless-stopped
@@ -26,14 +100,12 @@ services:
       - no-new-privileges:true
     networks:
       - relaykit
-    logging: &default-logging
-      driver: json-file
-      options:
-        max-file: "3"
-        max-size: 10m
+    logging: *default-logging
 
   coturn:
-    image: coturn/coturn:4.18.0-alpine
+    build:
+      context: .
+      dockerfile: infrastructure/docker/coturn.Dockerfile
     restart: unless-stopped
     command:
       - -c
@@ -47,8 +119,6 @@ services:
       - ${TURN_PORT:-3478}:3478/tcp
       - ${TURN_PORT:-3478}:3478/udp
       - ${RTC_MIN_PORT:-49160}-${RTC_MAX_PORT:-49200}:${RTC_MIN_PORT:-49160}-${RTC_MAX_PORT:-49200}/udp
-    volumes:
-      - ./infrastructure/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -65,7 +135,9 @@ services:
     logging: *default-logging
 
   prometheus:
-    image: prom/prometheus:v3.13.3
+    build:
+      context: .
+      dockerfile: infrastructure/docker/prometheus.Dockerfile
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -76,7 +148,6 @@ services:
     ports:
       - 127.0.0.1:${PROMETHEUS_PORT:-9090}:9090
     volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     healthcheck:
       test:
@@ -94,7 +165,9 @@ services:
     logging: *default-logging
 
   grafana:
-    image: grafana/grafana:13.2.2-slim
+    build:
+      context: .
+      dockerfile: infrastructure/docker/grafana.Dockerfile
     restart: unless-stopped
     environment:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -109,8 +182,6 @@ services:
     ports:
       - 127.0.0.1:${GRAFANA_PORT:-3000}:3000
     volumes:
-      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     healthcheck:
       test:

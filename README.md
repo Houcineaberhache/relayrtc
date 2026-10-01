@@ -10,6 +10,20 @@ RelayKit is open-source realtime communication infrastructure for developers. It
 
 ## Getting started
 
+Start the complete local stack with Docker
+
+```bash
+pnpm docker:up
+```
+
+The first run creates `.env` with local secrets, builds the dashboard and signaling service,
+starts the infrastructure, and applies database migrations. Open `http://localhost:3001` after
+the command completes.
+
+Use `pnpm docker:logs`, `pnpm docker:status`, and `pnpm docker:down` to operate the stack.
+
+For development directly on the host please use :
+
 ```bash
 pnpm install
 pnpm build
