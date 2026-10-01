@@ -1,0 +1,71 @@
+export type AuthEnvironmentSource = Readonly<Record<string, string | undefined>>;
+
+export interface AuthEnvironment {
+  baseUrl: string;
+  databaseUrl: string;
+  secret: string;
+  trustedOrigins: string[];
+}
+
+const readRequired = (source: AuthEnvironmentSource, name: string): string => {
+  const value = source[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+
+  return value;
+};
+
+const parseHttpOrigin = (value: string, name: string): string => {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must use http or https`);
+  }
+
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error(`${name} must be an origin without credentials or a path`);
+  }
+
+  return url.origin;
+};
+
+export const readAuthEnvironment = (source: AuthEnvironmentSource): AuthEnvironment => {
+  const secret = readRequired(source, "BETTER_AUTH_SECRET");
+
+  if (secret.length < 32) {
+    throw new Error("BETTER_AUTH_SECRET must contain at least 32 characters");
+  }
+
+  const databaseUrl = readRequired(source, "DATABASE_URL");
+
+  try {
+    const url = new URL(databaseUrl);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      throw new Error();
+    }
+  } catch {
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL");
+  }
+
+  const baseUrl = parseHttpOrigin(readRequired(source, "BETTER_AUTH_URL"), "BETTER_AUTH_URL");
+  const trustedOrigins = (source.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+    .map((origin) => parseHttpOrigin(origin, "BETTER_AUTH_TRUSTED_ORIGINS"));
+
+  return {
+    baseUrl,
+    databaseUrl,
+    secret,
+    trustedOrigins: [...new Set([baseUrl, ...trustedOrigins])],
+  };
+};
