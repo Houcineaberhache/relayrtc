@@ -16,6 +16,25 @@ import {
 
 export const organizationMemberRoleSchema = z.enum(organizationMemberRoles);
 
+export const createOrganizationInputSchema = z
+  .object({
+    name: nameSchema,
+    slug: slugSchema,
+  })
+  .strict();
+
+export type CreateOrganizationInput = z.infer<typeof createOrganizationInputSchema>;
+
+export const organizationSlugFromName = (name: string): string =>
+  name
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80)
+    .replace(/-+$/gu, "");
+
 export const organizationSchema: z.ZodType<Organization> = z
   .object({
     id: organizationIdSchema,

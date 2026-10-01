@@ -1,12 +1,32 @@
 import type { Environment, Organization, OrganizationMembership, Project } from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { organizationMembershipSchema, organizationSchema } from "./organization.js";
+import {
+  createOrganizationInputSchema,
+  organizationMembershipSchema,
+  organizationSchema,
+  organizationSlugFromName,
+} from "./organization.js";
 import { environmentSchema, projectSchema } from "./project.js";
 
 const createdAt = "2026-10-01T00:00:00Z";
 
 describe("organization schemas", () => {
+  it("validates organization creation input", () => {
+    expect(
+      createOrganizationInputSchema.parse({
+        name: "  RelayRTC Labs  ",
+        slug: "relayrtc-labs",
+      }),
+    ).toEqual({ name: "RelayRTC Labs", slug: "relayrtc-labs" });
+    expect(createOrganizationInputSchema.safeParse({ name: "Labs", slug: "RelayRTC Labs" }).success)
+      .toBe(false);
+  });
+
+  it("creates URL-safe organization slugs from names", () => {
+    expect(organizationSlugFromName("  Café Video Team  ")).toBe("cafe-video-team");
+  });
+
   it("parses organizations and memberships", () => {
     const organization = organizationSchema.parse({
       id: "org_123",
