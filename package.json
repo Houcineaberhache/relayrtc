@@ -12,6 +12,9 @@
   "scripts": {
     "build": "turbo run build",
     "clean": "turbo run clean",
+    "db:check": "pnpm --filter @relaykit/database db:check",
+    "db:generate": "pnpm --filter @relaykit/database db:generate",
+    "db:migrate": "pnpm --filter @relaykit/database db:migrate",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "infra:config": "docker compose --env-file .env config --quiet",
