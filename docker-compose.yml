@@ -1,0 +1,137 @@
+name: relaykit
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-relaykit}
+      POSTGRES_INITDB_ARGS: --data-checksums --encoding=UTF8
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-relaykit}
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+
+  coturn:
+    image: coturn/coturn:4.18.0-alpine
+    restart: unless-stopped
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --realm=${TURN_REALM:-relaykit.local}
+      - --static-auth-secret=${TURN_SHARED_SECRET:?TURN_SHARED_SECRET must be set in .env}
+      - --external-ip=${TURN_PUBLIC_IP:-127.0.0.1}
+      - --min-port=${RTC_MIN_PORT:-49160}
+      - --max-port=${RTC_MAX_PORT:-49200}
+    ports:
+      - ${TURN_PORT:-3478}:3478/tcp
+      - ${TURN_PORT:-3478}:3478/udp
+      - ${RTC_MIN_PORT:-49160}-${RTC_MAX_PORT:-49200}:${RTC_MIN_PORT:-49160}-${RTC_MAX_PORT:-49200}/udp
+    volumes:
+      - ./infrastructure/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - turnutils_stunclient -t 1 -p 3478 127.0.0.1 >/dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-lifecycle
+    ports:
+      - 127.0.0.1:${PROMETHEUS_PORT:-9090}:9090
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --quiet --spider http://127.0.0.1:9090/-/ready
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:13.2.2-slim
+    restart: unless-stopped
+    environment:
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:${GRAFANA_PORT:-3000}:3000
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --quiet --spider http://127.0.0.1:3000/api/health
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relaykit
+    logging: *default-logging
+
+networks:
+  relaykit:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
