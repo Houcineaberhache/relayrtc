@@ -11,6 +11,10 @@ describe("authentication errors", () => {
     ["PASSWORD_TOO_SHORT", "INVALID_PASSWORD"],
     ["PASSWORD_TOO_LONG", "INVALID_PASSWORD"],
     ["INVALID_EMAIL_OR_PASSWORD", "INVALID_CREDENTIALS"],
+    ["account_not_linked", "OAUTH_ACCOUNT_CONFLICT"],
+    ["email_not_found", "OAUTH_EMAIL_UNAVAILABLE"],
+    ["oauth_provider_not_found", "OAUTH_PROVIDER_UNAVAILABLE"],
+    ["access_denied", "OAUTH_ACCESS_DENIED"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });

@@ -3,12 +3,24 @@ import { describe, expect, it } from "vitest";
 
 import { createRelayKitAuth, createRelayKitAuthHandler } from "./server.js";
 
+const oauthProviders = {
+  github: {
+    clientId: "github-client-id",
+    clientSecret: "github-client-secret",
+  },
+  google: {
+    clientId: "google-client-id",
+    clientSecret: "google-client-secret",
+  },
+};
+
 describe("createRelayKitAuth", () => {
   it("creates a database-backed Better Auth instance", async () => {
     const database = createDatabase("postgresql://relaykit:password@127.0.0.1:1/relaykit");
     const auth = createRelayKitAuth({
       baseUrl: "http://localhost:3000",
       database: database.db,
+      oauthProviders,
       secret: "0123456789abcdef0123456789abcdef",
     });
 
@@ -20,7 +32,24 @@ describe("createRelayKitAuth", () => {
       maxPasswordLength: 128,
       minPasswordLength: 8,
     });
-    expect("socialProviders" in auth.options).toBe(false);
+    expect(auth.options.socialProviders).toMatchObject({
+      github: {
+        clientId: "github-client-id",
+        clientSecret: "github-client-secret",
+      },
+      google: {
+        clientId: "google-client-id",
+        clientSecret: "google-client-secret",
+        prompt: "select_account",
+      },
+    });
+    expect(auth.options.account).toMatchObject({
+      accountLinking: {
+        disableImplicitLinking: false,
+        enabled: true,
+      },
+      encryptOAuthTokens: true,
+    });
 
     await database.close();
   });
@@ -35,6 +64,7 @@ describe("createRelayKitAuth", () => {
       const auth = createRelayKitAuth({
         baseUrl: "http://localhost:3000",
         database: database.db,
+        oauthProviders,
         secret: "0123456789abcdef0123456789abcdef",
       });
       const handler = createRelayKitAuthHandler(auth);

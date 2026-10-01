@@ -1,8 +1,19 @@
 export type AuthEnvironmentSource = Readonly<Record<string, string | undefined>>;
 
+export interface OAuthClientCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface OAuthProviderCredentials {
+  github: OAuthClientCredentials;
+  google: OAuthClientCredentials;
+}
+
 export interface AuthEnvironment {
   baseUrl: string;
   databaseUrl: string;
+  oauthProviders: OAuthProviderCredentials;
   secret: string;
   trustedOrigins: string[];
 }
@@ -65,6 +76,16 @@ export const readAuthEnvironment = (source: AuthEnvironmentSource): AuthEnvironm
   return {
     baseUrl,
     databaseUrl,
+    oauthProviders: {
+      github: {
+        clientId: readRequired(source, "GITHUB_CLIENT_ID"),
+        clientSecret: readRequired(source, "GITHUB_CLIENT_SECRET"),
+      },
+      google: {
+        clientId: readRequired(source, "GOOGLE_CLIENT_ID"),
+        clientSecret: readRequired(source, "GOOGLE_CLIENT_SECRET"),
+      },
+    },
     secret,
     trustedOrigins: [...new Set([baseUrl, ...trustedOrigins])],
   };
