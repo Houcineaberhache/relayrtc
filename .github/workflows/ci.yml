@@ -36,6 +36,9 @@ jobs:
           go-version-file: services/signaling/go.mod
           cache-dependency-path: services/signaling/go.sum
       - run: pnpm install --frozen-lockfile
+      - run: pnpm db:check
+        env:
+          DATABASE_URL: postgresql://relaykit:ci-only@localhost:5432/relaykit
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
