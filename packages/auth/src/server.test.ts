@@ -41,7 +41,7 @@ describe("createRelayKitAuth", () => {
       storeSessionInDatabase: true,
       updateAge: 86_400,
     });
-    expect(auth.options.advanced?.defaultCookieAttributes).toEqual({
+    expect(auth.options.advanced.defaultCookieAttributes).toEqual({
       httpOnly: true,
       sameSite: "lax",
       secure: false,
@@ -64,6 +64,9 @@ describe("createRelayKitAuth", () => {
       },
       encryptOAuthTokens: true,
     });
+    expect(auth.options.plugins).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "organization" })]),
+    );
 
     await database.close();
   });
@@ -156,6 +159,35 @@ describe("createRelayKitAuth", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toBeNull();
+
+    await database.close();
+  });
+
+  it("requires a session to create an organization", async () => {
+    const database = createDatabase("postgresql://relaykit:password@127.0.0.1:1/relaykit");
+    const auth = createRelayKitAuth({
+      baseUrl: "http://localhost:3000",
+      database: database.db,
+      oauthProviders,
+      secret: "0123456789abcdef0123456789abcdef",
+    });
+    const handler = createRelayKitAuthHandler(auth);
+    const response = await handler(
+      new Request("http://localhost:3000/api/auth/organization/create", {
+        body: JSON.stringify({ name: "Acme", slug: "acme" }),
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      code: "SESSION_REQUIRED",
+      description: "Sign in to continue",
+    });
 
     await database.close();
   });

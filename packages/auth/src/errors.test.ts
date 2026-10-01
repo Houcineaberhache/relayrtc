@@ -20,6 +20,16 @@ describe("authentication errors", () => {
     ["SESSION_NOT_FRESH", "SESSION_NOT_FRESH"],
     ["FAILED_TO_GET_SESSION", "SESSION_FAILED"],
     ["FAILED_TO_CREATE_SESSION", "SESSION_FAILED"],
+    ["ORGANIZATION_ALREADY_EXISTS", "ORGANIZATION_SLUG_TAKEN"],
+    ["ORGANIZATION_SLUG_ALREADY_TAKEN", "ORGANIZATION_SLUG_TAKEN"],
+    [
+      "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION",
+      "ORGANIZATION_CREATION_FORBIDDEN",
+    ],
+    [
+      "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS",
+      "ORGANIZATION_LIMIT_REACHED",
+    ],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
@@ -43,6 +53,13 @@ describe("authentication errors", () => {
         description: "Too many authentication attempts. Try again later",
       });
     }
+  });
+
+  it("maps unauthorized responses without an upstream code", () => {
+    expect(toAuthError({}, 401)).toEqual({
+      code: "SESSION_REQUIRED",
+      description: "Sign in to continue",
+    });
   });
 
   it("maps Better Auth validation errors by request field", () => {

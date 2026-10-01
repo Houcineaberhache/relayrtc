@@ -1,7 +1,8 @@
 import { createDatabase, schema, type RelayKitDatabase } from "@relayrtc/database";
-import type { Auth, BetterAuthOptions } from "better-auth";
+import type { BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { betterAuth } from "better-auth/minimal";
+import { organization } from "better-auth/plugins/organization";
 
 import {
   readAuthEnvironment,
@@ -9,6 +10,7 @@ import {
   type OAuthProviderCredentials,
 } from "./environment.js";
 import { toAuthError } from "./errors.js";
+import { organizationRoles } from "./organization.js";
 import { relayKitSessionPolicy, sessionCookieAttributes } from "./session.js";
 
 export interface RelayKitAuthOptions {
@@ -19,8 +21,6 @@ export interface RelayKitAuthOptions {
   trustedOrigins?: string[];
 }
 
-export type RelayKitAuth = Auth;
-
 export interface RelayKitAuthEnvironmentResult {
   auth: RelayKitAuth;
   close: () => Promise<void>;
@@ -28,8 +28,8 @@ export interface RelayKitAuthEnvironmentResult {
   handler: (request: Request) => Promise<Response>;
 }
 
-export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth => {
-  const configuration: BetterAuthOptions = {
+export const createRelayKitAuth = (options: RelayKitAuthOptions) => {
+  const configuration = {
     account: {
       accountLinking: {
         disableImplicitLinking: false,
@@ -53,6 +53,34 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth =
       minPasswordLength: 8,
       revokeSessionsOnPasswordReset: true,
     },
+    plugins: [
+      organization({
+        creatorRole: "owner",
+        roles: organizationRoles,
+        schema: {
+          member: {
+            additionalFields: {
+              updatedAt: {
+                defaultValue: () => new Date(),
+                input: false,
+                required: true,
+                type: "date",
+              },
+            },
+          },
+          organization: {
+            additionalFields: {
+              updatedAt: {
+                defaultValue: () => new Date(),
+                input: false,
+                required: true,
+                type: "date",
+              },
+            },
+          },
+        },
+      }),
+    ],
     session: relayKitSessionPolicy,
     socialProviders: {
       github: {
@@ -67,10 +95,12 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth =
     },
     secret: options.secret,
     trustedOrigins: options.trustedOrigins ?? [options.baseUrl],
-  };
+  } satisfies BetterAuthOptions;
 
   return betterAuth(configuration);
 };
+
+export type RelayKitAuth = ReturnType<typeof createRelayKitAuth>;
 
 export const createRelayKitAuthHandler =
   (auth: RelayKitAuth) =>
@@ -93,7 +123,7 @@ export const createRelayKitAuthHandler =
     headers.delete("content-length");
     headers.set("content-type", "application/json");
 
-    return new Response(JSON.stringify(toAuthError(payload)), {
+    return new Response(JSON.stringify(toAuthError(payload, response.status)), {
       headers,
       status: response.status,
       statusText: response.statusText,

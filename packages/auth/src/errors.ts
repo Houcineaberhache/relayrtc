@@ -16,6 +16,12 @@ export const authErrorCodes = [
   "SESSION_NOT_FRESH",
   "SESSION_FAILED",
   "AUTHENTICATION_FAILED",
+  "INVALID_ORGANIZATION_NAME",
+  "INVALID_ORGANIZATION_SLUG",
+  "ORGANIZATION_SLUG_TAKEN",
+  "ORGANIZATION_CREATION_FORBIDDEN",
+  "ORGANIZATION_LIMIT_REACHED",
+  "ORGANIZATION_CREATION_FAILED",
 ] as const;
 
 export type AuthErrorCode = (typeof authErrorCodes)[number];
@@ -44,6 +50,12 @@ const authErrorDescriptions: Readonly<Record<AuthErrorCode, string>> = {
   SESSION_NOT_FRESH: "Sign in again to perform this action",
   SESSION_FAILED: "The session operation could not be completed",
   AUTHENTICATION_FAILED: "Authentication could not be completed",
+  INVALID_ORGANIZATION_NAME: "Enter a valid organization name",
+  INVALID_ORGANIZATION_SLUG: "Use lowercase letters, numbers, and hyphens for the slug",
+  ORGANIZATION_SLUG_TAKEN: "An organization already uses this slug",
+  ORGANIZATION_CREATION_FORBIDDEN: "You are not allowed to create an organization",
+  ORGANIZATION_LIMIT_REACHED: "You have reached the organization limit",
+  ORGANIZATION_CREATION_FAILED: "The organization could not be created",
 };
 
 export const authError = (code: AuthErrorCode): AuthError => ({
@@ -75,6 +87,10 @@ const betterAuthCodeMap: Readonly<Record<string, AuthErrorCode>> = {
   UNAUTHORIZED: "SESSION_REQUIRED",
   USER_ALREADY_EXISTS: "USER_EXISTS",
   USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "USER_EXISTS",
+  ORGANIZATION_ALREADY_EXISTS: "ORGANIZATION_SLUG_TAKEN",
+  ORGANIZATION_SLUG_ALREADY_TAKEN: "ORGANIZATION_SLUG_TAKEN",
+  YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION: "ORGANIZATION_CREATION_FORBIDDEN",
+  YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS: "ORGANIZATION_LIMIT_REACHED",
   access_denied: "OAUTH_ACCESS_DENIED",
   account_already_linked_to_different_user: "OAUTH_ACCOUNT_CONFLICT",
   account_not_linked: "OAUTH_ACCOUNT_CONFLICT",
@@ -123,16 +139,25 @@ const validationErrorCode = (message: string | undefined): AuthErrorCode => {
   }
 
   if (message?.includes("body.name")) {
-    return "INVALID_NAME";
+    return message.includes("organization")
+      ? "INVALID_ORGANIZATION_NAME"
+      : "INVALID_NAME";
+  }
+
+  if (message?.includes("body.slug")) {
+    return "INVALID_ORGANIZATION_SLUG";
   }
 
   return "INVALID_REQUEST";
 };
 
-export const toAuthError = (error: unknown): AuthError => {
+export const toAuthError = (error: unknown, responseStatus?: number): AuthError => {
   const sourceCode = readStringProperty(error, "code");
   const status = readStringProperty(error, "status");
-  const statusCode = readNumberProperty(error, "status") ?? readNumberProperty(error, "statusCode");
+  const statusCode =
+    readNumberProperty(error, "status") ??
+    readNumberProperty(error, "statusCode") ??
+    responseStatus;
   const code = sourceCode ? betterAuthCodeMap[sourceCode] : undefined;
 
   if (sourceCode && authErrorCodeSet.has(sourceCode)) {
@@ -149,6 +174,10 @@ export const toAuthError = (error: unknown): AuthError => {
 
   if (status === "TOO_MANY_REQUESTS" || statusCode === 429) {
     return authError("RATE_LIMITED");
+  }
+
+  if (statusCode === 401) {
+    return authError("SESSION_REQUIRED");
   }
 
   return authError("AUTHENTICATION_FAILED");
