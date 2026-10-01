@@ -9,6 +9,7 @@ import {
   type OAuthProviderCredentials,
 } from "./environment.js";
 import { toAuthError } from "./errors.js";
+import { relayKitSessionPolicy, sessionCookieAttributes } from "./session.js";
 
 export interface RelayKitAuthOptions {
   baseUrl: string;
@@ -37,6 +38,9 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth =
       encryptOAuthTokens: true,
     },
     appName: "RelayKit",
+    advanced: {
+      defaultCookieAttributes: sessionCookieAttributes(options.baseUrl),
+    },
     baseURL: options.baseUrl,
     database: drizzleAdapter(options.database, {
       provider: "pg",
@@ -47,7 +51,9 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth =
       enabled: true,
       maxPasswordLength: 128,
       minPasswordLength: 8,
+      revokeSessionsOnPasswordReset: true,
     },
+    session: relayKitSessionPolicy,
     socialProviders: {
       github: {
         clientId: options.oauthProviders.github.clientId,

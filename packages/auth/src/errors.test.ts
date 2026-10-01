@@ -15,6 +15,11 @@ describe("authentication errors", () => {
     ["email_not_found", "OAUTH_EMAIL_UNAVAILABLE"],
     ["oauth_provider_not_found", "OAUTH_PROVIDER_UNAVAILABLE"],
     ["access_denied", "OAUTH_ACCESS_DENIED"],
+    ["UNAUTHORIZED", "SESSION_REQUIRED"],
+    ["SESSION_EXPIRED", "SESSION_EXPIRED"],
+    ["SESSION_NOT_FRESH", "SESSION_NOT_FRESH"],
+    ["FAILED_TO_GET_SESSION", "SESSION_FAILED"],
+    ["FAILED_TO_CREATE_SESSION", "SESSION_FAILED"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
