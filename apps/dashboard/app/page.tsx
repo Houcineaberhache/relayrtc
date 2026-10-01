@@ -1,6 +1,10 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { CreateOrganizationForm } from "@/components/organizations/create-organization-form"
-import { getCurrentSession } from "@/lib/auth-session"
+import { OrganizationList } from "@/components/organizations/organization-list"
+import {
+  getCurrentOrganizations,
+  getCurrentSession,
+} from "@/lib/auth-session"
 import {
   Avatar,
   AvatarFallback,
@@ -41,9 +45,17 @@ export default async function Page() {
     redirect("/auth/login?redirect=%2F")
   }
 
+  const organizations = await getCurrentOrganizations()
+  const activeOrganization = organizations.find(
+    (organization) => organization.id === session.session.activeOrganizationId
+  )
+
   return (
     <div className="min-h-svh bg-muted/30">
-      <DashboardHeader user={session.user} />
+      <DashboardHeader
+        activeOrganization={activeOrganization}
+        user={session.user}
+      />
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
         <div className="space-y-2">
           <Badge variant="secondary">Dashboard</Badge>
@@ -55,6 +67,11 @@ export default async function Page() {
             and projects.
           </p>
         </div>
+
+        <OrganizationList
+          activeOrganizationId={session.session.activeOrganizationId}
+          organizations={organizations}
+        />
 
         <Card>
           <CardHeader>
