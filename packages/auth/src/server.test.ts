@@ -227,4 +227,36 @@ describe("createRelayKitAuth", () => {
 
     await database.close();
   });
+
+  it("requires a session to update organization settings", async () => {
+    const database = createDatabase("postgresql://relaykit:password@127.0.0.1:1/relaykit");
+    const auth = createRelayKitAuth({
+      baseUrl: "http://localhost:3000",
+      database: database.db,
+      oauthProviders,
+      secret: "0123456789abcdef0123456789abcdef",
+    });
+    const handler = createRelayKitAuthHandler(auth);
+    const response = await handler(
+      new Request("http://localhost:3000/api/auth/organization/update", {
+        body: JSON.stringify({
+          data: { name: "Acme Realtime", slug: "acme-realtime" },
+          organizationId: "organization_123",
+        }),
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      code: "SESSION_REQUIRED",
+      description: "Sign in to continue",
+    });
+
+    await database.close();
+  });
 });

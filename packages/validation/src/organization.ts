@@ -25,6 +25,12 @@ export const createOrganizationInputSchema = z
 
 export type CreateOrganizationInput = z.infer<typeof createOrganizationInputSchema>;
 
+export const updateOrganizationInputSchema = createOrganizationInputSchema.extend({
+  organizationId: organizationIdSchema,
+});
+
+export type UpdateOrganizationInput = z.infer<typeof updateOrganizationInputSchema>;
+
 export const organizationSlugFromName = (name: string): string =>
   name
     .normalize("NFKD")

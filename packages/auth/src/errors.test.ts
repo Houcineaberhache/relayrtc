@@ -5,6 +5,7 @@ import {
   toAuthError,
   toAuthResult,
   toOrganizationSwitchError,
+  toOrganizationUpdateError,
 } from "./errors.js";
 
 describe("authentication errors", () => {
@@ -38,6 +39,7 @@ describe("authentication errors", () => {
     ["ORGANIZATION_NOT_FOUND", "ORGANIZATION_NOT_FOUND"],
     ["USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
     ["YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
+    ["YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION", "ORGANIZATION_UPDATE_FORBIDDEN"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
@@ -112,6 +114,13 @@ describe("authentication errors", () => {
     expect(toOrganizationSwitchError({ code: "DATABASE_CONNECTION_FAILED" })).toEqual({
       code: "ORGANIZATION_SWITCH_FAILED",
       description: "The active organization could not be changed",
+    });
+  });
+
+  it("uses a stable fallback for organization update failures", () => {
+    expect(toOrganizationUpdateError({ code: "DATABASE_CONNECTION_FAILED" })).toEqual({
+      code: "ORGANIZATION_UPDATE_FAILED",
+      description: "The organization settings could not be updated",
     });
   });
 });

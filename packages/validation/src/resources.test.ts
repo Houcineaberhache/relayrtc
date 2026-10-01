@@ -6,6 +6,7 @@ import {
   organizationMembershipSchema,
   organizationSchema,
   organizationSlugFromName,
+  updateOrganizationInputSchema,
 } from "./organization.js";
 import { environmentSchema, projectSchema } from "./project.js";
 
@@ -25,6 +26,27 @@ describe("organization schemas", () => {
 
   it("creates URL-safe organization slugs from names", () => {
     expect(organizationSlugFromName("  Café Video Team  ")).toBe("cafe-video-team");
+  });
+
+  it("validates organization settings updates", () => {
+    expect(
+      updateOrganizationInputSchema.parse({
+        organizationId: "organization_123",
+        name: "  Acme Realtime  ",
+        slug: "acme-realtime",
+      }),
+    ).toEqual({
+      organizationId: "organization_123",
+      name: "Acme Realtime",
+      slug: "acme-realtime",
+    });
+    expect(
+      updateOrganizationInputSchema.safeParse({
+        organizationId: "organization_123",
+        name: "Acme",
+        slug: "Acme Team",
+      }).success,
+    ).toBe(false);
   });
 
   it("parses organizations and memberships", () => {
