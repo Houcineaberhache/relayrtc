@@ -1,6 +1,7 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { CreateOrganizationForm } from "@/components/organizations/create-organization-form"
 import { OrganizationList } from "@/components/organizations/organization-list"
+import { OrganizationSettings } from "@/components/organizations/organization-settings"
 import {
   getCurrentOrganizations,
   getCurrentSession,
@@ -72,6 +73,8 @@ export default async function Page() {
           activeOrganizationId={session.session.activeOrganizationId}
           organizations={organizations}
         />
+
+        <OrganizationSettings organization={activeOrganization} />
 
         <Card>
           <CardHeader>
