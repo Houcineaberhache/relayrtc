@@ -1,11 +1,11 @@
-import type { Participant, ParticipantSession, RoomId, SessionId, Track } from "@relaykit/types";
+import type { Participant, ParticipantSession, RoomId, SessionId, Track } from "@relayrtc/types";
 import {
   participantSchema,
   participantSessionSchema,
   roomIdSchema,
   sessionIdSchema,
   trackSchema,
-} from "@relaykit/validation";
+} from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolRequest, ProtocolResponse } from "./envelope.js";

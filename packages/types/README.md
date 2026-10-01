@@ -1,3 +1,3 @@
-# @relaykit/types
+# @relayrtc/types
 
-Shared, dependency-free domain contracts for RelayKit services, applications, and SDKs.
+Shared, dependency-free domain contracts for RelayRTC services, applications, and SDKs.

@@ -1,9 +1,9 @@
 "use client"
 
 import { authClient } from "@/lib/auth-client"
-import type { AuthError, OAuthProvider } from "@relaykit/auth"
-import { toAuthError } from "@relaykit/auth"
-import { Button } from "@relaykit/ui/components/button"
+import type { AuthError, OAuthProvider } from "@relayrtc/auth"
+import { toAuthError } from "@relayrtc/auth"
+import { Button } from "@relayrtc/ui/components/button"
 import { LoaderCircle } from "lucide-react"
 import { useState } from "react"
 

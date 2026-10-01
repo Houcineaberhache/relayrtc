@@ -1,5 +1,5 @@
-import type { Track } from "@relaykit/types";
-import { trackSchema } from "@relaykit/validation";
+import type { Track } from "@relayrtc/types";
+import { trackSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolEvent } from "./envelope.js";

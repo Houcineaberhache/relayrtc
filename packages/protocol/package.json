@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/protocol",
+  "name": "@relayrtc/protocol",
   "version": "0.0.0",
-  "description": "Versioned realtime wire contracts for RelayKit.",
+  "description": "Versioned realtime wire contracts for RelayRTC.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -24,8 +24,8 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@relaykit/types": "workspace:*",
-    "@relaykit/validation": "workspace:*",
+    "@relayrtc/types": "workspace:*",
+    "@relayrtc/validation": "workspace:*",
     "zod": "^4.6.5"
   },
   "publishConfig": {

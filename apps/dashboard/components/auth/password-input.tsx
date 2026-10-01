@@ -1,7 +1,7 @@
 "use client"
 
-import { Button } from "@relaykit/ui/components/button"
-import { Input } from "@relaykit/ui/components/input"
+import { Button } from "@relayrtc/ui/components/button"
+import { Input } from "@relayrtc/ui/components/input"
 import { Eye, EyeOff } from "lucide-react"
 import { useState } from "react"
 

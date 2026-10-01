@@ -5,7 +5,7 @@ import type {
   UsageRecord,
   WebhookDelivery,
   WebhookEndpoint,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { apiKeySchema, storedApiKeySchema } from "./api-key.js";
@@ -33,7 +33,7 @@ const webhookEndpoint = {
   id: "webhook_123",
   projectId: "project_123",
   environmentId: "environment_123",
-  url: "https://example.com/relaykit/events",
+  url: "https://example.com/relayrtc/events",
   eventTypes: ["room.started", "participant.joined"],
   status: "enabled",
   createdAt: timestamp,

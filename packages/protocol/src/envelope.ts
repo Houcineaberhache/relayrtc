@@ -1,5 +1,5 @@
-import type { Brand, IsoDateTime } from "@relaykit/types";
-import { isoDateTimeSchema } from "@relaykit/validation";
+import type { Brand, IsoDateTime } from "@relayrtc/types";
+import { isoDateTimeSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolVersion } from "./version.js";

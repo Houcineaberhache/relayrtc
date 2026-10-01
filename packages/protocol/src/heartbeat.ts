@@ -1,5 +1,5 @@
-import type { IsoDateTime } from "@relaykit/types";
-import { isoDateTimeSchema } from "@relaykit/validation";
+import type { IsoDateTime } from "@relayrtc/types";
+import { isoDateTimeSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolRequest, ProtocolResponse } from "./envelope.js";

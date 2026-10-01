@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/relaykitcc/relaykit/services/signaling/internal/config"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/config"
 )
 
 func Run(ctx context.Context) error {

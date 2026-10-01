@@ -5,10 +5,10 @@ import { ThemeProvider } from "@/components/theme-provider"
 
 export const metadata: Metadata = {
   title: {
-    default: "RelayKit",
-    template: "%s · RelayKit",
+    default: "RelayRTC",
+    template: "%s · RelayRTC",
   },
-  description: "Manage your RelayKit projects and realtime infrastructure.",
+  description: "Manage your RelayRTC projects and realtime infrastructure.",
 }
 
 export default function RootLayout({

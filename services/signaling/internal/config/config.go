@@ -13,7 +13,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	address := os.Getenv("RELAYKIT_SIGNALING_ADDRESS")
+	address := os.Getenv("RELAYRTC_SIGNALING_ADDRESS")
 	if address == "" {
 		address = defaultAddress
 	}

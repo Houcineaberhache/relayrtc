@@ -24,7 +24,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "relaykit-prometheus"
+        "uid": "relayrtc-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -98,7 +98,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "relaykit-prometheus"
+        "uid": "relayrtc-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -172,7 +172,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "relaykit-prometheus"
+        "uid": "relayrtc-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -257,7 +257,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 42,
-  "tags": ["relaykit", "local"],
+  "tags": ["relayrtc", "local"],
   "templating": {
     "list": []
   },
@@ -268,6 +268,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Local Infrastructure",
-  "uid": "relaykit-local-infrastructure",
+  "uid": "relayrtc-local-infrastructure",
   "version": 1
 }

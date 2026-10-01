@@ -1,10 +1,10 @@
-import { RelayKitLogo } from "@/components/brand/relaykit-logo"
+import { RelayKitLogo } from "@/components/brand/relayrtc-logo"
 import { LogoutButton } from "@/components/dashboard/logout-button"
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@relaykit/ui/components/avatar"
+} from "@relayrtc/ui/components/avatar"
 
 interface DashboardHeaderProps {
   user: {

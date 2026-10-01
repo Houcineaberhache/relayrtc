@@ -1,5 +1,5 @@
 {
-  "name": "relaykit",
+  "name": "relayrtc",
   "version": "0.0.0",
   "private": true,
   "description": "Open-source realtime communication infrastructure for developers.",
@@ -12,9 +12,9 @@
   "scripts": {
     "build": "turbo run build",
     "clean": "turbo run clean",
-    "db:check": "pnpm --filter @relaykit/database db:check",
-    "db:generate": "pnpm --filter @relaykit/database db:generate",
-    "db:migrate": "pnpm --filter @relaykit/database db:migrate",
+    "db:check": "pnpm --filter @relayrtc/database db:check",
+    "db:generate": "pnpm --filter @relayrtc/database db:generate",
+    "db:migrate": "pnpm --filter @relayrtc/database db:migrate",
     "docker:config": "docker compose --env-file .env config --quiet",
     "docker:down": "docker compose --env-file .env down",
     "docker:logs": "docker compose --env-file .env logs --follow",

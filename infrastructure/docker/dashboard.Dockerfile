@@ -22,7 +22,7 @@ RUN pnpm install --offline --frozen-lockfile
 FROM source AS builder
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm turbo run build --filter=@relaykit/dashboard
+RUN pnpm turbo run build --filter=@relayrtc/dashboard
 
 FROM source AS migrator
 

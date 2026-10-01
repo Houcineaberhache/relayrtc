@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/signaling ./cmd/si
 
 FROM alpine:3.22
 
-RUN addgroup -S relaykit && adduser -S -G relaykit relaykit
-COPY --from=builder --chown=relaykit:relaykit /out/signaling /usr/local/bin/signaling
-USER relaykit
+RUN addgroup -S relayrtc && adduser -S -G relayrtc relayrtc
+COPY --from=builder --chown=relayrtc:relayrtc /out/signaling /usr/local/bin/signaling
+USER relayrtc
 ENTRYPOINT ["signaling"]

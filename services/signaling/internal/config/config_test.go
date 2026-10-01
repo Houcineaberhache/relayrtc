@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestLoadUsesDefaultAddress(t *testing.T) {
-	t.Setenv("RELAYKIT_SIGNALING_ADDRESS", "")
+	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -16,7 +16,7 @@ func TestLoadUsesDefaultAddress(t *testing.T) {
 }
 
 func TestLoadUsesConfiguredAddress(t *testing.T) {
-	t.Setenv("RELAYKIT_SIGNALING_ADDRESS", "127.0.0.1:9090")
+	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "127.0.0.1:9090")
 
 	cfg, err := Load()
 	if err != nil {
@@ -29,7 +29,7 @@ func TestLoadUsesConfiguredAddress(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidAddress(t *testing.T) {
-	t.Setenv("RELAYKIT_SIGNALING_ADDRESS", "invalid-address")
+	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "invalid-address")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() returned no error for an invalid address")

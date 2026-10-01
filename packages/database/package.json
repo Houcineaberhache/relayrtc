@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/database",
+  "name": "@relayrtc/database",
   "version": "0.0.0",
-  "description": "PostgreSQL schema, migrations, and database client for RelayKit.",
+  "description": "PostgreSQL schema, migrations, and database client for RelayRTC.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,

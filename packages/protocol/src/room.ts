@@ -1,5 +1,5 @@
-import type { Room } from "@relaykit/types";
-import { roomSchema } from "@relaykit/validation";
+import type { Room } from "@relayrtc/types";
+import { roomSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolEvent } from "./envelope.js";

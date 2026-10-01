@@ -4,12 +4,12 @@ import { AuthErrorMessage } from "@/components/auth/auth-error-message"
 import { OAuthButtons } from "@/components/auth/oauth-buttons"
 import { PasswordInput } from "@/components/auth/password-input"
 import { authClient } from "@/lib/auth-client"
-import type { AuthError } from "@relaykit/auth"
-import { toAuthError, validateSignInCredentials } from "@relaykit/auth"
-import { Button } from "@relaykit/ui/components/button"
-import { Input } from "@relaykit/ui/components/input"
-import { Label } from "@relaykit/ui/components/label"
-import { Separator } from "@relaykit/ui/components/separator"
+import type { AuthError } from "@relayrtc/auth"
+import { toAuthError, validateSignInCredentials } from "@relayrtc/auth"
+import { Button } from "@relayrtc/ui/components/button"
+import { Input } from "@relayrtc/ui/components/input"
+import { Label } from "@relayrtc/ui/components/label"
+import { Separator } from "@relayrtc/ui/components/separator"
 import { LoaderCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -104,7 +104,7 @@ export function LoginForm({
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">
-        New to RelayKit?{" "}
+        New to RelayRTC?{" "}
         <Link
           href={signUpHref}
           className="font-medium text-foreground underline underline-offset-4"

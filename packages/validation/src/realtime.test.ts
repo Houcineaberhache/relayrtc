@@ -1,4 +1,4 @@
-import type { Participant, ParticipantSession, Room, Track } from "@relaykit/types";
+import type { Participant, ParticipantSession, Room, Track } from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { participantSchema, participantSessionSchema } from "./participant.js";

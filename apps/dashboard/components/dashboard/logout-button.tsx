@@ -1,7 +1,7 @@
 "use client"
 
 import { authClient } from "@/lib/auth-client"
-import { Button } from "@relaykit/ui/components/button"
+import { Button } from "@relayrtc/ui/components/button"
 import { LogOut } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"

@@ -47,10 +47,10 @@ importers:
 
   apps/dashboard:
     dependencies:
-      '@relaykit/auth':
+      '@relayrtc/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@relaykit/ui':
+      '@relayrtc/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       better-auth:
@@ -108,7 +108,7 @@ importers:
 
   packages/auth:
     dependencies:
-      '@relaykit/database':
+      '@relayrtc/database':
         specifier: workspace:*
         version: link:../database
       better-auth:
@@ -136,10 +136,10 @@ importers:
 
   packages/protocol:
     dependencies:
-      '@relaykit/types':
+      '@relayrtc/types':
         specifier: workspace:*
         version: link:../types
-      '@relaykit/validation':
+      '@relayrtc/validation':
         specifier: workspace:*
         version: link:../validation
       zod:
@@ -190,7 +190,7 @@ importers:
 
   packages/validation:
     dependencies:
-      '@relaykit/types':
+      '@relayrtc/types':
         specifier: workspace:*
         version: link:../types
       zod:

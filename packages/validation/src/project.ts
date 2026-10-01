@@ -1,4 +1,4 @@
-import { environmentTypes, projectStatuses, type Environment, type Project } from "@relaykit/types";
+import { environmentTypes, projectStatuses, type Environment, type Project } from "@relayrtc/types";
 import { z } from "zod";
 
 import {

@@ -56,7 +56,7 @@ describe("readAuthEnvironment", () => {
     expect(() =>
       readAuthEnvironment({
         ...validEnvironment,
-        BETTER_AUTH_URL: "https://relaykit.example.com/dashboard",
+        BETTER_AUTH_URL: "https://relayrtc.example.com/dashboard",
       }),
     ).toThrow("must be an origin");
   });

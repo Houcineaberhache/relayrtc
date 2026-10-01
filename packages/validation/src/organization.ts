@@ -2,7 +2,7 @@ import {
   organizationMemberRoles,
   type Organization,
   type OrganizationMembership,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { z } from "zod";
 
 import {

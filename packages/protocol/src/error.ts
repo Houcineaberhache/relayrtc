@@ -1,5 +1,5 @@
-import type { JsonObject } from "@relaykit/types";
-import { isoDateTimeSchema, metadataSchema } from "@relaykit/validation";
+import type { JsonObject } from "@relayrtc/types";
+import { isoDateTimeSchema, metadataSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolEnvelope, ProtocolMessageId } from "./envelope.js";

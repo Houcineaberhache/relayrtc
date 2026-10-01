@@ -1,4 +1,4 @@
-import type { Environment, Organization, OrganizationMembership, Project } from "@relaykit/types";
+import type { Environment, Organization, OrganizationMembership, Project } from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { organizationMembershipSchema, organizationSchema } from "./organization.js";
@@ -10,8 +10,8 @@ describe("organization schemas", () => {
   it("parses organizations and memberships", () => {
     const organization = organizationSchema.parse({
       id: "org_123",
-      name: "RelayKit Labs",
-      slug: "relaykit-labs",
+      name: "RelayRTC Labs",
+      slug: "relayrtc-labs",
       createdAt,
       updatedAt: createdAt,
     });
@@ -42,8 +42,8 @@ describe("organization schemas", () => {
     expect(
       organizationSchema.safeParse({
         id: "org_123",
-        name: "RelayKit Labs",
-        slug: "RelayKit Labs",
+        name: "RelayRTC Labs",
+        slug: "RelayRTC Labs",
         createdAt,
         updatedAt: createdAt,
         internal: true,

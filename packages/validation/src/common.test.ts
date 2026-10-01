@@ -1,4 +1,4 @@
-import type { OrganizationId } from "@relaykit/types";
+import type { OrganizationId } from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {

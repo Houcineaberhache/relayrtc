@@ -1,4 +1,4 @@
-import { trackPriorities, trackStates, trackTypes, type Track } from "@relaykit/types";
+import { trackPriorities, trackStates, trackTypes, type Track } from "@relayrtc/types";
 import { z } from "zod";
 
 import {

@@ -1,4 +1,4 @@
-name: relaykit
+name: relayrtc
 
 services:
   dashboard:
@@ -33,7 +33,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: &default-logging
       driver: json-file
       options:
@@ -55,7 +55,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
   signaling:
@@ -64,7 +64,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      RELAYKIT_SIGNALING_ADDRESS: :8081
+      RELAYRTC_SIGNALING_ADDRESS: :8081
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -72,7 +72,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
   postgres:
@@ -99,7 +99,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
   coturn:
@@ -110,7 +110,7 @@ services:
     command:
       - -c
       - /etc/coturn/turnserver.conf
-      - --realm=${TURN_REALM:-relaykit.local}
+      - --realm=${TURN_REALM:-relayrtc.local}
       - --static-auth-secret=${TURN_SHARED_SECRET:?TURN_SHARED_SECRET must be set in .env}
       - --external-ip=${TURN_PUBLIC_IP:-127.0.0.1}
       - --min-port=${RTC_MIN_PORT:-49160}
@@ -131,7 +131,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
   prometheus:
@@ -161,7 +161,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
   grafana:
@@ -195,11 +195,11 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relaykit
+      - relayrtc
     logging: *default-logging
 
 networks:
-  relaykit:
+  relayrtc:
     driver: bridge
 
 volumes:

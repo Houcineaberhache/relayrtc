@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../.."),
   poweredByHeader: false,
-  transpilePackages: ["@relaykit/ui"],
+  transpilePackages: ["@relayrtc/ui"],
 }
 
 export default nextConfig

@@ -1,5 +1,5 @@
 {
-  "name": "@relaykit/workspace-smoke",
+  "name": "@relayrtc/workspace-smoke",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -57,7 +57,7 @@ describe("authentication errors", () => {
     });
   });
 
-  it("preserves already normalized RelayKit errors", () => {
+  it("preserves already normalized RelayRTC errors", () => {
     expect(toAuthError(authError("USER_EXISTS"))).toEqual(authError("USER_EXISTS"));
   });
 

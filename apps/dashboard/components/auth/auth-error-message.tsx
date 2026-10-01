@@ -1,9 +1,9 @@
-import type { AuthError } from "@relaykit/auth"
+import type { AuthError } from "@relayrtc/auth"
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@relaykit/ui/components/alert"
+} from "@relayrtc/ui/components/alert"
 import { CircleAlert } from "lucide-react"
 
 export function AuthErrorMessage({ error }: { error: AuthError | null }) {

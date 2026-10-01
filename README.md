@@ -1,6 +1,6 @@
-# RelayKit
+# RelayRTC
 
-RelayKit is open-source realtime communication infrastructure for developers. It is designed to provide stable APIs and SDKs for voice, video, rooms, screen sharing, messaging, presence. Built on top of WebRTC.
+RelayRTC is open-source realtime communication infrastructure for developers. It is designed to provide stable APIs and SDKs for voice, video, rooms, screen sharing, messaging, presence. Built on top of WebRTC.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ pnpm test:e2e
 
 ## Project status
 
-RelayKit is under active development and does not yet expose a stable public API/SDK's.
+RelayRTC is under active development and does not yet expose a stable public API/SDK's.
 
 ## Contributing and security
 

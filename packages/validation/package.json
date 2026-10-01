@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/validation",
+  "name": "@relayrtc/validation",
   "version": "0.0.0",
-  "description": "Runtime validation schemas for RelayKit domain contracts.",
+  "description": "Runtime validation schemas for RelayRTC domain contracts.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -24,7 +24,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@relaykit/types": "workspace:*",
+    "@relayrtc/types": "workspace:*",
     "zod": "^4.6.5"
   },
   "publishConfig": {

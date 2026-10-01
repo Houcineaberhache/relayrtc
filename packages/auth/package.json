@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/auth",
+  "name": "@relayrtc/auth",
   "version": "0.0.0",
-  "description": "Better Auth configuration and clients for RelayKit dashboard accounts.",
+  "description": "Better Auth configuration and clients for RelayRTC dashboard accounts.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -32,7 +32,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@relaykit/database": "workspace:*",
+    "@relayrtc/database": "workspace:*",
     "better-auth": "^1.7.7",
     "zod": "^4.6.5"
   },

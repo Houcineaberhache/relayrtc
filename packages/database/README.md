@@ -1,6 +1,6 @@
-# @relaykit/database
+# @relayrtc/database
 
-Shared PostgreSQL access, Drizzle schema definitions, and versioned migrations for RelayKit.cc services
+Shared PostgreSQL access, Drizzle schema definitions, and versioned migrations for RelayRTC.com services
 ## Commands
 
 Run these commands from the repository root with `DATABASE_URL` available in the environment:

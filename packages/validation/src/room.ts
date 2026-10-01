@@ -1,4 +1,4 @@
-import { roomStatuses, type Room } from "@relaykit/types";
+import { roomStatuses, type Room } from "@relayrtc/types";
 import { z } from "zod";
 
 import {

@@ -27,7 +27,7 @@ export default async function SignupPage({
   return (
     <AuthShell
       title="Create your account"
-      description="Start building realtime experiences with RelayKit."
+      description="Start building realtime experiences with RelayRTC."
     >
       <SignupForm
         callbackURL={destination}

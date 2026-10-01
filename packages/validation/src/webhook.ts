@@ -6,7 +6,7 @@ import {
   type WebhookDelivery,
   type WebhookEndpoint,
   type WebhookEvent,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { z } from "zod";
 
 import {

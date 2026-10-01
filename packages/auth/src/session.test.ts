@@ -25,7 +25,7 @@ describe("session policy", () => {
 
   it.each([
     ["http://localhost:3001", false],
-    ["https://dashboard.relaykit.example", true],
+    ["https://dashboard.relayrtc.example", true],
   ])("sets secure cookies appropriately for %s", (baseUrl, secure) => {
     expect(sessionCookieAttributes(baseUrl)).toEqual({
       httpOnly: true,

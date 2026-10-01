@@ -7,7 +7,7 @@ import type {
   RoomId,
   SessionId,
   Track,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import {
   isoDateTimeSchema,
   participantIdSchema,
@@ -17,7 +17,7 @@ import {
   roomSchema,
   sessionIdSchema,
   trackSchema,
-} from "@relaykit/validation";
+} from "@relayrtc/validation";
 import { z } from "zod";
 
 import type { ProtocolEvent, ProtocolRequest, ProtocolResponse } from "./envelope.js";

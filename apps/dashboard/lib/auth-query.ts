@@ -27,8 +27,8 @@ const redirectSchema = z
 
     try {
       return (
-        new URL(value, "https://app.relaykit.cc").origin ===
-        "https://app.relaykit.cc"
+        new URL(value, "https://app.relayrtc.com").origin ===
+        "https://app.relayrtc.com"
       )
     } catch {
       return false
@@ -60,7 +60,7 @@ export const readAuthQuery = (raw: RawSearchParams): AuthQuery => {
 }
 
 export const buildPostAuthRedirect = (query: AuthQuery): string => {
-  const url = new URL(query.redirect, "https://app.relaykit.cc")
+  const url = new URL(query.redirect, "https://app.relayrtc.com")
 
   for (const [key, value] of Object.entries(query.tracking)) {
     if (value && !url.searchParams.has(key)) url.searchParams.set(key, value)

@@ -1,4 +1,4 @@
-import { createDatabase } from "@relaykit/database";
+import { createDatabase } from "@relayrtc/database";
 import { describe, expect, it } from "vitest";
 
 import { createRelayKitAuth, createRelayKitAuthHandler } from "./server.js";
@@ -24,7 +24,7 @@ describe("createRelayKitAuth", () => {
       secret: "0123456789abcdef0123456789abcdef",
     });
 
-    expect(auth.options.appName).toBe("RelayKit");
+    expect(auth.options.appName).toBe("RelayRTC");
     expect(auth.options.baseURL).toBe("http://localhost:3000");
     expect(auth.options.emailAndPassword).toMatchObject({
       autoSignIn: true,

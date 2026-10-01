@@ -6,7 +6,7 @@ export function RelayKitLogo() {
       <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
         <RadioTower className="size-4" />
       </span>
-      <span>RelayKit</span>
+      <span>RelayRTC</span>
     </div>
   )
 }

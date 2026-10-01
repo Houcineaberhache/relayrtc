@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/dashboard",
+  "name": "@relayrtc/dashboard",
   "version": "0.0.0",
-  "description": "Authenticated RelayKit dashboard served from app.relaykit.cc.",
+  "description": "Authenticated RelayRTC dashboard served from app.relayrtc.com.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
@@ -14,8 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@relaykit/auth": "workspace:*",
-    "@relaykit/ui": "workspace:*",
+    "@relayrtc/auth": "workspace:*",
+    "@relayrtc/ui": "workspace:*",
     "better-auth": "^1.7.7",
     "lucide-react": "^1.49.0",
     "next": "16.3.6",

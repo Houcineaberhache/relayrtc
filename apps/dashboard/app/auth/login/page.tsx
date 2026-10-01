@@ -7,7 +7,7 @@ import {
   readAuthQuery,
   type RawSearchParams,
 } from "@/lib/auth-query"
-import { toOAuthCallbackError } from "@relaykit/auth"
+import { toOAuthCallbackError } from "@relayrtc/auth"
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 
@@ -28,7 +28,7 @@ export default async function LoginPage({
   return (
     <AuthShell
       title="Welcome back"
-      description="Sign in to your RelayKit dashboard."
+      description="Sign in to your RelayRTC dashboard."
     >
       <LoginForm
         callbackURL={destination}

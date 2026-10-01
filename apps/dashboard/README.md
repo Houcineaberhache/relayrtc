@@ -1,1 +1,1 @@
-# @relaykit/dashboard
+# @relayrtc/dashboard

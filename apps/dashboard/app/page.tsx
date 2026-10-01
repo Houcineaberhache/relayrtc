@@ -4,16 +4,16 @@ import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@relaykit/ui/components/avatar"
-import { Badge } from "@relaykit/ui/components/badge"
+} from "@relayrtc/ui/components/avatar"
+import { Badge } from "@relayrtc/ui/components/badge"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@relaykit/ui/components/card"
-import { Separator } from "@relaykit/ui/components/separator"
+} from "@relayrtc/ui/components/card"
+import { Separator } from "@relayrtc/ui/components/separator"
 import { CalendarClock, FolderKanban, Mail, UserRound } from "lucide-react"
 import { redirect } from "next/navigation"
 
@@ -50,7 +50,7 @@ export default async function Page() {
             Hello, {session.user.name}
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            Your RelayKit account is ready. Organizations and projects will
+            Your RelayRTC account is ready. Organizations and projects will
             appear here as they are created in the next phase.
           </p>
         </div>

@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/relaykitcc/relaykit/services/signaling/internal/app"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/app"
 )
 
 func main() {

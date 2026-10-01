@@ -1,6 +1,6 @@
-# @relaykit/protocol
+# @relayrtc/protocol
 
-Versioned realtime wire contracts shared by RelayKit clients and signaling services.
+Versioned realtime wire contracts shared by RelayRTC clients and signaling services.
 
 ```ts
 {

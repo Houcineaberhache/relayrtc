@@ -1,3 +1,3 @@
-# @relaykit/validation
+# @relayrtc/validation
 
-Runtime Zod schemas for RelayKit's shared domain contracts
+Runtime Zod schemas for RelayRTC's shared domain contracts

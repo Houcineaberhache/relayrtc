@@ -1,6 +1,6 @@
-# @relaykit/auth
+# @relayrtc/auth
 
-Shared Better Auth configuration for RelayKit.cc dashboard/app accounts
+Shared Better Auth configuration for RelayRTC.com dashboard/app accounts
 
 ## Required environment
 

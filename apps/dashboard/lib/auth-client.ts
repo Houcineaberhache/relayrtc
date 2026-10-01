@@ -1,3 +1,3 @@
-import { createRelayKitAuthClient } from "@relaykit/auth"
+import { createRelayKitAuthClient } from "@relayrtc/auth"
 
 export const authClient = createRelayKitAuthClient()

@@ -5,7 +5,7 @@ import {
   type UsageEvent,
   type UsageMetrics,
   type UsageRecord,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { z } from "zod";
 
 import {

@@ -1,4 +1,4 @@
-import { apiKeyScopes, apiKeyTypes, type ApiKey, type StoredApiKey } from "@relaykit/types";
+import { apiKeyScopes, apiKeyTypes, type ApiKey, type StoredApiKey } from "@relayrtc/types";
 import { z } from "zod";
 
 import {

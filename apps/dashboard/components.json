@@ -14,8 +14,8 @@
   "rtl": false,
   "aliases": {
     "components": "@/components",
-    "utils": "@relaykit/ui/lib/utils",
-    "ui": "@relaykit/ui/components",
+    "utils": "@relayrtc/ui/lib/utils",
+    "ui": "@relayrtc/ui/components",
     "lib": "@/lib",
     "hooks": "@/hooks"
   },

@@ -12,13 +12,13 @@ describe("email and password validation", () => {
     expect(
       validateSignUpCredentials({
         email: "  Developer@Example.COM ",
-        name: "  RelayKit Developer  ",
+        name: "  RelayRTC Developer  ",
         password: "password123",
       }),
     ).toEqual({
       data: {
         email: "developer@example.com",
-        name: "RelayKit Developer",
+        name: "RelayRTC Developer",
         password: "password123",
       },
       error: null,

@@ -3,7 +3,7 @@ import {
   transportTypes,
   type Participant,
   type ParticipantSession,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { z } from "zod";
 
 import {

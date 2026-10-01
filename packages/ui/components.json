@@ -13,10 +13,10 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@relaykit/ui/components",
-    "utils": "@relaykit/ui/lib/utils",
-    "ui": "@relaykit/ui/components",
-    "lib": "@relaykit/ui/lib"
+    "components": "@relayrtc/ui/components",
+    "utils": "@relayrtc/ui/lib/utils",
+    "ui": "@relayrtc/ui/components",
+    "lib": "@relayrtc/ui/lib"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

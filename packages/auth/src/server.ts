@@ -1,4 +1,4 @@
-import { createDatabase, schema, type RelayKitDatabase } from "@relaykit/database";
+import { createDatabase, schema, type RelayKitDatabase } from "@relayrtc/database";
 import type { Auth, BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { betterAuth } from "better-auth/minimal";
@@ -37,7 +37,7 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions): RelayKitAuth =
       },
       encryptOAuthTokens: true,
     },
-    appName: "RelayKit",
+    appName: "RelayRTC",
     advanced: {
       defaultCookieAttributes: sessionCookieAttributes(options.baseUrl),
     },

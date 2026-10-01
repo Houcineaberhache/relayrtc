@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-RelayKit is in pre-release development. Security fixes are applied to the latest revision of the default branch until versioned releases are available.
+RelayRTC is in pre-release development. Security fixes are applied to the latest revision of the default branch until versioned releases are available.
 
 ## Reporting a vulnerability
 
 Do not disclose suspected vulnerabilities in public issues, discussions, pull requests, or chat channels.
 
-Use GitHub's private vulnerability reporting feature for the `relaykitcc/relaykit` repository. Include:
+Use GitHub's private vulnerability reporting feature for the `relayrtc/relayrtc` repository. Include:
 
 - the affected component and revision
 - reproduction steps or a proof of concept

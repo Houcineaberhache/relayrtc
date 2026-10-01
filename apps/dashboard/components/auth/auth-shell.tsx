@@ -1,5 +1,5 @@
-import { RelayKitLogo } from "@/components/brand/relaykit-logo"
-import { Card, CardContent, CardHeader } from "@relaykit/ui/components/card"
+import { RelayKitLogo } from "@/components/brand/relayrtc-logo"
+import { Card, CardContent, CardHeader } from "@relayrtc/ui/components/card"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
@@ -16,7 +16,7 @@ export function AuthShell({ children, description, title }: AuthShellProps) {
         <Link
           href="/"
           className="mx-auto mb-8 flex w-fit"
-          aria-label="RelayKit dashboard"
+          aria-label="RelayRTC dashboard"
         >
           <RelayKitLogo />
         </Link>
@@ -28,7 +28,7 @@ export function AuthShell({ children, description, title }: AuthShellProps) {
           <CardContent>{children}</CardContent>
         </Card>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          By continuing, you agree to RelayKit&apos;s terms and privacy policy.
+          By continuing, you agree to RelayRTC&apos;s terms and privacy policy.
         </p>
       </div>
     </main>

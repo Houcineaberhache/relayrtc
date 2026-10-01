@@ -18,7 +18,7 @@ import type {
   WebhookDeliveryId,
   WebhookEndpointId,
   WebhookEventId,
-} from "@relaykit/types";
+} from "@relayrtc/types";
 import { z } from "zod";
 
 function brandedIdentifierSchema<Name extends string>() {

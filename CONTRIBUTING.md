@@ -1,6 +1,6 @@
-# Contributing to RelayKit
+# Contributing to RelayRTC
 
-Thank you for helping build RelayKit.
+Thank you for helping build RelayRTC.
 
 ## Before starting
 

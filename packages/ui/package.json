@@ -1,7 +1,7 @@
 {
-  "name": "@relaykit/ui",
+  "name": "@relayrtc/ui",
   "version": "0.0.0",
-  "description": "Shared RelayKit interface components and design tokens.",
+  "description": "Shared RelayRTC interface components and design tokens.",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",

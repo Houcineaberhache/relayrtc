@@ -1,4 +1,4 @@
-import { createRelayKitAuthFromEnvironment } from "@relaykit/auth"
+import { createRelayKitAuthFromEnvironment } from "@relayrtc/auth"
 
 type AuthRuntime = ReturnType<typeof createRelayKitAuthFromEnvironment>
 

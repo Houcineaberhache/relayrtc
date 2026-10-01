@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose an improvement to RelayKit
+description: Propose an improvement to RelayRTC
 title: "[Feature]: "
 labels:
   - enhancement
@@ -8,7 +8,7 @@ body:
     id: problem
     attributes:
       label: Problem
-      description: What developer or operator problem should RelayKit solve?
+      description: What developer or operator problem should RelayRTC solve?
     validations:
       required: true
   - type: textarea
