@@ -1,10 +1,12 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { CreateOrganizationForm } from "@/components/organizations/create-organization-form"
 import { OrganizationList } from "@/components/organizations/organization-list"
+import { OrganizationInvitations } from "@/components/organizations/organization-invitations"
 import { OrganizationSettings } from "@/components/organizations/organization-settings"
 import {
   getCurrentOrganizations,
   getCurrentSession,
+  getOrganizationInvitationManagement,
 } from "@/lib/auth-session"
 import {
   Avatar,
@@ -50,6 +52,9 @@ export default async function Page() {
   const activeOrganization = organizations.find(
     (organization) => organization.id === session.session.activeOrganizationId
   )
+  const invitationManagement = activeOrganization
+    ? await getOrganizationInvitationManagement(activeOrganization.id)
+    : { canManage: false, invitations: [] }
 
   return (
     <div className="min-h-svh bg-muted/30">
@@ -75,6 +80,12 @@ export default async function Page() {
         />
 
         <OrganizationSettings organization={activeOrganization} />
+
+        <OrganizationInvitations
+          canManage={invitationManagement.canManage}
+          invitations={invitationManagement.invitations}
+          organization={activeOrganization}
+        />
 
         <Card>
           <CardHeader>
