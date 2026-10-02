@@ -111,6 +111,7 @@ export default async function ProjectPage({
         <ProjectEnvironments
           canManage={canManage}
           environments={environments}
+          projectId={project.id}
         />
 
         <ProjectApiKeys

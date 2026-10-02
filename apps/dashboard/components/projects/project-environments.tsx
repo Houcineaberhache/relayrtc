@@ -1,3 +1,4 @@
+import { CreateEnvironmentForm } from "@/components/projects/create-environment-form"
 import { EnvironmentSettingsForm } from "@/components/projects/environment-settings-form"
 import type { EnvironmentRecord } from "@/lib/projects/project-service"
 import { Badge } from "@relayrtc/ui/components/badge"
@@ -12,9 +13,11 @@ import {
 export function ProjectEnvironments({
   canManage,
   environments,
+  projectId,
 }: {
   canManage: boolean
   environments: readonly EnvironmentRecord[]
+  projectId: string
 }) {
   return (
     <Card>
@@ -44,6 +47,7 @@ export function ProjectEnvironments({
               <div>
                 <p className="font-medium">{environment.name}</p>
                 <p className="text-sm text-muted-foreground">{environment.slug}</p>
+                <code className="text-xs text-muted-foreground">{environment.id}</code>
               </div>
               <Badge variant="secondary" className="capitalize">
                 {environment.type}
@@ -51,6 +55,7 @@ export function ProjectEnvironments({
             </div>
           )
         )}
+        {canManage ? <CreateEnvironmentForm projectId={projectId} /> : null}
       </CardContent>
     </Card>
   )
