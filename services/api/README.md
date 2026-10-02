@@ -12,12 +12,17 @@ The Fastify service exposes RelayRTC's versioned public API.
 - `GET /v1/rooms/:roomId` — get a scoped room (`rooms:read`)
 - `DELETE /v1/rooms/:roomId` — end a scoped room (`rooms:end`)
 - `POST /v1/rooms/:roomId/tokens` — create a signed participant token (`tokens:create`)
+- `GET /v1/rooms/:roomId/participants` — list room participants (`participants:read`)
+- `GET /v1/rooms/:roomId/participants/:participantId` — get a participant (`participants:read`)
+- `DELETE /v1/rooms/:roomId/participants/:participantId` — remove a participant (`participants:remove`)
 
 All `/v1` routes require an API key in the `Authorization: Bearer <key>` header. The key determines the project and environment scope. Clients may also send `x-relayrtc-project-id` and `x-relayrtc-environment-id`; mismatched values are rejected.
 
 Room listing accepts `limit`, `cursor`, and `status` query parameters. Ending a room preserves its historical record and is idempotent.
 
 Participant tokens are short-lived HS256 JWTs scoped to one project, environment, room, and participant. Requests may choose permissions and a lifetime from 60 to 3,600 seconds; the default is 600 seconds with only `room:join` permission.
+
+Participant listing accepts `limit`, `cursor`, and `status` (`active` or `left`) query parameters. Removing a participant records `leftAt`, preserves historical data, and is idempotent.
 
 ## Environment
 

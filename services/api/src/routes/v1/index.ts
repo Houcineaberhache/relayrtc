@@ -5,6 +5,7 @@ import { registerAuthentication } from "../../authentication/authentication-plug
 import { ApiError } from "../../http/errors/api-error.js";
 import { participantTokenRoutes } from "../../modules/participant-tokens/participant-token.routes.js";
 import type { ParticipantTokenSigner } from "../../modules/participant-tokens/participant-token.signer.js";
+import { participantRoutes } from "../../modules/participants/participant.routes.js";
 import { roomRoutes } from "../../modules/rooms/room.routes.js";
 
 interface V1RoutesOptions {
@@ -34,6 +35,7 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
     database: options.database,
     signer: options.participantTokenSigner,
   });
+  void app.register(participantRoutes, { database: options.database });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-relayrtc-api-version", "v1");
