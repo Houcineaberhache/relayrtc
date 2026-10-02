@@ -4,6 +4,8 @@ import { OrganizationList } from "@/components/organizations/organization-list"
 import { OrganizationInvitations } from "@/components/organizations/organization-invitations"
 import { OrganizationMembers } from "@/components/organizations/organization-members"
 import { OrganizationSettings } from "@/components/organizations/organization-settings"
+import { OrganizationProjects } from "@/components/projects/organization-projects"
+import { getAuthRuntime } from "@/lib/auth-server"
 import {
   getActiveOrganizationRole,
   getCurrentOrganizations,
@@ -11,6 +13,7 @@ import {
   getCurrentSession,
   getOrganizationInvitationManagement,
 } from "@/lib/auth-session"
+import { listOrganizationProjects } from "@/lib/projects/project-service"
 import {
   Avatar,
   AvatarFallback,
@@ -25,7 +28,7 @@ import {
   CardTitle,
 } from "@relayrtc/ui/components/card"
 import { Separator } from "@relayrtc/ui/components/separator"
-import { CalendarClock, FolderKanban, Mail, UserRound } from "lucide-react"
+import { CalendarClock, Mail, UserRound } from "lucide-react"
 import { redirect } from "next/navigation"
 
 export const dynamic = "force-dynamic"
@@ -64,6 +67,16 @@ export default async function Page() {
   const invitationManagement = activeOrganization
     ? await getOrganizationInvitationManagement(activeOrganization.id)
     : { canManage: false, invitations: [] }
+  const projectResult = activeOrganization
+    ? await listOrganizationProjects(
+        { database: getAuthRuntime().database, userId: session.user.id },
+        activeOrganization.id
+      )
+    : { data: [], error: null }
+  const canManageProjects =
+    currentRole?.role
+      .split(",")
+      .some((role) => role === "owner" || role === "admin") ?? false
 
   return (
     <div className="min-h-svh bg-muted/30">
@@ -89,6 +102,12 @@ export default async function Page() {
         />
 
         <OrganizationSettings organization={activeOrganization} />
+
+        <OrganizationProjects
+          canManage={canManageProjects}
+          organization={activeOrganization}
+          projects={projectResult.data ?? []}
+        />
 
         <OrganizationMembers
           currentRole={currentRole?.role}
@@ -187,16 +206,6 @@ export default async function Page() {
                   <p className="text-sm text-muted-foreground">Expires</p>
                   <p className="font-medium">
                     {formatDate(session.session.expiresAt)}
-                  </p>
-                </div>
-              </div>
-              <Separator />
-              <div className="flex items-start gap-3 rounded-xl bg-muted p-4">
-                <FolderKanban className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">No projects yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Project creation arrives with organization management.
                   </p>
                 </div>
               </div>
