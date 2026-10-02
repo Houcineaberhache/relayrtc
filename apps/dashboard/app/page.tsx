@@ -2,9 +2,12 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { CreateOrganizationForm } from "@/components/organizations/create-organization-form"
 import { OrganizationList } from "@/components/organizations/organization-list"
 import { OrganizationInvitations } from "@/components/organizations/organization-invitations"
+import { OrganizationMembers } from "@/components/organizations/organization-members"
 import { OrganizationSettings } from "@/components/organizations/organization-settings"
 import {
+  getActiveOrganizationRole,
   getCurrentOrganizations,
+  getCurrentOrganizationMembers,
   getCurrentSession,
   getOrganizationInvitationManagement,
 } from "@/lib/auth-session"
@@ -52,6 +55,12 @@ export default async function Page() {
   const activeOrganization = organizations.find(
     (organization) => organization.id === session.session.activeOrganizationId
   )
+  const [memberManagement, currentRole] = activeOrganization
+    ? await Promise.all([
+        getCurrentOrganizationMembers(activeOrganization.id),
+        getActiveOrganizationRole(),
+      ])
+    : [{ members: [], total: 0 }, undefined]
   const invitationManagement = activeOrganization
     ? await getOrganizationInvitationManagement(activeOrganization.id)
     : { canManage: false, invitations: [] }
@@ -80,6 +89,13 @@ export default async function Page() {
         />
 
         <OrganizationSettings organization={activeOrganization} />
+
+        <OrganizationMembers
+          currentRole={currentRole?.role}
+          currentUserId={session.user.id}
+          members={memberManagement.members}
+          organization={activeOrganization}
+        />
 
         <OrganizationInvitations
           canManage={invitationManagement.canManage}

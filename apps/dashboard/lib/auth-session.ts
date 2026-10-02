@@ -24,6 +24,12 @@ export const getCurrentOrganizationInvitations = async (
     query: { organizationId },
   })
 
+export const getCurrentOrganizationMembers = async (organizationId: string) =>
+  getAuthRuntime().auth.api.listMembers({
+    headers: await headers(),
+    query: { organizationId },
+  })
+
 export const getOrganizationInvitation = async (id: string) =>
   getAuthRuntime().auth.api.getInvitation({
     headers: await headers(),
