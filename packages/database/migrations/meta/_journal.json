@@ -29,6 +29,13 @@
       "when": 1790956800001,
       "tag": "0003_project_management",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790956800002,
+      "tag": "0004_project_environment_api_keys",
+      "breakpoints": true
     }
   ]
 }
