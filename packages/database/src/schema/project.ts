@@ -49,6 +49,7 @@ export const environment = pgTable(
   (table) => [
     index("environment_project_id_idx").on(table.projectId),
     index("environment_type_idx").on(table.type),
+    uniqueIndex("environment_id_project_id_idx").on(table.id, table.projectId),
     uniqueIndex("environment_project_slug_idx").on(table.projectId, table.slug),
     check(
       "environment_type_check",
