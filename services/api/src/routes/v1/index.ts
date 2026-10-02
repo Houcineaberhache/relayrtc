@@ -3,6 +3,7 @@ import type { FastifyPluginCallback } from "fastify";
 
 import { registerAuthentication } from "../../authentication/authentication-plugin.js";
 import { ApiError } from "../../http/errors/api-error.js";
+import { roomRoutes } from "../../modules/rooms/room.routes.js";
 
 interface V1RoutesOptions {
   database: RelayKitDatabase;
@@ -24,6 +25,8 @@ const contextResponseSchema = {
 
 export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, done) => {
   registerAuthentication(app, options.database);
+
+  void app.register(roomRoutes, { database: options.database });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-relayrtc-api-version", "v1");
