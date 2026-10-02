@@ -29,6 +29,16 @@ describe("project schema", () => {
     expect(foreignKeys[0]?.onDelete).toBe("cascade");
   });
 
+  it("protects the required Development and Production environments", () => {
+    const columns = getTableColumns(environment);
+    const checks = getTableConfig(environment).checks;
+
+    expect(columns.deletionProtected.notNull).toBe(true);
+    expect(
+      checks.some((constraint) => constraint.name === "environment_defaults_protected_check"),
+    ).toBe(true);
+  });
+
   it("cascades projects when their organization is deleted", () => {
     const foreignKeys = getTableConfig(project).foreignKeys;
 

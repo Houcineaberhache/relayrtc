@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { organization } from "./organization.js";
 
@@ -40,6 +40,7 @@ export const environment = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     type: text("type").notNull(),
+    deletionProtected: boolean("deletion_protected").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
@@ -54,6 +55,10 @@ export const environment = pgTable(
     check(
       "environment_type_check",
       sql`${table.type} in ('development', 'production', 'preview', 'staging', 'custom')`,
+    ),
+    check(
+      "environment_defaults_protected_check",
+      sql`${table.type} not in ('development', 'production') or ${table.deletionProtected} = true`,
     ),
   ],
 );
