@@ -50,6 +50,13 @@
       "when": 1790964961966,
       "tag": "0006_room_api",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790969186776,
+      "tag": "0007_participant_administration",
+      "breakpoints": true
     }
   ]
 }
