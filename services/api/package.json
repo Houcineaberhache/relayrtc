@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@relayrtc/database": "workspace:*",
+    "@relayrtc/types": "workspace:*",
     "@relayrtc/validation": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
