@@ -65,7 +65,7 @@ export const registerAuthentication = (
 
 export const requireApiKeyScope =
   (scope: ApiKeyScope) =>
-  (request: FastifyRequest): void => {
+  (request: FastifyRequest): Promise<void> => {
     const principal = request.apiKey;
     if (!principal) {
       throw new ApiError(401, "AUTHENTICATION_REQUIRED", "Provide a valid API key");
@@ -78,4 +78,6 @@ export const requireApiKeyScope =
         `The API key requires the ${scope} scope`,
       );
     }
+
+    return Promise.resolve();
   };

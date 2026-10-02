@@ -32,6 +32,11 @@ COPY --from=builder --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=builder --chown=node:node /workspace/packages/database/package.json ./packages/database/package.json
 COPY --from=builder --chown=node:node /workspace/packages/database/dist ./packages/database/dist
 COPY --from=builder --chown=node:node /workspace/packages/database/node_modules ./packages/database/node_modules
+COPY --from=builder --chown=node:node /workspace/packages/types/package.json ./packages/types/package.json
+COPY --from=builder --chown=node:node /workspace/packages/types/dist ./packages/types/dist
+COPY --from=builder --chown=node:node /workspace/packages/validation/package.json ./packages/validation/package.json
+COPY --from=builder --chown=node:node /workspace/packages/validation/dist ./packages/validation/dist
+COPY --from=builder --chown=node:node /workspace/packages/validation/node_modules ./packages/validation/node_modules
 COPY --from=builder --chown=node:node /workspace/services/api/package.json ./services/api/package.json
 COPY --from=builder --chown=node:node /workspace/services/api/dist ./services/api/dist
 COPY --from=builder --chown=node:node /workspace/services/api/node_modules ./services/api/node_modules

@@ -56,6 +56,17 @@ func TestValidatorAcceptsScopedParticipantToken(t *testing.T) {
 	}
 }
 
+func TestValidatorAcceptsISOTimestampsWithMillisecondPrecision(t *testing.T) {
+	validator := NewValidator(testSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1")
+	_, err := validator.Validate(signedToken(t, func(claims *Claims) {
+		claims.IssuedAtISO = claims.IssuedAt.Time.Add(723 * time.Millisecond).Format(time.RFC3339Nano)
+		claims.ExpiresAtISO = claims.ExpiresAt.Time.Add(723 * time.Millisecond).Format(time.RFC3339Nano)
+	}))
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestValidatorRejectsInvalidTokens(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -76,6 +87,9 @@ func TestValidatorRejectsInvalidTokens(t *testing.T) {
 			expiresAt := claims.IssuedAt.Time.Add(2 * time.Hour)
 			claims.ExpiresAt = jwt.NewNumericDate(expiresAt)
 			claims.ExpiresAtISO = expiresAt.Format(time.RFC3339Nano)
+		}},
+		{"inconsistent timestamps", NewValidator(testSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"), func(claims *Claims) {
+			claims.IssuedAtISO = claims.IssuedAt.Time.Add(time.Second).Format(time.RFC3339Nano)
 		}},
 	}
 
