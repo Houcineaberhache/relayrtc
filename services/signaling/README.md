@@ -13,9 +13,13 @@ The server selects only `relayrtc.v1`, so the credential is not echoed as the ne
 
 Connections are closed when the token expires, the pong deadline is missed, the client disconnects, or the service shuts down. `/health` reports process liveness and `/ready` reports listener readiness.
 
+After connecting, clients send a version `1` `participant.join` request containing the scoped room ID and the same participant token used for the handshake. The accepted response includes the room, local participant, durable connection session, and active participant snapshot. Joined connections receive `participant.joined` and `participant.left` discovery events. A `participant.leave` request ends the durable session and closes the connection; unexpected disconnects perform the same cleanup.
+
 ## Configuration
 
 - `RELAYRTC_SIGNALING_ADDRESS` — listener address, defaults to `:8081`
+- `DATABASE_URL` — PostgreSQL connection used for room and participant sessions
+- `RELAYRTC_SIGNALING_NODE_ID` — stable identifier recorded on connection sessions
 - `RELAYRTC_SIGNALING_ALLOWED_ORIGINS` — comma-separated browser origins
 - `RELAYRTC_SIGNALING_HEARTBEAT_INTERVAL` — ping interval, defaults to `20s`
 - `RELAYRTC_SIGNALING_PONG_TIMEOUT` — pong deadline, defaults to `60s`
