@@ -12,6 +12,50 @@ import {
 
 export const apiKeyTypeSchema = z.enum(apiKeyTypes);
 export const apiKeyScopeSchema = z.enum(apiKeyScopes);
+export const availableApiKeyScopes = apiKeyScopes;
+export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
+
+const uniqueApiKeyScopesSchema = z
+  .array(apiKeyScopeSchema)
+  .max(apiKeyScopes.length)
+  .refine((values) => new Set(values).size === values.length, {
+    message: "API key scopes must be unique",
+  });
+
+export const createApiKeyInputSchema = z
+  .object({
+    projectId: projectIdSchema,
+    environmentId: environmentIdSchema,
+    name: nameSchema,
+    type: apiKeyTypeSchema,
+    scopes: uniqueApiKeyScopesSchema,
+    expiresAt: isoDateTimeSchema.nullable(),
+  })
+  .strict()
+  .refine(hasValidApiKeyAccess, {
+    message: "Publishable API keys cannot have privileged scopes",
+    path: ["scopes"],
+  });
+
+export type CreateApiKeyInput = z.infer<typeof createApiKeyInputSchema>;
+
+export const rotateApiKeyInputSchema = z
+  .object({
+    apiKeyId: apiKeyIdSchema,
+    projectId: projectIdSchema,
+  })
+  .strict();
+
+export type RotateApiKeyInput = z.infer<typeof rotateApiKeyInputSchema>;
+
+export const revokeApiKeyInputSchema = z
+  .object({
+    apiKeyId: apiKeyIdSchema,
+    projectId: projectIdSchema,
+  })
+  .strict();
+
+export type RevokeApiKeyInput = z.infer<typeof revokeApiKeyInputSchema>;
 
 const apiKeyShape = {
   id: apiKeyIdSchema,
@@ -20,12 +64,7 @@ const apiKeyShape = {
   name: nameSchema,
   type: apiKeyTypeSchema,
   prefix: z.string().min(8).max(32),
-  scopes: z
-    .array(apiKeyScopeSchema)
-    .max(apiKeyScopes.length)
-    .refine((values) => new Set(values).size === values.length, {
-      message: "API key scopes must be unique",
-    }),
+  scopes: uniqueApiKeyScopesSchema,
   createdAt: isoDateTimeSchema,
   lastUsedAt: isoDateTimeSchema.nullable(),
   expiresAt: isoDateTimeSchema.nullable(),

@@ -8,7 +8,13 @@ import type {
 } from "@relayrtc/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { apiKeySchema, storedApiKeySchema } from "./api-key.js";
+import {
+  apiKeySchema,
+  createApiKeyInputSchema,
+  revokeApiKeyInputSchema,
+  rotateApiKeyInputSchema,
+  storedApiKeySchema,
+} from "./api-key.js";
 import { usageEventSchema, usageRecordSchema } from "./usage.js";
 import { webhookDeliverySchema, webhookEndpointSchema } from "./webhook.js";
 
@@ -75,6 +81,45 @@ const usageMetrics = {
 };
 
 describe("API key schemas", () => {
+  it("validates environment-scoped key operations", () => {
+    expect(
+      createApiKeyInputSchema.parse({
+        projectId: "project_123",
+        environmentId: "environment_123",
+        name: "Production backend",
+        type: "secret",
+        scopes: ["rooms:create", "tokens:create"],
+        expiresAt: "2027-10-01T00:00:00Z",
+      }),
+    ).toMatchObject({
+      projectId: "project_123",
+      environmentId: "environment_123",
+      type: "secret",
+    });
+    expect(
+      createApiKeyInputSchema.safeParse({
+        projectId: "project_123",
+        environmentId: "environment_123",
+        name: "Browser",
+        type: "publishable",
+        scopes: ["rooms:create"],
+        expiresAt: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      rotateApiKeyInputSchema.safeParse({
+        apiKeyId: "key_123",
+        projectId: "project_123",
+      }).success,
+    ).toBe(true);
+    expect(
+      revokeApiKeyInputSchema.safeParse({
+        apiKeyId: "key_123",
+        projectId: "project_123",
+      }).success,
+    ).toBe(true);
+  });
+
   it("parses public and stored API key contracts", () => {
     const apiKey = apiKeySchema.parse(secretApiKey);
     const storedApiKey = storedApiKeySchema.parse({
