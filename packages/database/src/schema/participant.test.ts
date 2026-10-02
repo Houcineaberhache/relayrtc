@@ -2,7 +2,7 @@ import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { participant } from "./participant.js";
+import { participant, participantSession } from "./participant.js";
 
 describe("participant schema", () => {
   it("maps participant identity and lifecycle fields", () => {
@@ -30,5 +30,15 @@ describe("participant schema", () => {
     expect(indexes.some((index) => index.config.name === "participant_room_left_at_idx")).toBe(
       true,
     );
+  });
+
+  it("maps participant connection sessions", () => {
+    const columns = getTableColumns(participantSession);
+    const foreignKeys = getTableConfig(participantSession).foreignKeys;
+
+    expect(getTableName(participantSession)).toBe("participant_session");
+    expect(columns.signalingNodeId.notNull).toBe(true);
+    expect(columns.connectionState.notNull).toBe(true);
+    expect(foreignKeys[0]?.onDelete).toBe("cascade");
   });
 });

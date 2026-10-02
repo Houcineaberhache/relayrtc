@@ -57,6 +57,13 @@
       "when": 1790969186776,
       "tag": "0007_participant_administration",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790978043123,
+      "tag": "0008_room_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -33,3 +33,39 @@ export const participantRelations = relations(participant, ({ one }) => ({
     references: [room.id],
   }),
 }));
+
+export const participantSession = pgTable(
+  "participant_session",
+  {
+    id: text("id").primaryKey(),
+    participantId: text("participant_id")
+      .notNull()
+      .references(() => participant.id, { onDelete: "cascade" }),
+    signalingNodeId: text("signaling_node_id").notNull(),
+    mediaNodeId: text("media_node_id"),
+    connectionState: text("connection_state").default("connected").notNull(),
+    transportType: text("transport_type").default("tcp").notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
+    reconnectedAt: timestamp("reconnected_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("participant_session_participant_id_idx").on(table.participantId),
+    index("participant_session_node_state_idx").on(table.signalingNodeId, table.connectionState),
+    check(
+      "participant_session_connection_state_check",
+      sql`${table.connectionState} in ('connecting', 'connected', 'reconnecting', 'disconnected', 'failed')`,
+    ),
+    check(
+      "participant_session_transport_type_check",
+      sql`${table.transportType} in ('udp', 'tcp', 'tls')`,
+    ),
+  ],
+);
+
+export const participantSessionRelations = relations(participantSession, ({ one }) => ({
+  participant: one(participant, {
+    fields: [participantSession.participantId],
+    references: [participant.id],
+  }),
+}));
