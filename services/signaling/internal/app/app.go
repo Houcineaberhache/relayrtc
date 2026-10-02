@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/config"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/connection"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
 func Run(ctx context.Context) error {
@@ -25,11 +28,21 @@ func Run(ctx context.Context) error {
 		cfg.TokenAudience,
 		cfg.TokenKeyID,
 	)
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		return err
+	}
 	connections := connection.NewHandler(connection.Options{
 		AllowedOrigins:    cfg.AllowedOrigins,
 		HeartbeatInterval: cfg.HeartbeatInterval,
 		MaxMessageBytes:   cfg.MaxMessageBytes,
+		NodeID:            cfg.SignalingNodeID,
 		PongTimeout:       cfg.PongTimeout,
+		SessionStore:      session.NewStore(pool),
 		Shutdown:          ctx,
 		Validator:         validator,
 		WriteTimeout:      cfg.WriteTimeout,
