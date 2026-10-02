@@ -1,0 +1,26 @@
+{
+  "name": "@relayrtc/api",
+  "version": "0.0.0",
+  "description": "Versioned public REST API for RelayRTC.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "clean": "rimraf dist coverage",
+    "lint": "eslint .",
+    "start": "node --enable-source-maps dist/server.js",
+    "test": "vitest run --pool=threads --exclude dist/**",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@relayrtc/database": "workspace:*",
+    "@relayrtc/validation": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}
