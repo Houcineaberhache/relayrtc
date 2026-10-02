@@ -10,6 +10,10 @@ import {
   type OAuthProviderCredentials,
 } from "./environment.js";
 import { toAuthError } from "./errors.js";
+import {
+  createResendInvitationSender,
+  type OrganizationInvitationSender,
+} from "./invitation-email.js";
 import { organizationRoles } from "./organization.js";
 import { relayKitSessionPolicy, sessionCookieAttributes } from "./session.js";
 
@@ -18,6 +22,7 @@ export interface RelayKitAuthOptions {
   database: RelayKitDatabase;
   oauthProviders: OAuthProviderCredentials;
   secret: string;
+  sendInvitationEmail?: OrganizationInvitationSender;
   trustedOrigins?: string[];
 }
 
@@ -57,6 +62,9 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions) => {
       organization({
         creatorRole: "owner",
         roles: organizationRoles,
+        ...(options.sendInvitationEmail
+          ? { sendInvitationEmail: options.sendInvitationEmail }
+          : {}),
         schema: {
           member: {
             additionalFields: {
@@ -140,6 +148,11 @@ export const createRelayKitAuthFromEnvironment = (
     database: database.db,
     oauthProviders: environment.oauthProviders,
     secret: environment.secret,
+    sendInvitationEmail: createResendInvitationSender({
+      apiKey: environment.email.apiKey,
+      baseUrl: environment.baseUrl,
+      from: environment.email.from,
+    }),
     trustedOrigins: environment.trustedOrigins,
   });
 

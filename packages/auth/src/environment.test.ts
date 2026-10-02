@@ -10,6 +10,8 @@ const validEnvironment = {
   GITHUB_CLIENT_SECRET: "github-client-secret",
   GOOGLE_CLIENT_ID: "google-client-id",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
+  RESEND_API_KEY: "re_test_123",
+  RESEND_FROM_EMAIL: "RelayRTC <noreply@relayrtc.com>",
 };
 
 describe("readAuthEnvironment", () => {
@@ -22,6 +24,10 @@ describe("readAuthEnvironment", () => {
     ).toEqual({
       baseUrl: "http://localhost:3000",
       databaseUrl: validEnvironment.DATABASE_URL,
+      email: {
+        apiKey: validEnvironment.RESEND_API_KEY,
+        from: validEnvironment.RESEND_FROM_EMAIL,
+      },
       oauthProviders: {
         github: {
           clientId: validEnvironment.GITHUB_CLIENT_ID,
@@ -63,6 +69,18 @@ describe("readAuthEnvironment", () => {
 
   it.each(["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"])(
     "requires the %s OAuth credential",
+    (name) => {
+      expect(() =>
+        readAuthEnvironment({
+          ...validEnvironment,
+          [name]: "",
+        }),
+      ).toThrow(`${name} is required`);
+    },
+  );
+
+  it.each(["RESEND_API_KEY", "RESEND_FROM_EMAIL"])(
+    "requires the %s email configuration",
     (name) => {
       expect(() =>
         readAuthEnvironment({

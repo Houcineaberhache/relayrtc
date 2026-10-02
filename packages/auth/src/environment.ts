@@ -13,6 +13,10 @@ export interface OAuthProviderCredentials {
 export interface AuthEnvironment {
   baseUrl: string;
   databaseUrl: string;
+  email: {
+    apiKey: string;
+    from: string;
+  };
   oauthProviders: OAuthProviderCredentials;
   secret: string;
   trustedOrigins: string[];
@@ -76,6 +80,10 @@ export const readAuthEnvironment = (source: AuthEnvironmentSource): AuthEnvironm
   return {
     baseUrl,
     databaseUrl,
+    email: {
+      apiKey: readRequired(source, "RESEND_API_KEY"),
+      from: readRequired(source, "RESEND_FROM_EMAIL"),
+    },
     oauthProviders: {
       github: {
         clientId: readRequired(source, "GITHUB_CLIENT_ID"),

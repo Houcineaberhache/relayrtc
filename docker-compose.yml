@@ -16,6 +16,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET must be set in .env}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID must be set in .env}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY must be set in .env}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL must be set in .env}
     depends_on:
       migrate:
         condition: service_completed_successfully
