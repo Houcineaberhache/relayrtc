@@ -9,6 +9,10 @@ const config: ApiConfig = {
   host: "127.0.0.1",
   logLevel: "silent",
   nodeEnvironment: "test",
+  participantTokenAudience: "relayrtc-realtime",
+  participantTokenIssuer: "relayrtc-api",
+  participantTokenKeyId: "participant-v1",
+  participantTokenSigningSecret: "a-secure-participant-token-secret-123",
   port: 8080,
   trustProxy: false,
 };

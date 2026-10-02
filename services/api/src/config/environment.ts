@@ -26,6 +26,10 @@ const environmentSchema = z
         }
       }, "DATABASE_URL must be a valid PostgreSQL URL"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PARTICIPANT_TOKEN_AUDIENCE: z.string().trim().min(1).default("relayrtc-realtime"),
+    PARTICIPANT_TOKEN_ISSUER: z.string().trim().min(1).default("relayrtc-api"),
+    PARTICIPANT_TOKEN_KEY_ID: z.string().trim().min(1).max(128).default("participant-v1"),
+    PARTICIPANT_TOKEN_SIGNING_SECRET: z.string().min(32),
   })
   .strict();
 
@@ -34,6 +38,10 @@ export interface ApiConfig {
   host: string;
   logLevel: (typeof logLevels)[number];
   nodeEnvironment: "development" | "test" | "production";
+  participantTokenAudience: string;
+  participantTokenIssuer: string;
+  participantTokenKeyId: string;
+  participantTokenSigningSecret: string;
   port: number;
   trustProxy: boolean;
 }
@@ -46,6 +54,10 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     API_TRUST_PROXY: source.API_TRUST_PROXY,
     DATABASE_URL: source.DATABASE_URL,
     NODE_ENV: source.NODE_ENV,
+    PARTICIPANT_TOKEN_AUDIENCE: source.PARTICIPANT_TOKEN_AUDIENCE,
+    PARTICIPANT_TOKEN_ISSUER: source.PARTICIPANT_TOKEN_ISSUER,
+    PARTICIPANT_TOKEN_KEY_ID: source.PARTICIPANT_TOKEN_KEY_ID,
+    PARTICIPANT_TOKEN_SIGNING_SECRET: source.PARTICIPANT_TOKEN_SIGNING_SECRET,
   });
 
   if (!parsed.success) {
@@ -60,6 +72,10 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     host: parsed.data.API_HOST,
     logLevel: parsed.data.API_LOG_LEVEL,
     nodeEnvironment: parsed.data.NODE_ENV,
+    participantTokenAudience: parsed.data.PARTICIPANT_TOKEN_AUDIENCE,
+    participantTokenIssuer: parsed.data.PARTICIPANT_TOKEN_ISSUER,
+    participantTokenKeyId: parsed.data.PARTICIPANT_TOKEN_KEY_ID,
+    participantTokenSigningSecret: parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
     port: parsed.data.API_PORT,
     trustProxy: parsed.data.API_TRUST_PROXY,
   };
