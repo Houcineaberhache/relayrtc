@@ -22,11 +22,13 @@ const (
 type Config struct {
 	Address                string
 	AllowedOrigins         []string
+	DatabaseURL            string
 	HeartbeatInterval      time.Duration
 	MaxMessageBytes        int64
 	ParticipantTokenSecret string
 	PongTimeout            time.Duration
 	ShutdownTimeout        time.Duration
+	SignalingNodeID        string
 	TokenAudience          string
 	TokenIssuer            string
 	TokenKeyID             string
@@ -72,6 +74,10 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	if len(secret) < 32 {
 		return Config{}, fmt.Errorf("PARTICIPANT_TOKEN_SIGNING_SECRET must contain at least 32 characters")
 	}
+	databaseURL, _ := lookup("DATABASE_URL")
+	if strings.TrimSpace(databaseURL) == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
 
 	allowedOrigins := splitList(valueOrDefault(
 		lookup,
@@ -92,11 +98,13 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	return Config{
 		Address:                address,
 		AllowedOrigins:         allowedOrigins,
+		DatabaseURL:            databaseURL,
 		HeartbeatInterval:      heartbeatInterval,
 		MaxMessageBytes:        maxMessageBytes,
 		ParticipantTokenSecret: secret,
 		PongTimeout:            pongTimeout,
 		ShutdownTimeout:        shutdownTimeout,
+		SignalingNodeID:        valueOrDefault(lookup, "RELAYRTC_SIGNALING_NODE_ID", "signaling-local"),
 		TokenAudience:          valueOrDefault(lookup, "PARTICIPANT_TOKEN_AUDIENCE", "relayrtc-realtime"),
 		TokenIssuer:            valueOrDefault(lookup, "PARTICIPANT_TOKEN_ISSUER", "relayrtc-api"),
 		TokenKeyID:             valueOrDefault(lookup, "PARTICIPANT_TOKEN_KEY_ID", "participant-v1"),

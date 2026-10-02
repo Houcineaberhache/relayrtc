@@ -8,6 +8,7 @@ import (
 
 func testEnvironment(overrides map[string]string) func(string) (string, bool) {
 	values := map[string]string{
+		"DATABASE_URL":                     "postgresql://relayrtc:password@localhost:5432/relayrtc",
 		"PARTICIPANT_TOKEN_SIGNING_SECRET": "a-secure-participant-token-secret-123",
 	}
 	for key, value := range overrides {
