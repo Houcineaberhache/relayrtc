@@ -52,8 +52,21 @@ export const deleteProjectInputSchema = z
 
 export type DeleteProjectInput = z.infer<typeof deleteProjectInputSchema>;
 
+export const createEnvironmentInputSchema = z
+  .object({
+    deletionProtected: z.boolean(),
+    name: nameSchema,
+    projectId: projectIdSchema,
+    slug: slugSchema,
+    type: z.enum(["preview", "staging", "custom"]),
+  })
+  .strict();
+
+export type CreateEnvironmentInput = z.infer<typeof createEnvironmentInputSchema>;
+
 export const updateEnvironmentInputSchema = z
   .object({
+    deletionProtected: z.boolean(),
     environmentId: environmentIdSchema,
     name: nameSchema,
     projectId: projectIdSchema,
@@ -62,6 +75,15 @@ export const updateEnvironmentInputSchema = z
   .strict();
 
 export type UpdateEnvironmentInput = z.infer<typeof updateEnvironmentInputSchema>;
+
+export const deleteEnvironmentInputSchema = z
+  .object({
+    environmentId: environmentIdSchema,
+    projectId: projectIdSchema,
+  })
+  .strict();
+
+export type DeleteEnvironmentInput = z.infer<typeof deleteEnvironmentInputSchema>;
 
 export const projectSchema: z.ZodType<Project> = z
   .object({
@@ -82,6 +104,7 @@ export const environmentSchema: z.ZodType<Environment> = z
     name: nameSchema,
     slug: slugSchema,
     type: environmentTypeSchema,
+    deletionProtected: z.boolean(),
     createdAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema,
   })

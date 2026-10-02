@@ -13,7 +13,9 @@ import {
   updateOrganizationInputSchema,
 } from "./organization.js";
 import {
+  createEnvironmentInputSchema,
   createProjectInputSchema,
+  deleteEnvironmentInputSchema,
   deleteProjectInputSchema,
   environmentSchema,
   projectSchema,
@@ -198,6 +200,7 @@ describe("project schemas", () => {
   it("validates environment settings input", () => {
     expect(
       updateEnvironmentInputSchema.parse({
+        deletionProtected: true,
         environmentId: "environment_123",
         name: "Production",
         projectId: "project_123",
@@ -205,12 +208,14 @@ describe("project schemas", () => {
       }),
     ).toEqual({
       environmentId: "environment_123",
+      deletionProtected: true,
       name: "Production",
       projectId: "project_123",
       slug: "production",
     });
     expect(
       updateEnvironmentInputSchema.safeParse({
+        deletionProtected: false,
         environmentId: "environment_123",
         name: "Preview",
         projectId: "project_123",
@@ -218,6 +223,21 @@ describe("project schemas", () => {
         type: "unknown",
       }).success,
     ).toBe(false);
+    expect(
+      createEnvironmentInputSchema.safeParse({
+        deletionProtected: false,
+        name: "Another production",
+        projectId: "project_123",
+        slug: "another-production",
+        type: "production",
+      }).success,
+    ).toBe(false);
+    expect(
+      deleteEnvironmentInputSchema.safeParse({
+        environmentId: "env_123",
+        projectId: "project_123",
+      }).success,
+    ).toBe(true);
   });
 
   it("parses projects and environments", () => {
@@ -236,6 +256,7 @@ describe("project schemas", () => {
       name: "Production",
       slug: "production",
       type: "production",
+      deletionProtected: true,
       createdAt,
       updatedAt: createdAt,
     });
@@ -263,6 +284,7 @@ describe("project schemas", () => {
         name: "Production",
         slug: "production",
         type: "live",
+        deletionProtected: true,
         createdAt,
         updatedAt: createdAt,
       }).success,

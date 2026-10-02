@@ -30,6 +30,7 @@ export interface Environment {
   readonly name: string;
   readonly slug: string;
   readonly type: EnvironmentType;
+  readonly deletionProtected: boolean;
   readonly createdAt: IsoDateTime;
   readonly updatedAt: IsoDateTime;
 }
