@@ -2,14 +2,18 @@
 
 import { getAuthRuntime } from "@/lib/auth-server"
 import {
+  createEnvironment,
   createProject,
+  deleteEnvironment,
   deleteProject,
   updateEnvironment,
   updateProject,
 } from "@/lib/projects/project-service"
 import { projectError, type ProjectResult } from "@/lib/projects/project-errors"
 import {
+  createEnvironmentInputSchema,
   createProjectInputSchema,
+  deleteEnvironmentInputSchema,
   deleteProjectInputSchema,
   updateEnvironmentInputSchema,
   updateProjectInputSchema,
@@ -83,6 +87,34 @@ export async function updateEnvironmentAction(input: unknown) {
   if (!context) return sessionRequired<never>()
 
   const result = await updateEnvironment(context, validation.data)
+  if (result.data) revalidatePath(`/projects/${result.data.projectId}`)
+  return result
+}
+
+export async function createEnvironmentAction(input: unknown) {
+  const validation = createEnvironmentInputSchema.safeParse(input)
+  if (!validation.success) {
+    return { data: null, error: projectError("INVALID_ENVIRONMENT_INPUT") }
+  }
+
+  const context = await getContext()
+  if (!context) return sessionRequired<never>()
+
+  const result = await createEnvironment(context, validation.data)
+  if (result.data) revalidatePath(`/projects/${result.data.projectId}`)
+  return result
+}
+
+export async function deleteEnvironmentAction(input: unknown) {
+  const validation = deleteEnvironmentInputSchema.safeParse(input)
+  if (!validation.success) {
+    return { data: null, error: projectError("INVALID_ENVIRONMENT_INPUT") }
+  }
+
+  const context = await getContext()
+  if (!context) return sessionRequired<never>()
+
+  const result = await deleteEnvironment(context, validation.data)
   if (result.data) revalidatePath(`/projects/${result.data.projectId}`)
   return result
 }
