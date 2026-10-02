@@ -42,9 +42,12 @@ func (claims Claims) Validate() error {
 	if claims.ID != claims.TokenID || claims.Subject != claims.ParticipantID {
 		return fmt.Errorf("registered identity claims do not match participant claims")
 	}
+	issuedAtISO, issuedAtError := time.Parse(time.RFC3339Nano, claims.IssuedAtISO)
+	expiresAtISO, expiresAtError := time.Parse(time.RFC3339Nano, claims.ExpiresAtISO)
 	if claims.IssuedAt == nil || claims.ExpiresAt == nil ||
-		claims.IssuedAtISO != claims.IssuedAt.Time.UTC().Format(time.RFC3339Nano) ||
-		claims.ExpiresAtISO != claims.ExpiresAt.Time.UTC().Format(time.RFC3339Nano) {
+		issuedAtError != nil || expiresAtError != nil ||
+		issuedAtISO.Unix() != claims.IssuedAt.Time.Unix() ||
+		expiresAtISO.Unix() != claims.ExpiresAt.Time.Unix() {
 		return fmt.Errorf("participant token timestamps are inconsistent")
 	}
 	if lifetime := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time); lifetime <= 0 || lifetime > time.Hour {
