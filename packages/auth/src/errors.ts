@@ -39,6 +39,13 @@ export const authErrorCodes = [
   "INVITATION_SEND_FAILED",
   "INVITATION_CANCEL_FAILED",
   "INVITATION_RESPONSE_FAILED",
+  "INVALID_MEMBER_ROLE",
+  "ORGANIZATION_MEMBER_NOT_FOUND",
+  "MEMBER_ROLE_UPDATE_FORBIDDEN",
+  "LAST_ORGANIZATION_OWNER",
+  "MEMBER_ROLE_UPDATE_FAILED",
+  "MEMBER_REMOVAL_FORBIDDEN",
+  "MEMBER_REMOVAL_FAILED",
 ] as const;
 
 export type AuthErrorCode = (typeof authErrorCodes)[number];
@@ -90,6 +97,13 @@ const authErrorDescriptions: Readonly<Record<AuthErrorCode, string>> = {
   INVITATION_SEND_FAILED: "The invitation could not be sent",
   INVITATION_CANCEL_FAILED: "The invitation could not be canceled",
   INVITATION_RESPONSE_FAILED: "The invitation response could not be completed",
+  INVALID_MEMBER_ROLE: "Select a valid organization role",
+  ORGANIZATION_MEMBER_NOT_FOUND: "The organization member could not be found",
+  MEMBER_ROLE_UPDATE_FORBIDDEN: "You are not allowed to change this member's role",
+  LAST_ORGANIZATION_OWNER: "The organization must keep at least one owner",
+  MEMBER_ROLE_UPDATE_FAILED: "The member role could not be updated",
+  MEMBER_REMOVAL_FORBIDDEN: "You are not allowed to remove this organization member",
+  MEMBER_REMOVAL_FAILED: "The organization member could not be removed",
 };
 
 export const authError = (code: AuthErrorCode): AuthError => ({
@@ -143,7 +157,12 @@ const betterAuthCodeMap: Readonly<Record<string, AuthErrorCode>> = {
     "INVITATION_EMAIL_VERIFICATION_REQUIRED",
   EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION: "INVITATION_EMAIL_VERIFICATION_REQUIRED",
   INVITATION_LIMIT_REACHED: "INVITATION_LIMIT_REACHED",
-  ROLE_NOT_FOUND: "INVALID_INVITATION_ROLE",
+  ROLE_NOT_FOUND: "INVALID_MEMBER_ROLE",
+  MEMBER_NOT_FOUND: "ORGANIZATION_MEMBER_NOT_FOUND",
+  YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER: "MEMBER_ROLE_UPDATE_FORBIDDEN",
+  YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER: "MEMBER_REMOVAL_FORBIDDEN",
+  YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER: "LAST_ORGANIZATION_OWNER",
+  YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER: "LAST_ORGANIZATION_OWNER",
   access_denied: "OAUTH_ACCESS_DENIED",
   account_already_linked_to_different_user: "OAUTH_ACCOUNT_CONFLICT",
   account_not_linked: "OAUTH_ACCOUNT_CONFLICT",
@@ -260,6 +279,10 @@ export const toOrganizationInvitationError = (
 ): AuthError => {
   const normalized = toAuthError(error);
 
+  if (normalized.code === "INVALID_MEMBER_ROLE") {
+    return authError("INVALID_INVITATION_ROLE");
+  }
+
   if (normalized.code !== "AUTHENTICATION_FAILED") {
     return normalized;
   }
@@ -273,6 +296,23 @@ export const toOrganizationInvitationError = (
   }
 
   return authError("INVITATION_SEND_FAILED");
+};
+
+export type OrganizationMemberAction = "remove" | "update-role";
+
+export const toOrganizationMemberError = (
+  error: unknown,
+  action: OrganizationMemberAction,
+): AuthError => {
+  const normalized = toAuthError(error);
+
+  if (normalized.code !== "AUTHENTICATION_FAILED") {
+    return normalized;
+  }
+
+  return authError(
+    action === "remove" ? "MEMBER_REMOVAL_FAILED" : "MEMBER_ROLE_UPDATE_FAILED",
+  );
 };
 
 export type AuthResult<T> = { data: T; error: null } | { data: null; error: AuthError };

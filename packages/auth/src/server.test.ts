@@ -225,6 +225,24 @@ describe("createRelayKitAuth", () => {
     ],
     ["GET", "/api/auth/organization/list-invitations", undefined],
     ["GET", "/api/auth/organization/get-invitation?id=invitation_123", undefined],
+    ["GET", "/api/auth/organization/list-members", undefined],
+    [
+      "POST",
+      "/api/auth/organization/update-member-role",
+      JSON.stringify({
+        memberId: "membership_123",
+        organizationId: "organization_123",
+        role: "admin",
+      }),
+    ],
+    [
+      "POST",
+      "/api/auth/organization/remove-member",
+      JSON.stringify({
+        memberIdOrEmail: "membership_123",
+        organizationId: "organization_123",
+      }),
+    ],
   ])("requires a session for organization access through %s %s", async (method, path, body) => {
     const database = createDatabase("postgresql://relaykit:password@127.0.0.1:1/relaykit");
     const auth = createRelayKitAuth({

@@ -4,6 +4,7 @@ import {
   authError,
   toAuthError,
   toAuthResult,
+  toOrganizationMemberError,
   toOrganizationSwitchError,
   toOrganizationInvitationError,
   toOrganizationUpdateError,
@@ -46,6 +47,10 @@ describe("authentication errors", () => {
     ["YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION", "INVITATION_FORBIDDEN"],
     ["INVITATION_NOT_FOUND", "INVITATION_NOT_FOUND"],
     ["YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION", "INVITATION_RECIPIENT_MISMATCH"],
+    ["MEMBER_NOT_FOUND", "ORGANIZATION_MEMBER_NOT_FOUND"],
+    ["YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER", "MEMBER_ROLE_UPDATE_FORBIDDEN"],
+    ["YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER", "MEMBER_REMOVAL_FORBIDDEN"],
+    ["YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER", "LAST_ORGANIZATION_OWNER"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
@@ -138,5 +143,20 @@ describe("authentication errors", () => {
     expect(
       toOrganizationInvitationError({ code: "DATABASE_CONNECTION_FAILED" }, action),
     ).toEqual(authError(code));
+  });
+
+  it("uses the invitation role error for an invalid invited role", () => {
+    expect(toOrganizationInvitationError({ code: "ROLE_NOT_FOUND" }, "send")).toEqual(
+      authError("INVALID_INVITATION_ROLE"),
+    );
+  });
+
+  it.each([
+    ["update-role", "MEMBER_ROLE_UPDATE_FAILED"],
+    ["remove", "MEMBER_REMOVAL_FAILED"],
+  ] as const)("uses a stable fallback for member %s failures", (action, code) => {
+    expect(toOrganizationMemberError({ code: "DATABASE_CONNECTION_FAILED" }, action)).toEqual(
+      authError(code),
+    );
   });
 });
