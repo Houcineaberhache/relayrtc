@@ -7,6 +7,8 @@ import {
   organizationMembershipSchema,
   organizationSchema,
   organizationSlugFromName,
+  removeOrganizationMemberInputSchema,
+  updateOrganizationMemberRoleInputSchema,
   updateOrganizationInputSchema,
 } from "./organization.js";
 import { environmentSchema, projectSchema } from "./project.js";
@@ -69,6 +71,36 @@ describe("organization schemas", () => {
         role: "owner",
       }).success,
     ).toBe(false);
+  });
+
+  it("validates member role updates and removal", () => {
+    expect(
+      updateOrganizationMemberRoleInputSchema.parse({
+        memberId: "membership_123",
+        organizationId: "organization_123",
+        role: "admin",
+      }),
+    ).toEqual({
+      memberId: "membership_123",
+      organizationId: "organization_123",
+      role: "admin",
+    });
+    expect(
+      updateOrganizationMemberRoleInputSchema.safeParse({
+        memberId: "membership_123",
+        organizationId: "organization_123",
+        role: "superadmin",
+      }).success,
+    ).toBe(false);
+    expect(
+      removeOrganizationMemberInputSchema.parse({
+        memberIdOrEmail: "membership_123",
+        organizationId: "organization_123",
+      }),
+    ).toEqual({
+      memberIdOrEmail: "membership_123",
+      organizationId: "organization_123",
+    });
   });
 
   it("parses organizations and memberships", () => {

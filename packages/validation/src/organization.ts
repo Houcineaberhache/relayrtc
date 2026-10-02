@@ -40,6 +40,29 @@ export type InviteOrganizationMemberInput = z.infer<
   typeof inviteOrganizationMemberInputSchema
 >;
 
+export const updateOrganizationMemberRoleInputSchema = z
+  .object({
+    memberId: membershipIdSchema,
+    organizationId: organizationIdSchema,
+    role: organizationMemberRoleSchema,
+  })
+  .strict();
+
+export type UpdateOrganizationMemberRoleInput = z.infer<
+  typeof updateOrganizationMemberRoleInputSchema
+>;
+
+export const removeOrganizationMemberInputSchema = z
+  .object({
+    memberIdOrEmail: membershipIdSchema,
+    organizationId: organizationIdSchema,
+  })
+  .strict();
+
+export type RemoveOrganizationMemberInput = z.infer<
+  typeof removeOrganizationMemberInputSchema
+>;
+
 export const createOrganizationInputSchema = z
   .object({
     name: nameSchema,
