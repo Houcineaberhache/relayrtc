@@ -12,7 +12,15 @@ import {
   updateOrganizationMemberRoleInputSchema,
   updateOrganizationInputSchema,
 } from "./organization.js";
-import { environmentSchema, projectSchema } from "./project.js";
+import {
+  createProjectInputSchema,
+  deleteProjectInputSchema,
+  environmentSchema,
+  projectSchema,
+  projectSlugFromName,
+  updateEnvironmentInputSchema,
+  updateProjectInputSchema,
+} from "./project.js";
 
 const createdAt = "2026-10-01T00:00:00Z";
 
@@ -159,6 +167,59 @@ describe("organization schemas", () => {
 });
 
 describe("project schemas", () => {
+  it("validates project management inputs", () => {
+    expect(
+      createProjectInputSchema.parse({
+        name: "  Video Classroom  ",
+        organizationId: "org_123",
+        slug: "video-classroom",
+      }),
+    ).toEqual({
+      name: "Video Classroom",
+      organizationId: "org_123",
+      slug: "video-classroom",
+    });
+    expect(projectSlugFromName(" Café Support App ")).toBe("cafe-support-app");
+    expect(
+      updateProjectInputSchema.safeParse({
+        name: "Classroom",
+        projectId: "project_123",
+        slug: "Invalid Slug",
+      }).success,
+    ).toBe(false);
+    expect(
+      deleteProjectInputSchema.safeParse({
+        confirmationName: "",
+        projectId: "project_123",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates environment settings input", () => {
+    expect(
+      updateEnvironmentInputSchema.parse({
+        environmentId: "environment_123",
+        name: "Production",
+        projectId: "project_123",
+        slug: "production",
+      }),
+    ).toEqual({
+      environmentId: "environment_123",
+      name: "Production",
+      projectId: "project_123",
+      slug: "production",
+    });
+    expect(
+      updateEnvironmentInputSchema.safeParse({
+        environmentId: "environment_123",
+        name: "Preview",
+        projectId: "project_123",
+        slug: "preview",
+        type: "unknown",
+      }).success,
+    ).toBe(false);
+  });
+
   it("parses projects and environments", () => {
     const project = projectSchema.parse({
       id: "project_123",
