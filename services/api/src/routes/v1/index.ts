@@ -3,10 +3,13 @@ import type { FastifyPluginCallback } from "fastify";
 
 import { registerAuthentication } from "../../authentication/authentication-plugin.js";
 import { ApiError } from "../../http/errors/api-error.js";
+import { participantTokenRoutes } from "../../modules/participant-tokens/participant-token.routes.js";
+import type { ParticipantTokenSigner } from "../../modules/participant-tokens/participant-token.signer.js";
 import { roomRoutes } from "../../modules/rooms/room.routes.js";
 
 interface V1RoutesOptions {
   database: RelayKitDatabase;
+  participantTokenSigner: ParticipantTokenSigner;
 }
 
 const contextResponseSchema = {
@@ -27,6 +30,10 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
   registerAuthentication(app, options.database);
 
   void app.register(roomRoutes, { database: options.database });
+  void app.register(participantTokenRoutes, {
+    database: options.database,
+    signer: options.participantTokenSigner,
+  });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-relayrtc-api-version", "v1");

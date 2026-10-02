@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import type { ApiConfig } from "./config/environment.js";
 import { registerErrorHandling } from "./http/errors/error-handler.js";
+import { createParticipantTokenSigner } from "./modules/participant-tokens/participant-token.signer.js";
 import { healthRoutes } from "./routes/health.js";
 import { v1Routes } from "./routes/v1/index.js";
 
@@ -42,6 +43,12 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     requestTimeout: 30_000,
     trustProxy: options.config.trustProxy,
   });
+  const participantTokenSigner = createParticipantTokenSigner({
+    audience: options.config.participantTokenAudience,
+    issuer: options.config.participantTokenIssuer,
+    keyId: options.config.participantTokenKeyId,
+    secret: options.config.participantTokenSigningSecret,
+  });
 
   registerErrorHandling(app);
 
@@ -54,7 +61,11 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   }
 
   void app.register(healthRoutes, { database: options.database });
-  void app.register(v1Routes, { database: options.database, prefix: "/v1" });
+  void app.register(v1Routes, {
+    database: options.database,
+    participantTokenSigner,
+    prefix: "/v1",
+  });
 
   return app;
 };
