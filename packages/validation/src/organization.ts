@@ -63,6 +63,17 @@ export type RemoveOrganizationMemberInput = z.infer<
   typeof removeOrganizationMemberInputSchema
 >;
 
+export const transferOrganizationOwnershipInputSchema = z
+  .object({
+    organizationId: organizationIdSchema,
+    targetMemberId: membershipIdSchema,
+  })
+  .strict();
+
+export type TransferOrganizationOwnershipInput = z.infer<
+  typeof transferOrganizationOwnershipInputSchema
+>;
+
 export const createOrganizationInputSchema = z
   .object({
     name: nameSchema,

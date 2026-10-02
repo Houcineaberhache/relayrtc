@@ -8,6 +8,7 @@ import {
   organizationSchema,
   organizationSlugFromName,
   removeOrganizationMemberInputSchema,
+  transferOrganizationOwnershipInputSchema,
   updateOrganizationMemberRoleInputSchema,
   updateOrganizationInputSchema,
 } from "./organization.js";
@@ -100,6 +101,15 @@ describe("organization schemas", () => {
     ).toEqual({
       memberIdOrEmail: "membership_123",
       organizationId: "organization_123",
+    });
+    expect(
+      transferOrganizationOwnershipInputSchema.parse({
+        organizationId: "organization_123",
+        targetMemberId: "membership_456",
+      }),
+    ).toEqual({
+      organizationId: "organization_123",
+      targetMemberId: "membership_456",
     });
   });
 
