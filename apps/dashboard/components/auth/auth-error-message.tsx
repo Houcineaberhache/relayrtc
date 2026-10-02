@@ -1,4 +1,3 @@
-import type { AuthError } from "@relayrtc/auth"
 import {
   Alert,
   AlertDescription,
@@ -6,7 +5,12 @@ import {
 } from "@relayrtc/ui/components/alert"
 import { CircleAlert } from "lucide-react"
 
-export function AuthErrorMessage({ error }: { error: AuthError | null }) {
+interface DisplayError {
+  readonly code: string
+  readonly description: string
+}
+
+export function AuthErrorMessage({ error }: { error: DisplayError | null }) {
   if (!error) return null
 
   return (
