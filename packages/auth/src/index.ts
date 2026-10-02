@@ -2,6 +2,7 @@ export * from "./client.js";
 export * from "./credentials.js";
 export * from "./environment.js";
 export * from "./errors.js";
+export * from "./invitation-email.js";
 export * from "./oauth.js";
 export * from "./organization.js";
 export * from "./session.js";
