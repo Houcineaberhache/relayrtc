@@ -1,8 +1,10 @@
+import { ProjectApiKeys } from "@/components/api-keys/project-api-keys"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DeleteProjectForm } from "@/components/projects/delete-project-form"
 import { ProjectEnvironments } from "@/components/projects/project-environments"
 import { ProjectSettingsForm } from "@/components/projects/project-settings-form"
 import { getAuthRuntime } from "@/lib/auth-server"
+import { listProjectApiKeys } from "@/lib/api-keys/api-key-service"
 import { getCurrentOrganizations, getCurrentSession } from "@/lib/auth-session"
 import { getProjectDetails } from "@/lib/projects/project-service"
 import { Badge } from "@relayrtc/ui/components/badge"
@@ -47,6 +49,17 @@ export default async function ProjectPage({
   if (!result.data) notFound()
 
   const { canManage, environments, project } = result.data
+  const apiKeyResult = await listProjectApiKeys(
+    { database: getAuthRuntime().database, userId: session.user.id },
+    project.id
+  )
+  const apiKeys = (apiKeyResult.data ?? []).map((apiKey) => ({
+    ...apiKey,
+    createdAt: apiKey.createdAt.toISOString(),
+    expiresAt: apiKey.expiresAt?.toISOString() ?? null,
+    lastUsedAt: apiKey.lastUsedAt?.toISOString() ?? null,
+    revokedAt: apiKey.revokedAt?.toISOString() ?? null,
+  }))
   const organizations = await getCurrentOrganizations()
   const organization = organizations.find(
     (candidate) => candidate.id === project.organizationId
@@ -100,12 +113,19 @@ export default async function ProjectPage({
           environments={environments}
         />
 
+        <ProjectApiKeys
+          apiKeys={apiKeys}
+          canManage={canManage}
+          environments={environments}
+          projectId={project.id}
+        />
+
         {canManage ? (
           <Card className="border-destructive/40">
             <CardHeader>
               <CardTitle>Delete project</CardTitle>
               <CardDescription>
-                Permanently deletes this project and all project-owned environments.
+                Permanently deletes this project, its environments, and all API keys.
               </CardDescription>
             </CardHeader>
             <CardContent>
