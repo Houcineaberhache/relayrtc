@@ -15,33 +15,27 @@ COPY services/signaling/package.json services/signaling/package.json
 COPY tooling/workspace-smoke/package.json tooling/workspace-smoke/package.json
 RUN pnpm install --frozen-lockfile
 
-FROM dependencies AS source
+FROM dependencies AS builder
 
 COPY . .
 RUN pnpm install --offline --frozen-lockfile
-
-FROM source AS builder
-
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm turbo run build --filter=@relayrtc/dashboard
-
-FROM source AS migrator
-
-ENV NODE_ENV=production
-CMD ["pnpm", "db:migrate"]
+RUN pnpm turbo run build --filter=@relayrtc/api
 
 FROM node:24-alpine AS runner
 
 WORKDIR /workspace
-ENV HOSTNAME=0.0.0.0
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV API_HOST=0.0.0.0
+ENV API_PORT=8080
 ENV NODE_ENV=production
-ENV PORT=3001
 
-COPY --from=builder --chown=node:node /workspace/apps/dashboard/.next/standalone ./
-COPY --from=builder --chown=node:node /workspace/apps/dashboard/.next/static ./apps/dashboard/.next/static
-COPY --from=builder --chown=node:node /workspace/apps/dashboard/public ./apps/dashboard/public
+COPY --from=builder --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=builder --chown=node:node /workspace/packages/database/package.json ./packages/database/package.json
+COPY --from=builder --chown=node:node /workspace/packages/database/dist ./packages/database/dist
+COPY --from=builder --chown=node:node /workspace/packages/database/node_modules ./packages/database/node_modules
+COPY --from=builder --chown=node:node /workspace/services/api/package.json ./services/api/package.json
+COPY --from=builder --chown=node:node /workspace/services/api/dist ./services/api/dist
+COPY --from=builder --chown=node:node /workspace/services/api/node_modules ./services/api/node_modules
 
 USER node
-EXPOSE 3001
-CMD ["node", "apps/dashboard/server.js"]
+EXPOSE 8080
+CMD ["node", "--enable-source-maps", "services/api/dist/server.js"]

@@ -1,6 +1,41 @@
 name: relayrtc
 
 services:
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      API_HOST: 0.0.0.0
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      API_PORT: 8080
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - 127.0.0.1:${API_PORT:-8080}:8080
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --quiet --spider http://127.0.0.1:8080/ready
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - relayrtc
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+
   dashboard:
     build:
       context: .
@@ -36,11 +71,7 @@ services:
       - no-new-privileges:true
     networks:
       - relayrtc
-    logging: &default-logging
-      driver: json-file
-      options:
-        max-file: "3"
-        max-size: 10m
+    logging: *default-logging
 
   migrate:
     build:
