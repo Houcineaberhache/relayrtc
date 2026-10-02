@@ -34,7 +34,7 @@ export function DeleteProjectForm({
       return
     }
 
-    if (!window.confirm(`Permanently delete ${project.name} and its environments?`)) {
+    if (!window.confirm(`Permanently delete ${project.name}, its environments, and API keys?`)) {
       return
     }
 

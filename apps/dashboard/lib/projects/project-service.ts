@@ -275,6 +275,9 @@ export const deleteProject = async (
         .set({ status: "deleting", updatedAt: new Date() })
         .where(eq(schema.project.id, project.id))
       await transaction
+        .delete(schema.apiKey)
+        .where(eq(schema.apiKey.projectId, project.id))
+      await transaction
         .delete(schema.environment)
         .where(eq(schema.environment.projectId, project.id))
       await transaction.delete(schema.project).where(eq(schema.project.id, project.id))
