@@ -1,37 +1,80 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
-func TestLoadUsesDefaultAddress(t *testing.T) {
-	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() returned an error: %v", err)
+func testEnvironment(overrides map[string]string) func(string) (string, bool) {
+	values := map[string]string{
+		"PARTICIPANT_TOKEN_SIGNING_SECRET": "a-secure-participant-token-secret-123",
 	}
-
-	if cfg.Address != defaultAddress {
-		t.Fatalf("Load() address = %q, want %q", cfg.Address, defaultAddress)
+	for key, value := range overrides {
+		values[key] = value
 	}
-}
-
-func TestLoadUsesConfiguredAddress(t *testing.T) {
-	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "127.0.0.1:9090")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() returned an error: %v", err)
-	}
-
-	if cfg.Address != "127.0.0.1:9090" {
-		t.Fatalf("Load() address = %q, want %q", cfg.Address, "127.0.0.1:9090")
+	return func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
 	}
 }
 
-func TestLoadRejectsInvalidAddress(t *testing.T) {
-	t.Setenv("RELAYRTC_SIGNALING_ADDRESS", "invalid-address")
+func TestLoadUsesSafeDefaults(t *testing.T) {
+	cfg, err := load(testEnvironment(nil))
+	if err != nil {
+		t.Fatalf("load() returned an error: %v", err)
+	}
 
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() returned no error for an invalid address")
+	if cfg.Address != defaultAddress || cfg.HeartbeatInterval != 20*time.Second {
+		t.Fatalf("load() returned unexpected defaults: %+v", cfg)
+	}
+	if cfg.TokenAudience != "relayrtc-realtime" || cfg.TokenIssuer != "relayrtc-api" || cfg.TokenKeyID != "participant-v1" {
+		t.Fatalf("load() returned unexpected token configuration: %+v", cfg)
+	}
+	if len(cfg.AllowedOrigins) != 2 {
+		t.Fatalf("load() allowed origins = %v, want two local origins", cfg.AllowedOrigins)
+	}
+}
+
+func TestLoadUsesConfiguredConnectionSettings(t *testing.T) {
+	cfg, err := load(testEnvironment(map[string]string{
+		"RELAYRTC_SIGNALING_ADDRESS":            "127.0.0.1:9091",
+		"RELAYRTC_SIGNALING_ALLOWED_ORIGINS":    "https://app.example.com",
+		"RELAYRTC_SIGNALING_HEARTBEAT_INTERVAL": "15s",
+		"RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES":  "32768",
+		"RELAYRTC_SIGNALING_PONG_TIMEOUT":       "45s",
+	}))
+	if err != nil {
+		t.Fatalf("load() returned an error: %v", err)
+	}
+
+	if cfg.Address != "127.0.0.1:9091" || cfg.MaxMessageBytes != 32768 {
+		t.Fatalf("load() returned unexpected settings: %+v", cfg)
+	}
+	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != "https://app.example.com" {
+		t.Fatalf("load() allowed origins = %v", cfg.AllowedOrigins)
+	}
+}
+
+func TestLoadRejectsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		overrides map[string]string
+		contains  string
+	}{
+		{"address", map[string]string{"RELAYRTC_SIGNALING_ADDRESS": "invalid-address"}, "address"},
+		{"heartbeat", map[string]string{"RELAYRTC_SIGNALING_HEARTBEAT_INTERVAL": "60s"}, "shorter"},
+		{"message size", map[string]string{"RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES": "0"}, "positive integer"},
+		{"origin", map[string]string{"RELAYRTC_SIGNALING_ALLOWED_ORIGINS": "https://example.com/path"}, "invalid origin"},
+		{"secret", map[string]string{"PARTICIPANT_TOKEN_SIGNING_SECRET": "too-short"}, "32 characters"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := load(testEnvironment(test.overrides))
+			if err == nil || !strings.Contains(err.Error(), test.contains) {
+				t.Fatalf("load() error = %v, want error containing %q", err, test.contains)
+			}
+		})
 	}
 }
