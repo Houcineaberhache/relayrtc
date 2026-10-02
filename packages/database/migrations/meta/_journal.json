@@ -15,6 +15,13 @@
       "when": 1790884455170,
       "tag": "0001_organization_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790956800000,
+      "tag": "0002_organization_owner_protection",
+      "breakpoints": true
     }
   ]
 }
