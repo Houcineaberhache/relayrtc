@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   createOrganizationInputSchema,
+  inviteOrganizationMemberInputSchema,
   organizationMembershipSchema,
   organizationSchema,
   organizationSlugFromName,
@@ -45,6 +46,27 @@ describe("organization schemas", () => {
         organizationId: "organization_123",
         name: "Acme",
         slug: "Acme Team",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates organization invitations", () => {
+    expect(
+      inviteOrganizationMemberInputSchema.parse({
+        email: "  DEVELOPER@example.com ",
+        organizationId: "organization_123",
+        role: "developer",
+      }),
+    ).toEqual({
+      email: "developer@example.com",
+      organizationId: "organization_123",
+      role: "developer",
+    });
+    expect(
+      inviteOrganizationMemberInputSchema.safeParse({
+        email: "not-an-email",
+        organizationId: "organization_123",
+        role: "owner",
       }).success,
     ).toBe(false);
   });

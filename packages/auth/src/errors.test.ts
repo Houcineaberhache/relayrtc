@@ -5,6 +5,7 @@ import {
   toAuthError,
   toAuthResult,
   toOrganizationSwitchError,
+  toOrganizationInvitationError,
   toOrganizationUpdateError,
 } from "./errors.js";
 
@@ -40,6 +41,11 @@ describe("authentication errors", () => {
     ["USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
     ["YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION", "ORGANIZATION_ACCESS_DENIED"],
     ["YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION", "ORGANIZATION_UPDATE_FORBIDDEN"],
+    ["USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION", "INVITATION_ALREADY_SENT"],
+    ["USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION", "ORGANIZATION_MEMBER_EXISTS"],
+    ["YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION", "INVITATION_FORBIDDEN"],
+    ["INVITATION_NOT_FOUND", "INVITATION_NOT_FOUND"],
+    ["YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION", "INVITATION_RECIPIENT_MISMATCH"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });
@@ -122,5 +128,15 @@ describe("authentication errors", () => {
       code: "ORGANIZATION_UPDATE_FAILED",
       description: "The organization settings could not be updated",
     });
+  });
+
+  it.each([
+    ["send", "INVITATION_SEND_FAILED"],
+    ["cancel", "INVITATION_CANCEL_FAILED"],
+    ["respond", "INVITATION_RESPONSE_FAILED"],
+  ] as const)("uses a stable fallback for invitation %s failures", (action, code) => {
+    expect(
+      toOrganizationInvitationError({ code: "DATABASE_CONNECTION_FAILED" }, action),
+    ).toEqual(authError(code));
   });
 });

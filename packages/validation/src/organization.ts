@@ -15,6 +15,30 @@ import {
 } from "./common.js";
 
 export const organizationMemberRoleSchema = z.enum(organizationMemberRoles);
+export const organizationInvitationRoleSchema = z.enum([
+  "admin",
+  "developer",
+  "viewer",
+]);
+
+export const organizationInvitationIdSchema = z.string().trim().min(1).max(128);
+
+export const inviteOrganizationMemberInputSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .max(320)
+      .pipe(z.email())
+      .transform((email) => email.toLowerCase()),
+    organizationId: organizationIdSchema,
+    role: organizationInvitationRoleSchema,
+  })
+  .strict();
+
+export type InviteOrganizationMemberInput = z.infer<
+  typeof inviteOrganizationMemberInputSchema
+>;
 
 export const createOrganizationInputSchema = z
   .object({

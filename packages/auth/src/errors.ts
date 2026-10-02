@@ -27,6 +27,18 @@ export const authErrorCodes = [
   "ORGANIZATION_SWITCH_FAILED",
   "ORGANIZATION_UPDATE_FORBIDDEN",
   "ORGANIZATION_UPDATE_FAILED",
+  "INVALID_INVITATION_EMAIL",
+  "INVALID_INVITATION_ROLE",
+  "INVITATION_ALREADY_SENT",
+  "ORGANIZATION_MEMBER_EXISTS",
+  "INVITATION_FORBIDDEN",
+  "INVITATION_NOT_FOUND",
+  "INVITATION_RECIPIENT_MISMATCH",
+  "INVITATION_EMAIL_VERIFICATION_REQUIRED",
+  "INVITATION_LIMIT_REACHED",
+  "INVITATION_SEND_FAILED",
+  "INVITATION_CANCEL_FAILED",
+  "INVITATION_RESPONSE_FAILED",
 ] as const;
 
 export type AuthErrorCode = (typeof authErrorCodes)[number];
@@ -66,6 +78,18 @@ const authErrorDescriptions: Readonly<Record<AuthErrorCode, string>> = {
   ORGANIZATION_SWITCH_FAILED: "The active organization could not be changed",
   ORGANIZATION_UPDATE_FORBIDDEN: "You are not allowed to update this organization",
   ORGANIZATION_UPDATE_FAILED: "The organization settings could not be updated",
+  INVALID_INVITATION_EMAIL: "Enter a valid email address to invite",
+  INVALID_INVITATION_ROLE: "Select a valid organization role",
+  INVITATION_ALREADY_SENT: "A pending invitation already exists for this email address",
+  ORGANIZATION_MEMBER_EXISTS: "This user is already a member of the organization",
+  INVITATION_FORBIDDEN: "You are not allowed to manage organization invitations",
+  INVITATION_NOT_FOUND: "The invitation is invalid, expired, or no longer available",
+  INVITATION_RECIPIENT_MISMATCH: "This invitation belongs to a different email address",
+  INVITATION_EMAIL_VERIFICATION_REQUIRED: "Verify your email address before responding",
+  INVITATION_LIMIT_REACHED: "The organization invitation limit has been reached",
+  INVITATION_SEND_FAILED: "The invitation could not be sent",
+  INVITATION_CANCEL_FAILED: "The invitation could not be canceled",
+  INVITATION_RESPONSE_FAILED: "The invitation response could not be completed",
 };
 
 export const authError = (code: AuthErrorCode): AuthError => ({
@@ -106,6 +130,20 @@ const betterAuthCodeMap: Readonly<Record<string, AuthErrorCode>> = {
   YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION: "ORGANIZATION_ACCESS_DENIED",
   YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION: "ORGANIZATION_ACCESS_DENIED",
   YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION: "ORGANIZATION_UPDATE_FORBIDDEN",
+  USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION: "INVITATION_ALREADY_SENT",
+  USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION: "ORGANIZATION_MEMBER_EXISTS",
+  YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION: "INVITATION_FORBIDDEN",
+  YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION: "INVITATION_FORBIDDEN",
+  YOU_ARE_NOT_ALLOWED_TO_INVITE_USER_WITH_THIS_ROLE: "INVITATION_FORBIDDEN",
+  INVITATION_NOT_FOUND: "INVITATION_NOT_FOUND",
+  FAILED_TO_RETRIEVE_INVITATION: "INVITATION_NOT_FOUND",
+  INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION: "INVITATION_NOT_FOUND",
+  YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION: "INVITATION_RECIPIENT_MISMATCH",
+  EMAIL_VERIFICATION_REQUIRED_BEFORE_ACCEPTING_OR_REJECTING_INVITATION:
+    "INVITATION_EMAIL_VERIFICATION_REQUIRED",
+  EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION: "INVITATION_EMAIL_VERIFICATION_REQUIRED",
+  INVITATION_LIMIT_REACHED: "INVITATION_LIMIT_REACHED",
+  ROLE_NOT_FOUND: "INVALID_INVITATION_ROLE",
   access_denied: "OAUTH_ACCESS_DENIED",
   account_already_linked_to_different_user: "OAUTH_ACCOUNT_CONFLICT",
   account_not_linked: "OAUTH_ACCOUNT_CONFLICT",
@@ -212,6 +250,29 @@ export const toOrganizationUpdateError = (error: unknown): AuthError => {
   return normalized.code === "AUTHENTICATION_FAILED"
     ? authError("ORGANIZATION_UPDATE_FAILED")
     : normalized;
+};
+
+export type OrganizationInvitationAction = "cancel" | "respond" | "send";
+
+export const toOrganizationInvitationError = (
+  error: unknown,
+  action: OrganizationInvitationAction,
+): AuthError => {
+  const normalized = toAuthError(error);
+
+  if (normalized.code !== "AUTHENTICATION_FAILED") {
+    return normalized;
+  }
+
+  if (action === "cancel") {
+    return authError("INVITATION_CANCEL_FAILED");
+  }
+
+  if (action === "respond") {
+    return authError("INVITATION_RESPONSE_FAILED");
+  }
+
+  return authError("INVITATION_SEND_FAILED");
 };
 
 export type AuthResult<T> = { data: T; error: null } | { data: null; error: AuthError };
