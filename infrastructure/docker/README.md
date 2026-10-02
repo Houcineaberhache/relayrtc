@@ -48,6 +48,7 @@ Local endpoints:
 | Service    | Endpoint                          |
 | ---------- | --------------------------------- |
 | Dashboard  | `http://localhost:3001`           |
+| Signaling  | `ws://localhost:8081/v1/connect`  |
 | PostgreSQL | `localhost:5433`                  |
 | TURN/STUN  | `localhost:3478` over UDP and TCP |
 | Prometheus | `http://localhost:9090`           |
