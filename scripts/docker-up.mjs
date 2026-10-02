@@ -13,8 +13,18 @@ if (!existsSync(environmentPath)) {
       "postgresql://relaykit:replace-with-a-random-password@localhost:5433/relaykit",
       `postgresql://relaykit:${postgresPassword}@localhost:5433/relaykit`,
     )
-    .replace("replace-with-at-least-32-random-characters", randomBytes(32).toString("hex"))
-    .replace("replace-with-at-least-32-random-characters", randomBytes(32).toString("hex"))
+    .replace(
+      "PARTICIPANT_TOKEN_SIGNING_SECRET=replace-with-at-least-32-random-characters",
+      `PARTICIPANT_TOKEN_SIGNING_SECRET=${randomBytes(32).toString("hex")}`,
+    )
+    .replace(
+      "BETTER_AUTH_SECRET=replace-with-at-least-32-random-characters",
+      `BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}`,
+    )
+    .replace(
+      "TURN_SHARED_SECRET=replace-with-at-least-32-random-characters",
+      `TURN_SHARED_SECRET=${randomBytes(32).toString("hex")}`,
+    )
     .replace("replace-with-a-random-password", randomBytes(24).toString("hex"));
 
   writeFileSync(environmentPath, values, { encoding: "utf8", mode: 0o600 });
