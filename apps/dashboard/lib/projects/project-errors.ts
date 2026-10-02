@@ -10,8 +10,11 @@ export const projectErrorCodes = [
   "PROJECT_DELETION_FAILED",
   "INVALID_ENVIRONMENT_INPUT",
   "ENVIRONMENT_NOT_FOUND",
+  "ENVIRONMENT_PROTECTED",
   "ENVIRONMENT_SLUG_TAKEN",
+  "ENVIRONMENT_CREATION_FAILED",
   "ENVIRONMENT_UPDATE_FAILED",
+  "ENVIRONMENT_DELETION_FAILED",
 ] as const
 
 export type ProjectErrorCode = (typeof projectErrorCodes)[number]
@@ -33,8 +36,11 @@ const projectErrorDescriptions: Readonly<Record<ProjectErrorCode, string>> = {
   PROJECT_DELETION_FAILED: "The project could not be deleted",
   INVALID_ENVIRONMENT_INPUT: "Enter valid environment information",
   ENVIRONMENT_NOT_FOUND: "The environment could not be found",
+  ENVIRONMENT_PROTECTED: "This environment is protected from deletion",
   ENVIRONMENT_SLUG_TAKEN: "An environment in this project already uses this slug",
+  ENVIRONMENT_CREATION_FAILED: "The environment could not be created",
   ENVIRONMENT_UPDATE_FAILED: "The environment settings could not be updated",
+  ENVIRONMENT_DELETION_FAILED: "The environment could not be deleted",
 }
 
 export const projectError = (code: ProjectErrorCode): ProjectError => ({

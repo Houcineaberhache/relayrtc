@@ -1,7 +1,9 @@
 import type { RelayKitDatabase } from "@relayrtc/database"
 import { schema } from "@relayrtc/database"
 import type {
+  CreateEnvironmentInput,
   CreateProjectInput,
+  DeleteEnvironmentInput,
   DeleteProjectInput,
   UpdateEnvironmentInput,
   UpdateProjectInput,
@@ -36,6 +38,9 @@ const managementRoles = new Set(["owner", "admin"])
 
 export const canManageProjects = (role: string): boolean =>
   role.split(",").some((value) => managementRoles.has(value.trim()))
+
+const createEnvironmentId = (): string =>
+  `env_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`
 
 const failure = <T>(code: ProjectErrorCode): ProjectResult<T> => ({
   data: null,
@@ -177,20 +182,22 @@ export const createProject = async (
 
       await transaction.insert(schema.environment).values([
         {
-          id: `environment_${crypto.randomUUID()}`,
+          id: createEnvironmentId(),
           name: "Development",
           projectId: project.id,
           slug: "development",
           type: "development",
+          deletionProtected: true,
           createdAt: now,
           updatedAt: now,
         },
         {
-          id: `environment_${crypto.randomUUID()}`,
+          id: createEnvironmentId(),
           name: "Production",
           projectId: project.id,
           slug: "production",
           type: "production",
+          deletionProtected: true,
           createdAt: now,
           updatedAt: now,
         },
@@ -309,9 +316,31 @@ export const updateEnvironment = async (
         return failure("PROJECT_MANAGEMENT_FORBIDDEN")
       }
 
+      const [currentEnvironment] = await transaction
+        .select({ type: schema.environment.type })
+        .from(schema.environment)
+        .where(
+          and(
+            eq(schema.environment.id, input.environmentId),
+            eq(schema.environment.projectId, project.id)
+          )
+        )
+        .for("update")
+
+      if (!currentEnvironment) return failure("ENVIRONMENT_NOT_FOUND")
+
       const [environment] = await transaction
         .update(schema.environment)
-        .set({ name: input.name, slug: input.slug, updatedAt: new Date() })
+        .set({
+          deletionProtected:
+            currentEnvironment.type === "development" ||
+            currentEnvironment.type === "production"
+              ? true
+              : input.deletionProtected,
+          name: input.name,
+          slug: input.slug,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(schema.environment.id, input.environmentId),
@@ -330,6 +359,115 @@ export const updateEnvironment = async (
         ? "ENVIRONMENT_SLUG_TAKEN"
         : "ENVIRONMENT_UPDATE_FAILED"
     )
+  }
+}
+
+export const createEnvironment = async (
+  { database, userId }: ProjectServiceContext,
+  input: CreateEnvironmentInput
+): Promise<ProjectResult<EnvironmentRecord>> => {
+  try {
+    return await database.transaction(async (transaction) => {
+      const project = await getLockedProject(transaction, input.projectId)
+
+      if (!project) return failure("PROJECT_NOT_FOUND")
+
+      const membership = await getLockedMembership(
+        transaction,
+        project.organizationId,
+        userId
+      )
+
+      if (!membership || !canManageProjects(membership.role)) {
+        return failure("PROJECT_MANAGEMENT_FORBIDDEN")
+      }
+
+      const now = new Date()
+      const [environment] = await transaction
+        .insert(schema.environment)
+        .values({
+          id: createEnvironmentId(),
+          deletionProtected: input.deletionProtected,
+          name: input.name,
+          projectId: project.id,
+          slug: input.slug,
+          type: input.type,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+
+      return environment
+        ? success(environment)
+        : failure("ENVIRONMENT_CREATION_FAILED")
+    })
+  } catch (error) {
+    return failure(
+      isUniqueViolation(error, "environment_project_slug_idx")
+        ? "ENVIRONMENT_SLUG_TAKEN"
+        : "ENVIRONMENT_CREATION_FAILED"
+    )
+  }
+}
+
+export const deleteEnvironment = async (
+  { database, userId }: ProjectServiceContext,
+  input: DeleteEnvironmentInput
+): Promise<ProjectResult<{ environmentId: string; projectId: string }>> => {
+  try {
+    return await database.transaction(async (transaction) => {
+      const project = await getLockedProject(transaction, input.projectId)
+
+      if (!project) return failure("PROJECT_NOT_FOUND")
+
+      const membership = await getLockedMembership(
+        transaction,
+        project.organizationId,
+        userId
+      )
+
+      if (!membership || !canManageProjects(membership.role)) {
+        return failure("PROJECT_MANAGEMENT_FORBIDDEN")
+      }
+
+      const [environment] = await transaction
+        .select({
+          deletionProtected: schema.environment.deletionProtected,
+          id: schema.environment.id,
+          type: schema.environment.type,
+        })
+        .from(schema.environment)
+        .where(
+          and(
+            eq(schema.environment.id, input.environmentId),
+            eq(schema.environment.projectId, project.id)
+          )
+        )
+        .for("update")
+
+      if (!environment) return failure("ENVIRONMENT_NOT_FOUND")
+      if (
+        environment.deletionProtected ||
+        environment.type === "development" ||
+        environment.type === "production"
+      ) {
+        return failure("ENVIRONMENT_PROTECTED")
+      }
+
+      await transaction
+        .delete(schema.apiKey)
+        .where(eq(schema.apiKey.environmentId, environment.id))
+      const [deleted] = await transaction
+        .delete(schema.environment)
+        .where(eq(schema.environment.id, environment.id))
+        .returning({ id: schema.environment.id })
+
+      return deleted
+        ? success({ environmentId: deleted.id, projectId: project.id })
+        : failure("ENVIRONMENT_DELETION_FAILED")
+    })
+  } catch {
+    return failure("ENVIRONMENT_DELETION_FAILED")
   }
 }
 
