@@ -2,6 +2,9 @@ package connection
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
 const (
@@ -23,17 +27,26 @@ type Options struct {
 	AllowedOrigins    []string
 	HeartbeatInterval time.Duration
 	MaxMessageBytes   int64
+	NodeID            string
 	PongTimeout       time.Duration
+	SessionStore      SessionStore
 	Shutdown          context.Context
 	Validator         *auth.Validator
 	WriteTimeout      time.Duration
 }
 
+type SessionStore interface {
+	Join(context.Context, auth.Claims, string, string) (session.JoinResult, error)
+	Leave(context.Context, string, string, string) (time.Time, error)
+}
+
 type Handler struct {
 	heartbeatInterval time.Duration
 	maxMessageBytes   int64
+	nodeID            string
 	pongTimeout       time.Duration
 	registry          *registry
+	sessionStore      SessionStore
 	shutdown          context.Context
 	upgrader          websocket.Upgrader
 	validator         *auth.Validator
@@ -41,17 +54,23 @@ type Handler struct {
 	wg                sync.WaitGroup
 }
 
+type joinedSession struct {
+	participant session.Participant
+	session     session.ParticipantSession
+}
+
 func NewHandler(options Options) *Handler {
 	allowedOrigins := make(map[string]struct{}, len(options.AllowedOrigins))
 	for _, origin := range options.AllowedOrigins {
 		allowedOrigins[origin] = struct{}{}
 	}
-
 	return &Handler{
 		heartbeatInterval: options.HeartbeatInterval,
 		maxMessageBytes:   options.MaxMessageBytes,
+		nodeID:            options.NodeID,
 		pongTimeout:       options.PongTimeout,
 		registry:          newRegistry(),
+		sessionStore:      options.SessionStore,
 		shutdown:          options.Shutdown,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(request *http.Request) bool {
@@ -71,56 +90,46 @@ func NewHandler(options Options) *Handler {
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if !contains(websocket.Subprotocols(request), protocolVersion) {
-		writeError(response, http.StatusBadRequest, "PROTOCOL_REQUIRED", "The relayrtc.v1 WebSocket protocol is required")
+	protocols := websocket.Subprotocols(request)
+	if !contains(protocols, protocolVersion) {
+		writeHTTPError(response, http.StatusBadRequest, "PROTOCOL_REQUIRED", "The relayrtc.v1 WebSocket protocol is required")
 		return
 	}
-	rawToken, ok := auth.ExtractToken(request.Header.Get("Authorization"), websocket.Subprotocols(request))
+	rawToken, ok := auth.ExtractToken(request.Header.Get("Authorization"), protocols)
 	if !ok {
-		writeError(response, http.StatusUnauthorized, "AUTHENTICATION_REQUIRED", "Provide a participant token")
+		writeHTTPError(response, http.StatusUnauthorized, "AUTHENTICATION_REQUIRED", "Provide a participant token")
 		return
 	}
 	claims, err := handler.validator.Validate(rawToken)
 	if err != nil {
-		writeError(response, http.StatusUnauthorized, "INVALID_PARTICIPANT_TOKEN", "The participant token is invalid or expired")
+		writeHTTPError(response, http.StatusUnauthorized, "INVALID_PARTICIPANT_TOKEN", "The participant token is invalid or expired")
 		return
 	}
 
-	connection, err := handler.upgrader.Upgrade(response, request, nil)
+	websocketConnection, err := handler.upgrader.Upgrade(response, request, nil)
 	if err != nil {
 		return
 	}
+	client := &client{connection: websocketConnection, writeTimeout: handler.writeTimeout}
 	handler.wg.Add(1)
 	defer handler.wg.Done()
-	handler.registry.add(connection)
-	defer handler.registry.remove(connection)
-	defer connection.Close()
+	handler.registry.add(client)
+	defer handler.registry.remove(client)
+	defer websocketConnection.Close()
 
-	slog.Info("signaling connection accepted",
-		"environment_id", claims.EnvironmentID,
-		"participant_id", claims.ParticipantID,
-		"project_id", claims.ProjectID,
-		"room_id", claims.RoomID,
-		"token_id", claims.TokenID,
-	)
-	defer slog.Info("signaling connection disconnected",
-		"participant_id", claims.ParticipantID,
-		"room_id", claims.RoomID,
-	)
-
-	handler.serve(connection, claims)
+	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
+	joined := handler.serve(client, claims, rawToken)
+	if joined != nil {
+		handler.disconnect(client, joined, claims.RoomID)
+	}
+	slog.Info("signaling connection disconnected", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
 }
 
-func (handler *Handler) ActiveConnections() int {
-	return handler.registry.len()
-}
+func (handler *Handler) ActiveConnections() int { return handler.registry.len() }
 
 func (handler *Handler) Wait(ctx context.Context) error {
 	done := make(chan struct{})
-	go func() {
-		handler.wg.Wait()
-		close(done)
-	}()
+	go func() { handler.wg.Wait(); close(done) }()
 	select {
 	case <-done:
 		return nil
@@ -129,67 +138,283 @@ func (handler *Handler) Wait(ctx context.Context) error {
 	}
 }
 
-func (handler *Handler) serve(connection *websocket.Conn, claims auth.Claims) {
-	connection.SetReadLimit(handler.maxMessageBytes)
-	_ = connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
-	connection.SetPongHandler(func(string) error {
-		return connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
+func (handler *Handler) serve(client *client, claims auth.Claims, rawToken string) *joinedSession {
+	client.connection.SetReadLimit(handler.maxMessageBytes)
+	_ = client.connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
+	client.connection.SetPongHandler(func(string) error {
+		return client.connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
 	})
 
-	readError := make(chan error, 1)
-	go readPump(connection, readError)
+	readContext, cancelRead := context.WithCancel(context.Background())
+	defer cancelRead()
+	read := make(chan incoming)
+	go readPump(readContext, client.connection, read)
 	heartbeat := time.NewTicker(handler.heartbeatInterval)
 	defer heartbeat.Stop()
 	expires := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer expires.Stop()
+	var joined *joinedSession
 
 	for {
 		select {
 		case <-handler.shutdown.Done():
-			handler.close(connection, websocket.CloseGoingAway, "server shutting down")
-			return
+			client.close(websocket.CloseGoingAway, "server shutting down")
+			return joined
 		case <-expires.C:
-			handler.close(connection, closeTokenExpired, "participant token expired")
-			return
-		case err := <-readError:
-			if err != nil && !websocket.IsCloseError(
-				err,
-				websocket.CloseNormalClosure,
-				websocket.CloseGoingAway,
-				closeTokenExpired,
-			) && !errors.Is(err, context.Canceled) {
-				slog.Debug("signaling connection read stopped", "error", err)
+			client.close(closeTokenExpired, "participant token expired")
+			return joined
+		case message := <-read:
+			if message.err != nil {
+				return joined
 			}
-			return
+			leave, next := handler.handleMessage(client, claims, rawToken, joined, message.data)
+			if next != nil {
+				joined = next
+			}
+			if leave {
+				return nil
+			}
 		case now := <-heartbeat.C:
-			if err := connection.WriteControl(
-				websocket.PingMessage,
-				[]byte(now.UTC().Format(time.RFC3339Nano)),
-				time.Now().Add(handler.writeTimeout),
-			); err != nil {
-				return
+			if err := client.control(websocket.PingMessage, []byte(now.UTC().Format(time.RFC3339Nano))); err != nil {
+				return joined
 			}
 		}
 	}
 }
 
-func (handler *Handler) close(connection *websocket.Conn, code int, reason string) {
-	_ = connection.WriteControl(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(code, reason),
-		time.Now().Add(handler.writeTimeout),
-	)
+func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawToken string, joined *joinedSession, data []byte) (bool, *joinedSession) {
+	request := requestEnvelope{}
+	if err := json.Unmarshal(data, &request); err != nil || request.Version != 1 || request.ID == "" {
+		client.protocolError(request.ID, "invalid_message", "The protocol message is invalid")
+		return false, nil
+	}
+
+	switch request.Type {
+	case "heartbeat.ping":
+		payload := heartbeatPayload{}
+		if json.Unmarshal(request.Payload, &payload) != nil || payload.Nonce == "" {
+			client.protocolError(request.ID, "invalid_message", "The heartbeat payload is invalid")
+			return false, nil
+		}
+		client.response(request.ID, "heartbeat.pong", map[string]any{"nonce": payload.Nonce, "serverTime": time.Now().UTC()})
+	case "participant.join":
+		if joined != nil || handler.sessionStore == nil {
+			client.protocolError(request.ID, "conflict", "The connection has already joined a room")
+			return false, nil
+		}
+		payload := joinPayload{}
+		if json.Unmarshal(request.Payload, &payload) != nil || payload.RoomID != claims.RoomID ||
+			subtle.ConstantTimeCompare([]byte(payload.ParticipantToken), []byte(rawToken)) != 1 {
+			client.protocolError(request.ID, "forbidden", "The join request does not match the participant token")
+			return false, nil
+		}
+		operationContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		result, err := handler.sessionStore.Join(operationContext, claims, newID("session"), handler.nodeID)
+		cancel()
+		if err != nil {
+			client.protocolError(request.ID, sessionErrorCode(err), sessionErrorMessage(err))
+			return false, nil
+		}
+		next := &joinedSession{participant: result.Participant, session: result.Session}
+		handler.registry.join(claims.RoomID, client)
+		client.response(request.ID, "participant.join.accepted", map[string]any{
+			"room": result.Room, "localParticipant": result.Participant, "session": result.Session,
+			"participants": result.Participants, "tracks": []any{},
+		})
+		handler.registry.broadcast(claims.RoomID, client, event("participant.joined", map[string]any{"participant": result.Participant}))
+		return false, next
+	case "participant.leave":
+		payload := leavePayload{}
+		if joined == nil || json.Unmarshal(request.Payload, &payload) != nil ||
+			payload.RoomID != claims.RoomID || payload.ParticipantID != claims.ParticipantID ||
+			payload.SessionID != joined.session.ID {
+			client.protocolError(request.ID, "forbidden", "The leave request does not match this session")
+			return false, nil
+		}
+		operationContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		leftAt, err := handler.sessionStore.Leave(operationContext, claims.RoomID, claims.ParticipantID, joined.session.ID)
+		cancel()
+		if err != nil {
+			client.protocolError(request.ID, "internal_error", "The participant could not leave")
+			return false, nil
+		}
+		leavePayload := map[string]any{"roomId": claims.RoomID, "participantId": claims.ParticipantID, "sessionId": joined.session.ID, "leftAt": leftAt}
+		client.response(request.ID, "participant.leave.accepted", leavePayload)
+		handler.registry.broadcast(claims.RoomID, client, event("participant.left", leavePayload))
+		handler.registry.leave(claims.RoomID, client)
+		client.close(websocket.CloseNormalClosure, "participant left")
+		return true, nil
+	default:
+		client.protocolError(request.ID, "invalid_message", "The protocol message type is unsupported")
+	}
+	return false, nil
 }
 
-func readPump(connection *websocket.Conn, result chan<- error) {
+func (handler *Handler) disconnect(client *client, joined *joinedSession, roomID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	leftAt, err := handler.sessionStore.Leave(ctx, roomID, joined.participant.ID, joined.session.ID)
+	if err == nil {
+		handler.registry.leave(roomID, client)
+		handler.registry.broadcast(roomID, client, event("participant.left", map[string]any{
+			"roomId": roomID, "participantId": joined.participant.ID, "sessionId": joined.session.ID, "leftAt": leftAt,
+		}))
+	}
+}
+
+type incoming struct {
+	data []byte
+	err  error
+}
+
+func readPump(ctx context.Context, connection *websocket.Conn, result chan<- incoming) {
 	for {
-		if _, _, err := connection.NextReader(); err != nil {
-			result <- err
+		messageType, data, err := connection.ReadMessage()
+		message := incoming{data: data, err: err}
+		if messageType != websocket.TextMessage && err == nil {
+			message = incoming{err: errors.New("binary messages are unsupported")}
+		}
+		select {
+		case result <- message:
+		case <-ctx.Done():
+			return
+		}
+		if message.err != nil {
 			return
 		}
 	}
 }
 
+type requestEnvelope struct {
+	Version int             `json:"v"`
+	ID      string          `json:"id"`
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+type joinPayload struct {
+	RoomID           string `json:"roomId"`
+	ParticipantToken string `json:"participantToken"`
+}
+type leavePayload struct {
+	RoomID        string `json:"roomId"`
+	ParticipantID string `json:"participantId"`
+	SessionID     string `json:"sessionId"`
+}
+type heartbeatPayload struct {
+	Nonce string `json:"nonce"`
+}
+
+type client struct {
+	connection   *websocket.Conn
+	writeTimeout time.Duration
+	mu           sync.Mutex
+}
+
+func (client *client) write(value any) error {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	_ = client.connection.SetWriteDeadline(time.Now().Add(client.writeTimeout))
+	return client.connection.WriteJSON(value)
+}
+func (client *client) control(kind int, data []byte) error {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.connection.WriteControl(kind, data, time.Now().Add(client.writeTimeout))
+}
+func (client *client) close(code int, reason string) {
+	_ = client.control(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
+}
+func (client *client) response(requestID, kind string, payload any) {
+	_ = client.write(map[string]any{"v": 1, "id": newID("msg"), "requestId": requestID, "sentAt": time.Now().UTC(), "type": kind, "payload": payload})
+}
+func (client *client) protocolError(requestID, code, message string) {
+	var value any = requestID
+	if requestID == "" {
+		value = nil
+	}
+	_ = client.write(map[string]any{"v": 1, "id": newID("msg"), "requestId": value, "sentAt": time.Now().UTC(), "type": "protocol.error", "payload": map[string]any{"code": code, "message": message, "retryable": false, "details": map[string]any{}}})
+}
+
+type registry struct {
+	mu          sync.RWMutex
+	connections map[*client]struct{}
+	rooms       map[string]map[*client]struct{}
+}
+
+func newRegistry() *registry {
+	return &registry{connections: make(map[*client]struct{}), rooms: make(map[string]map[*client]struct{})}
+}
+func (r *registry) add(c *client) { r.mu.Lock(); defer r.mu.Unlock(); r.connections[c] = struct{}{} }
+func (r *registry) remove(c *client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.connections, c)
+	for roomID, clients := range r.rooms {
+		delete(clients, c)
+		if len(clients) == 0 {
+			delete(r.rooms, roomID)
+		}
+	}
+}
+func (r *registry) join(roomID string, c *client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.rooms[roomID] == nil {
+		r.rooms[roomID] = make(map[*client]struct{})
+	}
+	r.rooms[roomID][c] = struct{}{}
+}
+func (r *registry) leave(roomID string, c *client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.rooms[roomID], c)
+}
+func (r *registry) len() int { r.mu.RLock(); defer r.mu.RUnlock(); return len(r.connections) }
+func (r *registry) broadcast(roomID string, except *client, message any) {
+	r.mu.RLock()
+	clients := make([]*client, 0, len(r.rooms[roomID]))
+	for c := range r.rooms[roomID] {
+		if c != except {
+			clients = append(clients, c)
+		}
+	}
+	r.mu.RUnlock()
+	for _, c := range clients {
+		_ = c.write(message)
+	}
+}
+
+func event(kind string, payload any) map[string]any {
+	return map[string]any{"v": 1, "id": newID("msg"), "sentAt": time.Now().UTC(), "type": kind, "payload": payload}
+}
+func newID(prefix string) string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(err)
+	}
+	return prefix + "_" + hex.EncodeToString(bytes)
+}
+func sessionErrorCode(err error) string {
+	if errors.Is(err, session.ErrRoomNotJoinable) {
+		return "not_found"
+	}
+	if errors.Is(err, session.ErrRoomFull) || errors.Is(err, session.ErrParticipantConflict) {
+		return "conflict"
+	}
+	return "internal_error"
+}
+func sessionErrorMessage(err error) string {
+	if errors.Is(err, session.ErrRoomNotJoinable) {
+		return "The room is not available"
+	}
+	if errors.Is(err, session.ErrRoomFull) {
+		return "The room is full"
+	}
+	if errors.Is(err, session.ErrParticipantConflict) {
+		return "The participant has already joined"
+	}
+	return "The room session could not be created"
+}
 func contains(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {
@@ -198,39 +423,8 @@ func contains(values []string, expected string) bool {
 	}
 	return false
 }
-
-func writeError(response http.ResponseWriter, status int, code, description string) {
+func writeHTTPError(response http.ResponseWriter, status int, code, description string) {
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(map[string]string{
-		"code":        code,
-		"description": description,
-	})
-}
-
-type registry struct {
-	connections map[*websocket.Conn]struct{}
-	mu          sync.RWMutex
-}
-
-func newRegistry() *registry {
-	return &registry{connections: make(map[*websocket.Conn]struct{})}
-}
-
-func (registry *registry) add(connection *websocket.Conn) {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
-	registry.connections[connection] = struct{}{}
-}
-
-func (registry *registry) remove(connection *websocket.Conn) {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
-	delete(registry.connections, connection)
-}
-
-func (registry *registry) len() int {
-	registry.mu.RLock()
-	defer registry.mu.RUnlock()
-	return len(registry.connections)
+	_ = json.NewEncoder(response).Encode(map[string]string{"code": code, "description": description})
 }
