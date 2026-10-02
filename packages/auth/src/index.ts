@@ -5,5 +5,6 @@ export * from "./errors.js";
 export * from "./invitation-email.js";
 export * from "./oauth.js";
 export * from "./organization.js";
+export * from "./ownership.js";
 export * from "./session.js";
 export * from "./server.js";

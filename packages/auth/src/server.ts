@@ -15,6 +15,7 @@ import {
   type OrganizationInvitationSender,
 } from "./invitation-email.js";
 import { organizationRoles } from "./organization.js";
+import { organizationOwnershipHooks } from "./ownership.js";
 import { relayKitSessionPolicy, sessionCookieAttributes } from "./session.js";
 
 export interface RelayKitAuthOptions {
@@ -61,6 +62,7 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions) => {
     plugins: [
       organization({
         creatorRole: "owner",
+        organizationHooks: organizationOwnershipHooks,
         roles: organizationRoles,
         ...(options.sendInvitationEmail
           ? { sendInvitationEmail: options.sendInvitationEmail }

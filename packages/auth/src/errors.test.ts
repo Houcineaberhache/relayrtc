@@ -51,6 +51,7 @@ describe("authentication errors", () => {
     ["YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER", "MEMBER_ROLE_UPDATE_FORBIDDEN"],
     ["YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER", "MEMBER_REMOVAL_FORBIDDEN"],
     ["YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER", "LAST_ORGANIZATION_OWNER"],
+    ["OWNER_ROLE_PROTECTED", "OWNER_ROLE_PROTECTED"],
   ] as const)("maps %s to %s", (sourceCode, expectedCode) => {
     expect(toAuthError({ code: sourceCode })).toEqual(authError(expectedCode));
   });

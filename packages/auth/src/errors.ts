@@ -46,6 +46,10 @@ export const authErrorCodes = [
   "MEMBER_ROLE_UPDATE_FAILED",
   "MEMBER_REMOVAL_FORBIDDEN",
   "MEMBER_REMOVAL_FAILED",
+  "OWNER_ROLE_PROTECTED",
+  "OWNERSHIP_TRANSFER_FORBIDDEN",
+  "OWNERSHIP_TRANSFER_TARGET_INVALID",
+  "OWNERSHIP_TRANSFER_FAILED",
 ] as const;
 
 export type AuthErrorCode = (typeof authErrorCodes)[number];
@@ -104,6 +108,10 @@ const authErrorDescriptions: Readonly<Record<AuthErrorCode, string>> = {
   MEMBER_ROLE_UPDATE_FAILED: "The member role could not be updated",
   MEMBER_REMOVAL_FORBIDDEN: "You are not allowed to remove this organization member",
   MEMBER_REMOVAL_FAILED: "The organization member could not be removed",
+  OWNER_ROLE_PROTECTED: "Organization ownership can only be changed through ownership transfer",
+  OWNERSHIP_TRANSFER_FORBIDDEN: "Only the current organization owner can transfer ownership",
+  OWNERSHIP_TRANSFER_TARGET_INVALID: "Select another organization member as the new owner",
+  OWNERSHIP_TRANSFER_FAILED: "Organization ownership could not be transferred",
 };
 
 export const authError = (code: AuthErrorCode): AuthError => ({
@@ -163,6 +171,7 @@ const betterAuthCodeMap: Readonly<Record<string, AuthErrorCode>> = {
   YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER: "MEMBER_REMOVAL_FORBIDDEN",
   YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER: "LAST_ORGANIZATION_OWNER",
   YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER: "LAST_ORGANIZATION_OWNER",
+  OWNER_ROLE_PROTECTED: "OWNER_ROLE_PROTECTED",
   access_denied: "OAUTH_ACCESS_DENIED",
   account_already_linked_to_different_user: "OAUTH_ACCOUNT_CONFLICT",
   account_not_linked: "OAUTH_ACCOUNT_CONFLICT",
