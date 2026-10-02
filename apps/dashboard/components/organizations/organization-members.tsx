@@ -1,4 +1,5 @@
 import { OrganizationMemberActions } from "@/components/organizations/organization-member-actions"
+import { TransferOrganizationOwnership } from "@/components/organizations/transfer-organization-ownership"
 import {
   Avatar,
   AvatarFallback,
@@ -57,9 +58,17 @@ export function OrganizationMembers({
   const isOwner = currentRoles.includes("owner")
   const isAdmin = currentRoles.includes("admin")
   const canManage = isOwner || isAdmin
-  const ownerCount = members.filter((member) =>
-    member.role.split(",").includes("owner")
-  ).length
+  const ownershipCandidates = members
+    .filter(
+      (member) =>
+        member.userId !== currentUserId &&
+        !member.role.split(",").includes("owner")
+    )
+    .map((member) => ({
+      email: member.user.email,
+      id: member.id,
+      name: member.user.name,
+    }))
 
   return (
     <Card>
@@ -86,69 +95,77 @@ export function OrganizationMembers({
             </div>
           </div>
         ) : (
-          <div className="divide-y">
-            {members.map((member) => {
-              const targetRoles = member.role.split(",")
-              const targetIsOwner = targetRoles.includes("owner")
-              const isCurrentUser = member.userId === currentUserId
-              const canChange = isOwner || (isAdmin && !targetIsOwner)
-              const allowedRoles = !canChange
-                ? []
-                : targetIsOwner && ownerCount === 1
-                  ? (["owner"] as const)
-                  : isOwner
-                    ? (["owner", "admin", "developer", "viewer"] as const)
-                    : (["admin", "developer", "viewer"] as const)
-              const canRemove =
-                canChange &&
-                !isCurrentUser &&
-                (!targetIsOwner || ownerCount > 1)
+          <div className="space-y-6">
+            <div className="divide-y">
+              {members.map((member) => {
+                const targetRoles = member.role.split(",")
+                const targetIsOwner = targetRoles.includes("owner")
+                const isCurrentUser = member.userId === currentUserId
+                const canChange = !targetIsOwner && (isOwner || isAdmin)
+                const allowedRoles = !canChange
+                  ? []
+                  : (["admin", "developer", "viewer"] as const)
+                const canRemove = canChange && !isCurrentUser
 
-              return (
-                <div
-                  key={member.id}
-                  className="flex flex-col gap-4 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar>
-                      {member.user.image ? (
-                        <AvatarImage
-                          src={member.user.image}
-                          alt={member.user.name}
-                        />
-                      ) : null}
-                      <AvatarFallback>{initials(member.user.name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-medium">{member.user.name}</p>
-                        {isCurrentUser ? <Badge variant="outline">You</Badge> : null}
-                        {!canChange ? (
-                          <Badge variant="secondary" className="capitalize">
-                            {member.role}
-                          </Badge>
+                return (
+                  <div
+                    key={member.id}
+                    className="flex flex-col gap-4 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar>
+                        {member.user.image ? (
+                          <AvatarImage
+                            src={member.user.image}
+                            alt={member.user.name}
+                          />
                         ) : null}
+                        <AvatarFallback>
+                          {initials(member.user.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-medium">
+                            {member.user.name}
+                          </p>
+                          {isCurrentUser ? (
+                            <Badge variant="outline">You</Badge>
+                          ) : null}
+                          {!canChange ? (
+                            <Badge variant="secondary" className="capitalize">
+                              {member.role}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {member.user.email} · Joined{" "}
+                          {memberSince(member.createdAt)}
+                        </p>
                       </div>
-                      <p className="truncate text-sm text-muted-foreground">
-                        {member.user.email} · Joined {memberSince(member.createdAt)}
-                      </p>
                     </div>
+                    {canManage && canChange ? (
+                      <OrganizationMemberActions
+                        allowedRoles={allowedRoles}
+                        canRemove={canRemove}
+                        member={{
+                          id: member.id,
+                          name: member.user.name,
+                          role: member.role,
+                        }}
+                        organizationId={organization.id}
+                      />
+                    ) : null}
                   </div>
-                  {canManage && canChange ? (
-                    <OrganizationMemberActions
-                      allowedRoles={allowedRoles}
-                      canRemove={canRemove}
-                      member={{
-                        id: member.id,
-                        name: member.user.name,
-                        role: member.role,
-                      }}
-                      organizationId={organization.id}
-                    />
-                  ) : null}
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+            {isOwner ? (
+              <TransferOrganizationOwnership
+                members={ownershipCandidates}
+                organizationId={organization.id}
+              />
+            ) : null}
           </div>
         )}
       </CardContent>
