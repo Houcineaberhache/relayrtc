@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
 const connectionTestSecret = "a-secure-participant-token-secret-123"
@@ -202,6 +203,101 @@ func TestHandlerDisconnectsOnShutdown(t *testing.T) {
 		t.Fatalf("NextReader() error = %v, want close code %d", err, websocket.CloseGoingAway)
 	}
 	eventually(t, func() bool { return handler.ActiveConnections() == 0 })
+}
+
+type fakeSessionStore struct {
+	joinResult session.JoinResult
+	left       chan struct{}
+}
+
+func (store *fakeSessionStore) Join(context.Context, auth.Claims, string, string) (session.JoinResult, error) {
+	return store.joinResult, nil
+}
+
+func (store *fakeSessionStore) Leave(context.Context, string, string, string) (time.Time, error) {
+	select {
+	case store.left <- struct{}{}:
+	default:
+	}
+	return time.Now().UTC(), nil
+}
+
+func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
+	shutdown, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Now().UTC()
+	participant := session.Participant{
+		ID: "participant_123", RoomID: "room_123", Name: "Ada",
+		Metadata: []byte(`{}`), Role: "participant", JoinedAt: now,
+	}
+	store := &fakeSessionStore{
+		joinResult: session.JoinResult{
+			Room: session.Room{
+				ID: "room_123", ProjectID: "project_123", EnvironmentID: "env_development",
+				Name: "Room", Metadata: []byte(`{}`), Status: "active", MaxParticipants: 10,
+				CreatedAt: now, StartedAt: &now,
+			},
+			Participant: participant,
+			Session: session.ParticipantSession{
+				ID: "session_123", ParticipantID: participant.ID, SignalingNodeID: "signaling-test",
+				ConnectionState: "connected", TransportType: "tcp", JoinedAt: now,
+			},
+			Participants: []session.Participant{participant},
+		},
+		left: make(chan struct{}, 1),
+	}
+	handler := NewHandler(Options{
+		AllowedOrigins: []string{"https://app.example.com"}, HeartbeatInterval: time.Second,
+		MaxMessageBytes: 4096, NodeID: "signaling-test", PongTimeout: 2 * time.Second,
+		SessionStore: store, Shutdown: shutdown,
+		Validator:    auth.NewValidator(connectionTestSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"),
+		WriteTimeout: time.Second,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	token := connectionToken(t, time.Now().Add(time.Minute))
+	connection, _, err := dial(t, server, token, "")
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	defer connection.Close()
+
+	if err := connection.WriteJSON(map[string]any{
+		"v": 1, "id": "request_join", "sentAt": now, "type": "participant.join",
+		"payload": map[string]any{"roomId": "room_123", "participantToken": token},
+	}); err != nil {
+		t.Fatalf("WriteJSON(join) error = %v", err)
+	}
+	response := map[string]any{}
+	if err := connection.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(join) error = %v", err)
+	}
+	if response["type"] != "participant.join.accepted" {
+		t.Fatalf("join response type = %v", response["type"])
+	}
+	payload := response["payload"].(map[string]any)
+	if len(payload["participants"].([]any)) != 1 {
+		t.Fatalf("join participants = %v", payload["participants"])
+	}
+
+	if err := connection.WriteJSON(map[string]any{
+		"v": 1, "id": "request_leave", "sentAt": now, "type": "participant.leave",
+		"payload": map[string]any{"roomId": "room_123", "participantId": "participant_123", "sessionId": "session_123"},
+	}); err != nil {
+		t.Fatalf("WriteJSON(leave) error = %v", err)
+	}
+	response = map[string]any{}
+	if err := connection.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(leave) error = %v", err)
+	}
+	if response["type"] != "participant.leave.accepted" {
+		t.Fatalf("leave response type = %v", response["type"])
+	}
+	select {
+	case <-store.left:
+	case <-time.After(time.Second):
+		t.Fatal("leave was not persisted")
+	}
 }
 
 func eventually(t *testing.T, condition func() bool) {
