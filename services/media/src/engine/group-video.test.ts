@@ -7,6 +7,8 @@ import type { ParticipantTransport, PublishedTrack } from "./media-engine.js";
 import { MediasoupWorkerPool } from "./worker-pool.js";
 
 const config: MediaConfig = {
+  databaseUrl: "postgresql://relaykit:password@localhost:5432/relaykit",
+  internalSecret: "test-internal-secret-at-least-32-characters",
   host: "127.0.0.1",
   logLevel: "silent",
   maxRoomsPerWorker: 1,
@@ -19,6 +21,7 @@ const config: MediaConfig = {
   rtcMaxPort: 40_000,
   rtcPort: 40_000,
   workerCount: 1,
+  signalingInternalUrl: "http://signaling:8081/internal/v1",
 };
 
 const participants = ["alice", "bob", "carol"] as const;

@@ -5,24 +5,28 @@ import { readMediaEnvironment } from "./environment.js";
 describe("readMediaEnvironment", () => {
   it("provides local defaults", () => {
     expect(readMediaEnvironment({})).toEqual({
+      databaseUrl: "postgresql://relaykit:relaykit@127.0.0.1:5432/relaykit",
       host: "0.0.0.0",
       logLevel: "info",
       maxRoomsPerWorker: 100,
       maxTransportsPerRoom: 200,
       nodeEnvironment: "development",
       nodeId: "media-local",
+      internalSecret: "development-internal-secret-change-me",
       port: 8082,
       rtcAnnouncedAddress: "127.0.0.1",
       rtcListenIp: "0.0.0.0",
       rtcMaxPort: 40_003,
       rtcPort: 40_000,
       workerCount: 1,
+      signalingInternalUrl: "http://signaling:8081/internal/v1",
     });
   });
 
   it("reads configured service values", () => {
     expect(
       readMediaEnvironment({
+        DATABASE_URL: "postgresql://relayrtc:password@postgres:5432/relayrtc",
         MEDIA_HOST: "127.0.0.1",
         MEDIA_LOG_LEVEL: "debug",
         MEDIA_MAX_ROOMS_PER_WORKER: "50",
@@ -35,20 +39,25 @@ describe("readMediaEnvironment", () => {
         MEDIA_RTC_PORT: "41000",
         MEDIA_WORKERS: "4",
         NODE_ENV: "production",
+        RELAYRTC_INTERNAL_SECRET: "production-internal-secret-at-least-32-characters",
+        RELAYRTC_SIGNALING_INTERNAL_URL: "http://signaling:9081/internal/v1",
       }),
     ).toEqual({
+      databaseUrl: "postgresql://relayrtc:password@postgres:5432/relayrtc",
       host: "127.0.0.1",
       logLevel: "debug",
       maxRoomsPerWorker: 50,
       maxTransportsPerRoom: 80,
       nodeEnvironment: "production",
       nodeId: "media-2",
+      internalSecret: "production-internal-secret-at-least-32-characters",
       port: 9082,
       rtcAnnouncedAddress: "203.0.113.10",
       rtcListenIp: "10.0.0.10",
       rtcMaxPort: 41_003,
       rtcPort: 41_000,
       workerCount: 4,
+      signalingInternalUrl: "http://signaling:9081/internal/v1",
     });
   });
 

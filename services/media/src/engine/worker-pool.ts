@@ -32,11 +32,21 @@ import type {
   TrackSubscription,
 } from "./media-engine.js";
 import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
+import type { ConnectionQuality } from "@relayrtc/types";
+import type { QualityEventPublisher } from "../quality/quality-event-publisher.js";
+import { qualityEvent } from "../quality/quality-event-publisher.js";
+import type { QualityMetricsStore } from "../quality/quality-metrics-store.js";
+import {
+  classifyConnectionQuality,
+  intervalNetworkStats,
+  qualityTransitionEvent,
+} from "../quality/quality-model.js";
 import {
   preferredLayers,
   selectVideoQuality,
   type MediaPriority,
   type SelectedVideoQuality,
+  type SubscriberNetworkStats,
   type SubscriberQualityMode,
 } from "./quality-controller.js";
 
@@ -65,10 +75,17 @@ interface WorkerSlot {
 interface RoomState {
   consumers: Map<string, ConsumerState>;
   participantPriorities: Map<string, MediaPriority>;
+  participantQualities: Map<string, ConnectionQuality>;
+  participantStats: Map<string, SubscriberNetworkStats>;
   producers: Map<string, Producer>;
   router: Router;
   slot: WorkerSlot;
   transports: Map<string, TransportState>;
+}
+
+export interface MediaQualityOptions {
+  eventPublisher?: QualityEventPublisher;
+  metricsStore?: QualityMetricsStore;
 }
 
 interface ConsumerState {
@@ -87,14 +104,20 @@ interface TransportState {
 export class MediasoupWorkerPool implements MediaEngine {
   readonly #config: MediaConfig;
   readonly #createWorker: MediasoupWorkerFactory;
+  readonly #quality: MediaQualityOptions;
   readonly #pendingRooms = new Map<string, Promise<void>>();
   readonly #rooms = new Map<string, RoomState>();
   readonly #workers: WorkerSlot[] = [];
   #closed = false;
 
-  constructor(config: MediaConfig, createWorker: MediasoupWorkerFactory) {
+  constructor(
+    config: MediaConfig,
+    createWorker: MediasoupWorkerFactory,
+    quality: MediaQualityOptions = {},
+  ) {
     this.#config = config;
     this.#createWorker = createWorker;
+    this.#quality = quality;
   }
 
   async start(): Promise<void> {
@@ -175,6 +198,8 @@ export class MediasoupWorkerPool implements MediaEngine {
     const state: RoomState = {
       consumers: new Map(),
       participantPriorities: new Map(),
+      participantQualities: new Map(),
+      participantStats: new Map(),
       producers: new Map(),
       router,
       slot,
@@ -391,6 +416,27 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   async ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void> {
     const room = this.#getRoom(request.roomId);
+    const stats = intervalNetworkStats(
+      request.stats,
+      room.participantStats.get(request.participantId),
+    );
+    room.participantStats.set(request.participantId, request.stats);
+    const quality = classifyConnectionQuality(stats);
+    await this.#quality.metricsStore?.record({
+      participantId: request.participantId,
+      quality,
+      roomId: request.roomId,
+      stats,
+    });
+    const previousQuality = room.participantQualities.get(request.participantId);
+    const eventType = qualityTransitionEvent(previousQuality, quality);
+    if (eventType && previousQuality) {
+      await this.#quality.eventPublisher?.publish(
+        eventType,
+        qualityEvent(request.roomId, request.participantId, previousQuality, quality),
+      );
+    }
+    room.participantQualities.set(request.participantId, quality);
     for (const state of room.consumers.values()) {
       if (
         state.participantId !== request.participantId ||
@@ -403,7 +449,7 @@ export class MediasoupWorkerPool implements MediaEngine {
         (producer?.appData.priority as MediaPriority | undefined) ??
         room.participantPriorities.get(String(producer?.appData.participantId)) ??
         "normal";
-      const selected = selectVideoQuality(request.stats, priority);
+      const selected = selectVideoQuality(stats, priority);
       if (selected === state.selectedQuality) continue;
       await this.#applyQuality(state.consumer, selected);
       state.selectedQuality = selected;

@@ -148,6 +148,7 @@ services:
       dockerfile: infrastructure/docker/media.Dockerfile
     restart: unless-stopped
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
       MEDIA_HOST: 0.0.0.0
       MEDIA_LOG_LEVEL: ${MEDIA_LOG_LEVEL:-info}
       MEDIA_MAX_ROOMS_PER_WORKER: ${MEDIA_MAX_ROOMS_PER_WORKER:-100}
@@ -159,7 +160,14 @@ services:
       MEDIA_RTC_MAX_PORT: ${MEDIA_RTC_MAX_PORT:-40003}
       MEDIA_RTC_PORT: ${MEDIA_RTC_PORT:-40000}
       MEDIA_WORKERS: ${MEDIA_WORKERS:-1}
+      RELAYRTC_INTERNAL_SECRET: ${PARTICIPANT_TOKEN_SIGNING_SECRET:?PARTICIPANT_TOKEN_SIGNING_SECRET must be set in .env}
+      RELAYRTC_SIGNALING_INTERNAL_URL: http://signaling:8081/internal/v1
     init: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      signaling:
+        condition: service_healthy
     ports:
       - 127.0.0.1:${MEDIA_PORT:-8082}:8082
       - ${MEDIA_RTC_PORT:-40000}-${MEDIA_RTC_MAX_PORT:-40003}:${MEDIA_RTC_PORT:-40000}-${MEDIA_RTC_MAX_PORT:-40003}/tcp
