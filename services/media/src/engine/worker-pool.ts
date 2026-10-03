@@ -268,6 +268,9 @@ export class MediasoupWorkerPool implements MediaEngine {
     if (!producer) {
       throw new MediaEngineError("NOT_FOUND", `Media track ${request.trackId} was not found`);
     }
+    if (producer.appData.participantId === request.participantId) {
+      throw new MediaEngineError("INVALID_REQUEST", "Participants cannot subscribe to their own tracks");
+    }
     const transport = this.#getParticipantTransport(
       room,
       request.transportId,
