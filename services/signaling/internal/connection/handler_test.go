@@ -210,6 +210,18 @@ type fakeSessionStore struct {
 	left       chan struct{}
 }
 
+type fakeRTCService struct {
+	requests chan RTCSignalRequest
+}
+
+func (service *fakeRTCService) Handle(_ context.Context, _ auth.Claims, request RTCSignalRequest) (RTCSignalResponse, error) {
+	service.requests <- request
+	return RTCSignalResponse{
+		Type:    "rtc.capabilities",
+		Payload: map[string]any{"routerCapabilities": map[string]any{"codecs": []any{}}},
+	}, nil
+}
+
 func (store *fakeSessionStore) Join(context.Context, auth.Claims, string, string) (session.JoinResult, error) {
 	return store.joinResult, nil
 }
@@ -246,10 +258,11 @@ func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
 		},
 		left: make(chan struct{}, 1),
 	}
+	rtcService := &fakeRTCService{requests: make(chan RTCSignalRequest, 1)}
 	handler := NewHandler(Options{
 		AllowedOrigins: []string{"https://app.example.com"}, HeartbeatInterval: time.Second,
 		MaxMessageBytes: 4096, NodeID: "signaling-test", PongTimeout: 2 * time.Second,
-		SessionStore: store, Shutdown: shutdown,
+		RTCService: rtcService, SessionStore: store, Shutdown: shutdown,
 		Validator:    auth.NewValidator(connectionTestSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"),
 		WriteTimeout: time.Second,
 	})
@@ -278,6 +291,43 @@ func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
 	payload := response["payload"].(map[string]any)
 	if len(payload["participants"].([]any)) != 1 {
 		t.Fatalf("join participants = %v", payload["participants"])
+	}
+
+	if err := connection.WriteJSON(map[string]any{
+		"v": 1, "id": "request_wrong_session", "sentAt": now, "type": "rtc.capabilities.get",
+		"payload": map[string]any{"roomId": "room_123", "sessionId": "session_other"},
+	}); err != nil {
+		t.Fatalf("WriteJSON(wrong session) error = %v", err)
+	}
+	response = map[string]any{}
+	if err := connection.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(wrong session) error = %v", err)
+	}
+	if response["type"] != "protocol.error" {
+		t.Fatalf("wrong session response type = %v", response["type"])
+	}
+
+	if err := connection.WriteJSON(map[string]any{
+		"v": 1, "id": "request_capabilities", "sentAt": now, "type": "rtc.capabilities.get",
+		"payload": map[string]any{"roomId": "room_123", "sessionId": "session_123"},
+	}); err != nil {
+		t.Fatalf("WriteJSON(capabilities) error = %v", err)
+	}
+	response = map[string]any{}
+	if err := connection.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(capabilities) error = %v", err)
+	}
+	if response["type"] != "rtc.capabilities" {
+		t.Fatalf("capabilities response type = %v", response["type"])
+	}
+	select {
+	case request := <-rtcService.requests:
+		if request.RoomID != "room_123" || request.SessionID != "session_123" ||
+			request.ParticipantID != "participant_123" {
+			t.Fatalf("RTC request scope = %+v", request)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RTC request was not dispatched")
 	}
 
 	if err := connection.WriteJSON(map[string]any{
