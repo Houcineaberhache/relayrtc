@@ -1,16 +1,8 @@
-import type {
-  Consumer,
-  Producer,
-  Router,
-  WebRtcServer,
-  WebRtcTransport,
-  Worker,
-} from "mediasoup/types";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { MediaConfig } from "../config/environment.js";
 import { MediaEngineError } from "./errors.js";
-import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
+import { createMediasoupTestHarness } from "./mediasoup-test-fixtures.js";
 import { MediasoupWorkerPool } from "./worker-pool.js";
 
 const config: MediaConfig = {
@@ -28,87 +20,9 @@ const config: MediaConfig = {
   workerCount: 2,
 };
 
-const createTransport = (id: string): WebRtcTransport => {
-  let consumerIndex = 0;
-  let producerIndex = 0;
-  return {
-    appData: {},
-    closed: false,
-    consume: vi.fn((options: { producerId: string }) =>
-      Promise.resolve({
-        close: vi.fn(),
-        id: `consumer-${id}-${String(consumerIndex++)}`,
-        kind: "audio",
-        observer: { once: vi.fn() },
-        producerId: options.producerId,
-        rtpParameters: { codecs: [] },
-      } as unknown as Consumer),
-    ),
-    dtlsParameters: { fingerprints: [], role: "auto" },
-    iceCandidates: [{ foundation: "test", ip: "127.0.0.1", port: 40_000 }],
-    iceParameters: { iceLite: true, password: "password", usernameFragment: "username" },
-    id,
-    observer: { once: vi.fn() },
-    produce: vi.fn((options: { appData: Record<string, unknown>; kind: "audio" | "video" }) =>
-      Promise.resolve({
-        appData: options.appData,
-        close: vi.fn(),
-        id: `producer-${id}-${String(producerIndex++)}`,
-        kind: options.kind,
-        observer: { once: vi.fn() },
-      } as unknown as Producer),
-    ),
-  } as unknown as WebRtcTransport;
-};
-
-const createRouter = (id: string): Router => {
-  let transportIndex = 0;
-  return {
-    canConsume: vi.fn(() => true),
-    close: vi.fn(),
-    closed: false,
-    createWebRtcTransport: vi.fn(() =>
-      Promise.resolve(createTransport(`transport-${id}-${String(transportIndex++)}`)),
-    ),
-    id,
-    observer: { once: vi.fn() },
-    rtpCapabilities: { codecs: [] },
-  } as unknown as Router;
-};
-
-const createWorkerFactory = () => {
-  const workers: Worker[] = [];
-  const routerFactories: ReturnType<typeof vi.fn>[] = [];
-  const factory: MediasoupWorkerFactory = vi.fn(() => {
-    const index = workers.length;
-    let routerIndex = 0;
-    const createRouterMock = vi.fn(() =>
-      Promise.resolve(createRouter(`${String(index)}-${String(routerIndex++)}`)),
-    );
-    routerFactories.push(createRouterMock);
-    const worker = {
-      close: vi.fn(),
-      closed: false,
-      createRouter: createRouterMock,
-      createWebRtcServer: vi.fn(() =>
-        Promise.resolve({
-          close: vi.fn(),
-          id: `server-${String(index)}`,
-        } as unknown as WebRtcServer),
-      ),
-      getResourceUsage: vi.fn(() => Promise.resolve({})),
-      id: `worker-${String(index)}`,
-      on: vi.fn(),
-    } as unknown as Worker;
-    workers.push(worker);
-    return Promise.resolve(worker);
-  });
-  return { factory, routerFactories, workers };
-};
-
 describe("MediasoupWorkerPool", () => {
   it("starts workers and reports healthy capacity", async () => {
-    const { factory } = createWorkerFactory();
+    const { factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(config, factory);
 
     await pool.start();
@@ -129,7 +43,7 @@ describe("MediasoupWorkerPool", () => {
   });
 
   it("balances rooms and enforces room capacity", async () => {
-    const { factory, routerFactories } = createWorkerFactory();
+    const { factory, routerFactories } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(config, factory);
     await pool.start();
 
@@ -145,7 +59,7 @@ describe("MediasoupWorkerPool", () => {
   });
 
   it("creates WebRTC transports and enforces transport capacity", async () => {
-    const { factory } = createWorkerFactory();
+    const { factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(config, factory);
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
@@ -172,7 +86,7 @@ describe("MediasoupWorkerPool", () => {
   });
 
   it("publishes audio and video tracks and creates subscriptions", async () => {
-    const { factory } = createWorkerFactory();
+    const { factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(
       { ...config, maxTransportsPerRoom: 2 },
       factory,
@@ -221,7 +135,7 @@ describe("MediasoupWorkerPool", () => {
   });
 
   it("only allows a track owner to remove a published track", async () => {
-    const { factory } = createWorkerFactory();
+    const { factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(config, factory);
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
