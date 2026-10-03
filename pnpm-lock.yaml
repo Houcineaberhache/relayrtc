@@ -133,6 +133,8 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
+  packages/client: {}
+
   packages/database:
     dependencies:
       drizzle-orm:
