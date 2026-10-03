@@ -54,6 +54,7 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("GET /ready", health("ready"))
 	mux.Handle("GET /v1/connect", connections)
 	mux.HandleFunc("POST /internal/v1/rooms/{roomId}/end", endRoom(connections, cfg.InternalSecret))
+	mux.HandleFunc("POST /internal/v1/rooms/{roomId}/quality-events", qualityEvents(connections, cfg.InternalSecret))
 
 	server := &http.Server{
 		Addr:              cfg.Address,

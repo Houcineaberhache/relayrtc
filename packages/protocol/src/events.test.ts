@@ -42,6 +42,32 @@ describe("protocol events", () => {
     }
   });
 
+  it("parses connection quality transition events", () => {
+    const payload = {
+      occurredAt: timestamp,
+      participantId: "participant_123",
+      previousQuality: "good",
+      quality: "poor",
+      roomId: "room_123",
+    };
+
+    expect(safeParseProtocolMessage(request("connection.degraded", payload)).success).toBe(true);
+    expect(
+      safeParseProtocolMessage(
+        request("connection.recovered", {
+          ...payload,
+          previousQuality: "critical",
+          quality: "good",
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      safeParseProtocolMessage(
+        request("connection.recovered", { ...payload, previousQuality: "poor", quality: "lost" }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects events whose resource state contradicts the event type", () => {
     expect(safeParseProtocolMessage(request("room.ended", { room })).success).toBe(false);
     expect(safeParseProtocolMessage(request("track.paused", { track })).success).toBe(false);

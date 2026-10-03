@@ -1,4 +1,4 @@
-import { describe, expect, it, type Mock } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 
 import type { MediaConfig } from "../config/environment.js";
 import { MediaEngineError } from "./errors.js";
@@ -6,6 +6,8 @@ import { createMediasoupTestHarness } from "./mediasoup-test-fixtures.js";
 import { MediasoupWorkerPool } from "./worker-pool.js";
 
 const config: MediaConfig = {
+  databaseUrl: "postgresql://relaykit:password@localhost:5432/relaykit",
+  internalSecret: "test-internal-secret-at-least-32-characters",
   host: "127.0.0.1",
   logLevel: "silent",
   maxRoomsPerWorker: 1,
@@ -18,6 +20,7 @@ const config: MediaConfig = {
   rtcMaxPort: 40_003,
   rtcPort: 40_000,
   workerCount: 2,
+  signalingInternalUrl: "http://signaling:8081/internal/v1",
 };
 
 describe("MediasoupWorkerPool", () => {
@@ -171,7 +174,12 @@ describe("MediasoupWorkerPool", () => {
 
   it("selects video layers from subscriber stats and supports audio-only fallback", async () => {
     const { consumers, factory } = createMediasoupTestHarness();
-    const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory);
+    const publish = vi.fn(() => Promise.resolve());
+    const record = vi.fn(() => Promise.resolve());
+    const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory, {
+      eventPublisher: { publish },
+      metricsStore: { record },
+    });
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
     const send = await pool.createParticipantTransport({
@@ -235,6 +243,15 @@ describe("MediasoupWorkerPool", () => {
       },
     });
     expect(qualityConsumer.pause).toHaveBeenCalledOnce();
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledWith(
+      "connection.degraded",
+      expect.objectContaining({
+        participantId: "subscriber",
+        previousQuality: "excellent",
+        quality: "critical",
+      }),
+    );
     await pool.close();
   });
 

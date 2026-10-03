@@ -244,6 +244,15 @@ importers:
 
   services/media:
     dependencies:
+      '@relayrtc/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@relayrtc/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(kysely@0.29.6)(postgres@3.4.9)
       fastify:
         specifier: ^5.12.5
         version: 5.12.5

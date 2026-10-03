@@ -613,6 +613,10 @@ func (r *registry) broadcast(roomID string, except *client, message any) {
 	}
 }
 
+func (handler *Handler) PublishQualityEvent(roomID string, eventType string, payload any) {
+	handler.registry.broadcast(roomID, nil, event(eventType, payload))
+}
+
 func (r *registry) roomClients(roomID string) []*client {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
