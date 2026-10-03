@@ -6,6 +6,8 @@ import {
   environmentTypes,
   organizationMemberRoles,
   projectStatuses,
+  roomQualityModeSettings,
+  roomQualityModes,
   roomStatuses,
   trackStates,
   trackTypes,
@@ -44,6 +46,13 @@ describe("domain literals", () => {
     expect(webhookEventTypes).toContain("connection.degraded");
     expect(usageGranularities).toEqual(["minute", "hour", "day", "month"]);
     expect(usageEventTypes).toContain("sfu.bytes.egress");
+  });
+
+  it("maps room quality presets to send and receive preferences", () => {
+    expect(roomQualityModes).toEqual(["auto", "high", "balanced", "data-saver"]);
+    expect(roomQualityModeSettings.high).toEqual({ receive: "1080p", send: "1080p" });
+    expect(roomQualityModeSettings.balanced).toEqual({ receive: "720p", send: "720p" });
+    expect(roomQualityModeSettings["data-saver"]).toEqual({ receive: "360p", send: "360p" });
   });
 });
 
