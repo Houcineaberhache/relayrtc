@@ -15,6 +15,14 @@ const config: ApiConfig = {
   participantTokenSigningSecret: "a-secure-participant-token-secret-123",
   port: 8080,
   trustProxy: false,
+  turnCredentialTtlSeconds: 600,
+  turnSharedSecret: "a-secure-turn-shared-secret-value",
+  turnStunUrls: ["stun:localhost:3478"],
+  turnUrls: [
+    "turn:localhost:3478?transport=udp",
+    "turn:localhost:3478?transport=tcp",
+    "turns:localhost:5349?transport=tcp",
+  ],
 };
 
 const database = {

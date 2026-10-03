@@ -1,4 +1,6 @@
-# RelayRTC
+<img width="2172" height="724" alt="GithubBanner" src="https://github.com/user-attachments/assets/0cc439f5-cf28-4003-a8ac-a1b2dff96115" />
+
+# What is Relayrtc?
 
 RelayRTC is open-source realtime communication infrastructure for developers. It is designed to provide stable APIs and SDKs for voice, video, rooms, screen sharing, messaging, presence. Built on top of WebRTC.
 
@@ -16,9 +18,7 @@ Start the complete local stack with Docker
 pnpm docker:up
 ```
 
-The first run creates `.env` with local secrets, builds the dashboard and signaling service,
-starts the infrastructure, and applies database migrations. Open `http://localhost:3001` after
-the command completes.
+Make sure to copy .env.example to .env!
 
 Use `pnpm docker:logs`, `pnpm docker:status`, and `pnpm docker:down` to operate the stack.
 
