@@ -67,6 +67,7 @@ describe("group video rooms", () => {
         participantId,
         await pool.publishTrack({
           kind: "video",
+          trackType: "camera_video",
           participantId,
           roomId: "video-room",
           rtpParameters: videoRtpParameters,
@@ -121,6 +122,7 @@ describe("group video rooms", () => {
     });
     const track = await pool.publishTrack({
       kind: "video",
+      trackType: "camera_video",
       participantId: "alice",
       roomId: "video-room",
       rtpParameters: videoRtpParameters,

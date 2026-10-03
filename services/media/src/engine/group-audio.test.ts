@@ -59,6 +59,7 @@ describe("group audio rooms", () => {
         participantId,
         await pool.publishTrack({
           kind: "audio",
+          trackType: "audio",
           participantId,
           roomId: "group-room",
           rtpParameters: { codecs: [{ mimeType: "audio/opus" }] },
@@ -120,6 +121,7 @@ describe("group audio rooms", () => {
     });
     const track = await pool.publishTrack({
       kind: "audio",
+      trackType: "audio",
       participantId: "alice",
       roomId: "room-one",
       rtpParameters: { codecs: [{ mimeType: "audio/opus" }] },

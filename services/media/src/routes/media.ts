@@ -1,7 +1,12 @@
 import type { FastifyPluginCallback } from "fastify";
 
 import { MediaEngineError } from "../engine/errors.js";
-import type { MediaEngine, MediaKind, MediaTransportDirection } from "../engine/media-engine.js";
+import type {
+  MediaEngine,
+  MediaKind,
+  MediaTrackType,
+  MediaTransportDirection,
+} from "../engine/media-engine.js";
 
 interface MediaRoutesOptions {
   engine: MediaEngine;
@@ -34,6 +39,7 @@ interface PublishTrackBody {
   participantId: string;
   rtpParameters: Readonly<Record<string, unknown>>;
   transportId: string;
+  trackType: MediaTrackType;
 }
 
 interface SubscribeTrackBody {
@@ -188,12 +194,13 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
         body: {
           type: "object",
           additionalProperties: false,
-          required: ["kind", "participantId", "rtpParameters", "transportId"],
+          required: ["kind", "participantId", "rtpParameters", "trackType", "transportId"],
           properties: {
             kind: { enum: ["audio", "video"] },
             participantId: { type: "string", minLength: 1, maxLength: 128 },
             rtpParameters: rtcParametersSchema,
             transportId: { type: "string", minLength: 1, maxLength: 256 },
+            trackType: { enum: ["audio", "camera_video", "screen_audio", "screen_video"] },
           },
         },
         params: roomParametersSchema,

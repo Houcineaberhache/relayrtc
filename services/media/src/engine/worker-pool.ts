@@ -242,6 +242,7 @@ export class MediasoupWorkerPool implements MediaEngine {
         id: producer.id,
         kind: producer.kind,
         participantId: String(producer.appData.participantId),
+        trackType: producer.appData.trackType as PublishedTrack["trackType"],
       })),
     );
   }
@@ -279,14 +280,32 @@ export class MediasoupWorkerPool implements MediaEngine {
       request.participantId,
       "send",
     );
+    const expectedKind = request.trackType === "audio" || request.trackType === "screen_audio"
+      ? "audio"
+      : "video";
+    if (request.kind !== expectedKind) {
+      throw new MediaEngineError(
+        "INVALID_REQUEST",
+        `Track type ${request.trackType} requires ${expectedKind} media`,
+      );
+    }
     const producer = await transport.produce({
-      appData: { participantId: request.participantId, roomId: request.roomId },
+      appData: {
+        participantId: request.participantId,
+        roomId: request.roomId,
+        trackType: request.trackType,
+      },
       kind: request.kind,
       rtpParameters: request.rtpParameters as RtpParameters,
     });
     room.producers.set(producer.id, producer);
     producer.observer.once("close", () => room.producers.delete(producer.id));
-    return { id: producer.id, kind: producer.kind, participantId: request.participantId };
+    return {
+      id: producer.id,
+      kind: producer.kind,
+      participantId: request.participantId,
+      trackType: request.trackType,
+    };
   }
 
   async subscribeTrack(request: SubscribeTrackRequest): Promise<TrackSubscription> {
@@ -325,6 +344,7 @@ export class MediasoupWorkerPool implements MediaEngine {
       producerId: producer.id,
       rtpParameters: consumer.rtpParameters,
       trackId: producer.id,
+      trackType: producer.appData.trackType as TrackSubscription["trackType"],
     };
   }
 
