@@ -24,6 +24,38 @@ import {
 } from "./participant.js";
 import type { RoomEndedEvent } from "./room.js";
 import { roomEndedEventSchema } from "./room.js";
+import type {
+  RtcCapabilitiesGetRequest,
+  RtcCapabilitiesResponse,
+  RtcIceRestartedResponse,
+  RtcIceRestartRequest,
+  RtcTrackControlledResponse,
+  RtcTrackControlRequest,
+  RtcTrackPublishedResponse,
+  RtcTrackPublishRequest,
+  RtcTrackSubscribedResponse,
+  RtcTrackSubscribeRequest,
+  RtcTransportConnectedResponse,
+  RtcTransportConnectRequest,
+  RtcTransportCreatedResponse,
+  RtcTransportCreateRequest,
+} from "./rtc.js";
+import {
+  rtcCapabilitiesGetRequestSchema,
+  rtcCapabilitiesResponseSchema,
+  rtcIceRestartedResponseSchema,
+  rtcIceRestartRequestSchema,
+  rtcTrackControlledResponseSchema,
+  rtcTrackControlRequestSchema,
+  rtcTrackPublishedResponseSchema,
+  rtcTrackPublishRequestSchema,
+  rtcTrackSubscribedResponseSchema,
+  rtcTrackSubscribeRequestSchema,
+  rtcTransportConnectedResponseSchema,
+  rtcTransportConnectRequestSchema,
+  rtcTransportCreatedResponseSchema,
+  rtcTransportCreateRequestSchema,
+} from "./rtc.js";
 import type { SessionResumeAcceptedResponse, SessionResumeRequest } from "./session.js";
 import { sessionResumeAcceptedResponseSchema, sessionResumeRequestSchema } from "./session.js";
 import type {
@@ -43,6 +75,13 @@ export const protocolRequestTypes = [
   "heartbeat.ping",
   "participant.join",
   "participant.leave",
+  "rtc.capabilities.get",
+  "rtc.transport.create",
+  "rtc.transport.connect",
+  "rtc.ice.restart",
+  "rtc.track.publish",
+  "rtc.track.control",
+  "rtc.track.subscribe",
   "session.resume",
 ] as const;
 
@@ -50,6 +89,13 @@ export const protocolResponseTypes = [
   "heartbeat.pong",
   "participant.join.accepted",
   "participant.leave.accepted",
+  "rtc.capabilities",
+  "rtc.transport.created",
+  "rtc.transport.connected",
+  "rtc.ice.restarted",
+  "rtc.track.publish.accepted",
+  "rtc.track.control.accepted",
+  "rtc.track.subscribe.accepted",
   "session.resume.accepted",
 ] as const;
 
@@ -65,12 +111,29 @@ export const protocolEventTypes = [
 ] as const;
 
 export type ProtocolRequestMessage =
-  HeartbeatPingRequest | ParticipantJoinRequest | ParticipantLeaveRequest | SessionResumeRequest;
+  | HeartbeatPingRequest
+  | ParticipantJoinRequest
+  | ParticipantLeaveRequest
+  | RtcCapabilitiesGetRequest
+  | RtcTransportCreateRequest
+  | RtcTransportConnectRequest
+  | RtcIceRestartRequest
+  | RtcTrackPublishRequest
+  | RtcTrackControlRequest
+  | RtcTrackSubscribeRequest
+  | SessionResumeRequest;
 
 export type ProtocolResponseMessage =
   | HeartbeatPongResponse
   | ParticipantJoinAcceptedResponse
   | ParticipantLeaveAcceptedResponse
+  | RtcCapabilitiesResponse
+  | RtcTransportCreatedResponse
+  | RtcTransportConnectedResponse
+  | RtcIceRestartedResponse
+  | RtcTrackPublishedResponse
+  | RtcTrackControlledResponse
+  | RtcTrackSubscribedResponse
   | SessionResumeAcceptedResponse;
 
 export type ProtocolEventMessage =
@@ -107,6 +170,20 @@ export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminated
   participantJoinAcceptedResponseSchema,
   participantLeaveRequestSchema,
   participantLeaveAcceptedResponseSchema,
+  rtcCapabilitiesGetRequestSchema,
+  rtcCapabilitiesResponseSchema,
+  rtcTransportCreateRequestSchema,
+  rtcTransportCreatedResponseSchema,
+  rtcTransportConnectRequestSchema,
+  rtcTransportConnectedResponseSchema,
+  rtcIceRestartRequestSchema,
+  rtcIceRestartedResponseSchema,
+  rtcTrackPublishRequestSchema,
+  rtcTrackPublishedResponseSchema,
+  rtcTrackControlRequestSchema,
+  rtcTrackControlledResponseSchema,
+  rtcTrackSubscribeRequestSchema,
+  rtcTrackSubscribedResponseSchema,
   sessionResumeRequestSchema,
   sessionResumeAcceptedResponseSchema,
   roomEndedEventSchema,

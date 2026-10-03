@@ -4,6 +4,7 @@ export * from "./heartbeat.js";
 export * from "./messages.js";
 export * from "./participant.js";
 export * from "./room.js";
+export * from "./rtc.js";
 export * from "./session.js";
 export * from "./track.js";
 export * from "./version.js";
