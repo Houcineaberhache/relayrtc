@@ -15,6 +15,8 @@ Connections are closed when the token expires, the pong deadline is missed, the 
 
 After connecting, clients send a version `1` `participant.join` request containing the scoped room ID and the same participant token used for the handshake. The accepted response includes the room, local participant, durable connection session, and active participant snapshot. Joined connections receive `participant.joined` and `participant.left` discovery events. A `participant.leave` request ends the durable session and closes the connection; unexpected disconnects perform the same cleanup.
 
+After joining, clients may negotiate RTC capabilities, transports, ICE restarts, track publication/control, and subscriptions through the `rtc.*` protocol messages. Every RTC request must match the authenticated room and joined session. Signaling forwards validated messages through the `RTCSignalService` boundary; the media/SFU implementation is connected to that boundary in the media phases.
+
 ## Configuration
 
 - `RELAYRTC_SIGNALING_ADDRESS` — listener address, defaults to `:8081`
