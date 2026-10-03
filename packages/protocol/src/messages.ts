@@ -5,6 +5,22 @@ import { protocolErrorMessageSchema } from "./error.js";
 import type { HeartbeatPingRequest, HeartbeatPongResponse } from "./heartbeat.js";
 import { heartbeatPingRequestSchema, heartbeatPongResponseSchema } from "./heartbeat.js";
 import type {
+  CustomEventEmittedResponse,
+  CustomEventEmitRequest,
+  CustomEventReceivedEvent,
+  TextMessageReceivedEvent,
+  TextMessageSendRequest,
+  TextMessageSentResponse,
+} from "./messaging.js";
+import {
+  customEventEmittedResponseSchema,
+  customEventEmitRequestSchema,
+  customEventReceivedEventSchema,
+  textMessageReceivedEventSchema,
+  textMessageSendRequestSchema,
+  textMessageSentResponseSchema,
+} from "./messaging.js";
+import type {
   ParticipantJoinAcceptedResponse,
   ParticipantJoinedEvent,
   ParticipantJoinRequest,
@@ -73,6 +89,8 @@ import {
 
 export const protocolRequestTypes = [
   "heartbeat.ping",
+  "message.send",
+  "event.emit",
   "participant.join",
   "participant.leave",
   "rtc.capabilities.get",
@@ -87,6 +105,8 @@ export const protocolRequestTypes = [
 
 export const protocolResponseTypes = [
   "heartbeat.pong",
+  "message.sent",
+  "event.emitted",
   "participant.join.accepted",
   "participant.leave.accepted",
   "rtc.capabilities",
@@ -101,6 +121,8 @@ export const protocolResponseTypes = [
 
 export const protocolEventTypes = [
   "room.ended",
+  "message.received",
+  "event.received",
   "participant.joined",
   "participant.left",
   "participant.reconnected",
@@ -112,6 +134,8 @@ export const protocolEventTypes = [
 
 export type ProtocolRequestMessage =
   | HeartbeatPingRequest
+  | TextMessageSendRequest
+  | CustomEventEmitRequest
   | ParticipantJoinRequest
   | ParticipantLeaveRequest
   | RtcCapabilitiesGetRequest
@@ -125,6 +149,8 @@ export type ProtocolRequestMessage =
 
 export type ProtocolResponseMessage =
   | HeartbeatPongResponse
+  | TextMessageSentResponse
+  | CustomEventEmittedResponse
   | ParticipantJoinAcceptedResponse
   | ParticipantLeaveAcceptedResponse
   | RtcCapabilitiesResponse
@@ -138,6 +164,8 @@ export type ProtocolResponseMessage =
 
 export type ProtocolEventMessage =
   | RoomEndedEvent
+  | TextMessageReceivedEvent
+  | CustomEventReceivedEvent
   | ParticipantJoinedEvent
   | ParticipantLeftEvent
   | ParticipantReconnectedEvent
@@ -166,6 +194,12 @@ export const protocolMessageTypes = [
 export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminatedUnion("type", [
   heartbeatPingRequestSchema,
   heartbeatPongResponseSchema,
+  textMessageSendRequestSchema,
+  textMessageSentResponseSchema,
+  textMessageReceivedEventSchema,
+  customEventEmitRequestSchema,
+  customEventEmittedResponseSchema,
+  customEventReceivedEventSchema,
   participantJoinRequestSchema,
   participantJoinAcceptedResponseSchema,
   participantLeaveRequestSchema,
