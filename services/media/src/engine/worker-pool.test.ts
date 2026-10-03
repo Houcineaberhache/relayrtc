@@ -307,6 +307,16 @@ describe("MediasoupWorkerPool", () => {
         quality: "critical",
       }),
     );
+    await pool.setParticipantQualityMode({
+      mode: "balanced",
+      participantId: "subscriber",
+      roomId: "room-1",
+    });
+    expect(qualityConsumer.resume).toHaveBeenCalledTimes(2);
+    expect(qualityConsumer.setPreferredLayers).toHaveBeenCalledWith({
+      spatialLayer: 1,
+      temporalLayer: 2,
+    });
     await pool.close();
   });
 

@@ -1,3 +1,5 @@
+import type { RoomQualityMode } from "@relayrtc/types";
+
 export type MediaKind = "audio" | "video";
 export type MediaTrackType = "audio" | "camera_video" | "screen_audio" | "screen_video";
 export type MediaTransportDirection = "receive" | "send";
@@ -106,6 +108,11 @@ export interface SetSubscriptionQualityRequest extends MediaRoomRequest {
   subscriptionId: string;
 }
 
+export interface SetParticipantQualityModeRequest extends MediaRoomRequest {
+  mode: RoomQualityMode;
+  participantId: string;
+}
+
 export interface SetPriorityRequest extends MediaRoomRequest {
   participantId: string;
   priority: MediaPriority;
@@ -130,6 +137,7 @@ export interface MediaEngine {
   ): Promise<Readonly<Record<string, unknown>>>;
   start(): Promise<void>;
   setParticipantPriority(request: SetPriorityRequest): Promise<void>;
+  setParticipantQualityMode(request: SetParticipantQualityModeRequest): Promise<void>;
   setSubscriptionQuality(request: SetSubscriptionQualityRequest): Promise<void>;
   setTrackPriority(request: SetPriorityRequest & { trackId: string }): Promise<void>;
   subscribeTrack(request: SubscribeTrackRequest): Promise<TrackSubscription>;
