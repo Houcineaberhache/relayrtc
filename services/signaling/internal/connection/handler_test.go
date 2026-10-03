@@ -18,6 +18,10 @@ import (
 const connectionTestSecret = "a-secure-participant-token-secret-123"
 
 func connectionToken(t *testing.T, expiresAt time.Time) string {
+	return connectionTokenWithPermissions(t, expiresAt, []string{"room:join"})
+}
+
+func connectionTokenWithPermissions(t *testing.T, expiresAt time.Time, permissions []string) string {
 	t.Helper()
 	issuedAt := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
 	expiresAt = expiresAt.UTC().Truncate(time.Second)
@@ -28,7 +32,7 @@ func connectionToken(t *testing.T, expiresAt time.Time) string {
 		Metadata:        map[string]any{},
 		ParticipantID:   "participant_123",
 		ParticipantName: "Ada",
-		Permissions:     []string{"room:join"},
+		Permissions:     permissions,
 		ProjectID:       "project_123",
 		RoomID:          "room_123",
 		TokenID:         "ptok_123",
