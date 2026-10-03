@@ -1,6 +1,9 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/relayrtc.rules.yml
   scrape_timeout: 10s
 
 scrape_configs:
