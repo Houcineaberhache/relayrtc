@@ -17,6 +17,7 @@ import type {
   MediaEngine,
   MediaEngineCapacity,
   MediaEngineHealth,
+  IngestSubscriberStatsRequest,
   MediaRoomRequest,
   ConnectTransportRequest,
   ParticipantTransport,
@@ -25,10 +26,19 @@ import type {
   PublishTrackRequest,
   RemoveTrackRequest,
   RestartTransportRequest,
+  SetPriorityRequest,
+  SetSubscriptionQualityRequest,
   SubscribeTrackRequest,
   TrackSubscription,
 } from "./media-engine.js";
 import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
+import {
+  preferredLayers,
+  selectVideoQuality,
+  type MediaPriority,
+  type SelectedVideoQuality,
+  type SubscriberQualityMode,
+} from "./quality-controller.js";
 
 const mediaCodecs: RouterRtpCodecCapability[] = [
   { kind: "audio", mimeType: "audio/opus", clockRate: 48_000, channels: 2 },
@@ -53,11 +63,19 @@ interface WorkerSlot {
 }
 
 interface RoomState {
-  consumers: Map<string, Consumer>;
+  consumers: Map<string, ConsumerState>;
+  participantPriorities: Map<string, MediaPriority>;
   producers: Map<string, Producer>;
   router: Router;
   slot: WorkerSlot;
   transports: Map<string, TransportState>;
+}
+
+interface ConsumerState {
+  consumer: Consumer;
+  participantId: string;
+  quality: SubscriberQualityMode;
+  selectedQuality: SelectedVideoQuality | null;
 }
 
 interface TransportState {
@@ -156,6 +174,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     }
     const state: RoomState = {
       consumers: new Map(),
+      participantPriorities: new Map(),
       producers: new Map(),
       router,
       slot,
@@ -176,9 +195,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     return Promise.resolve();
   }
 
-  getRouterCapabilities(
-    request: MediaRoomRequest,
-  ): Promise<Readonly<Record<string, unknown>>> {
+  getRouterCapabilities(request: MediaRoomRequest): Promise<Readonly<Record<string, unknown>>> {
     const room = this.#getRoom(request.roomId);
     return Promise.resolve(room.router.rtpCapabilities);
   }
@@ -243,6 +260,10 @@ export class MediasoupWorkerPool implements MediaEngine {
         kind: producer.kind,
         participantId: String(producer.appData.participantId),
         trackType: producer.appData.trackType as PublishedTrack["trackType"],
+        priority:
+          (producer.appData.priority as MediaPriority | undefined) ??
+          room.participantPriorities.get(String(producer.appData.participantId)) ??
+          "normal",
       })),
     );
   }
@@ -280,9 +301,8 @@ export class MediasoupWorkerPool implements MediaEngine {
       request.participantId,
       "send",
     );
-    const expectedKind = request.trackType === "audio" || request.trackType === "screen_audio"
-      ? "audio"
-      : "video";
+    const expectedKind =
+      request.trackType === "audio" || request.trackType === "screen_audio" ? "audio" : "video";
     if (request.kind !== expectedKind) {
       throw new MediaEngineError(
         "INVALID_REQUEST",
@@ -294,6 +314,7 @@ export class MediasoupWorkerPool implements MediaEngine {
         participantId: request.participantId,
         roomId: request.roomId,
         trackType: request.trackType,
+        ...(request.priority ? { priority: request.priority } : {}),
       },
       kind: request.kind,
       rtpParameters: request.rtpParameters as RtpParameters,
@@ -305,6 +326,8 @@ export class MediasoupWorkerPool implements MediaEngine {
       kind: producer.kind,
       participantId: request.participantId,
       trackType: request.trackType,
+      priority:
+        request.priority ?? room.participantPriorities.get(request.participantId) ?? "normal",
     };
   }
 
@@ -315,7 +338,10 @@ export class MediasoupWorkerPool implements MediaEngine {
       throw new MediaEngineError("NOT_FOUND", `Media track ${request.trackId} was not found`);
     }
     if (producer.appData.participantId === request.participantId) {
-      throw new MediaEngineError("INVALID_REQUEST", "Participants cannot subscribe to their own tracks");
+      throw new MediaEngineError(
+        "INVALID_REQUEST",
+        "Participants cannot subscribe to their own tracks",
+      );
     }
     const transport = this.#getParticipantTransport(
       room,
@@ -336,8 +362,21 @@ export class MediasoupWorkerPool implements MediaEngine {
       producerId: producer.id,
       rtpCapabilities,
     });
-    room.consumers.set(consumer.id, consumer);
+    const priority =
+      (producer.appData.priority as MediaPriority | undefined) ??
+      room.participantPriorities.get(String(producer.appData.participantId)) ??
+      "normal";
+    const quality = request.quality ?? "auto";
+    const selectedQuality = consumer.kind === "video" && quality !== "auto" ? quality : null;
+    room.consumers.set(consumer.id, {
+      consumer,
+      participantId: request.participantId,
+      quality,
+      selectedQuality,
+    });
     consumer.observer.once("close", () => room.consumers.delete(consumer.id));
+    await consumer.setPriority(priority === "high" ? 255 : priority === "low" ? 1 : 127);
+    if (selectedQuality) await this.#applyQuality(consumer, selectedQuality);
     return {
       id: consumer.id,
       kind: consumer.kind,
@@ -345,7 +384,73 @@ export class MediasoupWorkerPool implements MediaEngine {
       rtpParameters: consumer.rtpParameters,
       trackId: producer.id,
       trackType: producer.appData.trackType as TrackSubscription["trackType"],
+      priority,
+      quality: selectedQuality,
     };
+  }
+
+  async ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    for (const state of room.consumers.values()) {
+      if (
+        state.participantId !== request.participantId ||
+        state.consumer.kind !== "video" ||
+        state.quality !== "auto"
+      )
+        continue;
+      const producer = room.producers.get(state.consumer.producerId);
+      const priority =
+        (producer?.appData.priority as MediaPriority | undefined) ??
+        room.participantPriorities.get(String(producer?.appData.participantId)) ??
+        "normal";
+      const selected = selectVideoQuality(request.stats, priority);
+      if (selected === state.selectedQuality) continue;
+      await this.#applyQuality(state.consumer, selected);
+      state.selectedQuality = selected;
+    }
+  }
+
+  async setSubscriptionQuality(request: SetSubscriptionQualityRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    const state = room.consumers.get(request.subscriptionId);
+    if (!state)
+      throw new MediaEngineError(
+        "NOT_FOUND",
+        `Subscription ${request.subscriptionId} was not found`,
+      );
+    if (state.participantId !== request.participantId)
+      throw new MediaEngineError("FORBIDDEN", "The subscription belongs to another participant");
+    state.quality = request.quality;
+    if (state.consumer.kind === "video" && request.quality !== "auto") {
+      await this.#applyQuality(state.consumer, request.quality);
+      state.selectedQuality = request.quality;
+    }
+  }
+
+  async setTrackPriority(request: SetPriorityRequest & { trackId: string }): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    const producer = room.producers.get(request.trackId);
+    if (!producer)
+      throw new MediaEngineError("NOT_FOUND", `Media track ${request.trackId} was not found`);
+    if (producer.appData.participantId !== request.participantId)
+      throw new MediaEngineError("FORBIDDEN", "A participant can only prioritize their own tracks");
+    producer.appData.priority = request.priority;
+    await this.#setProducerConsumerPriorities(room, producer.id, request.priority);
+  }
+
+  async setParticipantPriority(request: SetPriorityRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    room.participantPriorities.set(request.participantId, request.priority);
+    const producers = [...room.producers.values()].filter(
+      (producer) =>
+        producer.appData.participantId === request.participantId &&
+        producer.appData.priority === undefined,
+    );
+    await Promise.all(
+      producers.map((producer) =>
+        this.#setProducerConsumerPriorities(room, producer.id, request.priority),
+      ),
+    );
   }
 
   removeTrack(request: RemoveTrackRequest): Promise<void> {
@@ -357,15 +462,37 @@ export class MediasoupWorkerPool implements MediaEngine {
         new MediaEngineError("FORBIDDEN", "A participant can only remove their own tracks"),
       );
     }
-    for (const [consumerId, consumer] of room.consumers) {
-      if (consumer.producerId === producer.id) {
-        consumer.close();
+    for (const [consumerId, state] of room.consumers) {
+      if (state.consumer.producerId === producer.id) {
+        state.consumer.close();
         room.consumers.delete(consumerId);
       }
     }
     producer.close();
     room.producers.delete(producer.id);
     return Promise.resolve();
+  }
+
+  async #applyQuality(consumer: Consumer, quality: SelectedVideoQuality): Promise<void> {
+    if (quality === "audio-only") {
+      if (!consumer.paused) await consumer.pause();
+      return;
+    }
+    if (consumer.paused) await consumer.resume();
+    await consumer.setPreferredLayers(preferredLayers[quality]);
+  }
+
+  async #setProducerConsumerPriorities(
+    room: RoomState,
+    producerId: string,
+    priority: MediaPriority,
+  ): Promise<void> {
+    const value = priority === "high" ? 255 : priority === "low" ? 1 : 127;
+    await Promise.all(
+      [...room.consumers.values()]
+        .filter((state) => state.consumer.producerId === producerId)
+        .map((state) => state.consumer.setPriority(value)),
+    );
   }
 
   #assertReady(): void {
@@ -401,11 +528,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     return state.transport;
   }
 
-  #getOwnedTransport(
-    room: RoomState,
-    transportId: string,
-    participantId: string,
-  ): WebRtcTransport {
+  #getOwnedTransport(room: RoomState, transportId: string, participantId: string): WebRtcTransport {
     const state = room.transports.get(transportId);
     if (!state) throw new MediaEngineError("NOT_FOUND", `Transport ${transportId} was not found`);
     if (state.participantId !== participantId) {

@@ -32,3 +32,8 @@ export interface RtcConnectionOptions {
   readonly configuration?: RTCConfiguration;
   readonly iceGatheringTimeoutMs?: number;
 }
+
+export interface RtcStatsCollectorOptions {
+  readonly intervalMs?: number;
+  readonly onStats: (stats: import("./quality.js").RtcQualityStats) => void;
+}

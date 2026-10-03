@@ -5,6 +5,7 @@ import type { PeerConnectionFactory } from "./rtc-environment.js";
 import { browserPeerConnectionFactory } from "./rtc-environment.js";
 import { RtcConnection } from "./rtc-connection.js";
 import type { RtcConnectionOptions } from "./rtc-types.js";
+import { simulcastEncodings } from "./quality.js";
 
 export interface MediaConnectionOptions extends RtcConnectionOptions {
   readonly mediaEnvironment?: BrowserMediaEnvironment;
@@ -45,7 +46,7 @@ export class MediaConnection {
   async enableCamera(constraints: MediaTrackConstraints = {}): Promise<MediaStreamTrack> {
     const track = await this.media.camera.enable(constraints);
     if (this.#cameraSender) await this.rtc.replaceTrack(this.#cameraSender, track);
-    else this.#cameraSender = this.rtc.addTrack(track);
+    else this.#cameraSender = this.rtc.addSimulcastTrack(track, simulcastEncodings);
     return track;
   }
 
@@ -80,7 +81,7 @@ export class MediaConnection {
   ): Promise<readonly MediaStreamTrack[]> {
     const screen = await this.media.screen.start(options);
     if (!screen.videoTrack) return [];
-    this.#screenVideoSender = this.rtc.addTrack(screen.videoTrack);
+    this.#screenVideoSender = this.rtc.addSimulcastTrack(screen.videoTrack, simulcastEncodings);
     if (screen.audioTrack) this.#screenAudioSender = this.rtc.addTrack(screen.audioTrack);
     return screen.audioTrack ? [screen.videoTrack, screen.audioTrack] : [screen.videoTrack];
   }

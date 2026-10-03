@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, type Mock } from "vitest";
 
 import type { MediaConfig } from "../config/environment.js";
 import { MediaEngineError } from "./errors.js";
@@ -87,10 +87,7 @@ describe("MediasoupWorkerPool", () => {
 
   it("publishes audio and video tracks and creates subscriptions", async () => {
     const { factory } = createMediasoupTestHarness();
-    const pool = new MediasoupWorkerPool(
-      { ...config, maxTransportsPerRoom: 2 },
-      factory,
-    );
+    const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory);
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
     const sendTransport = await pool.createParticipantTransport({
@@ -172,6 +169,75 @@ describe("MediasoupWorkerPool", () => {
     await pool.close();
   });
 
+  it("selects video layers from subscriber stats and supports audio-only fallback", async () => {
+    const { consumers, factory } = createMediasoupTestHarness();
+    const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory);
+    await pool.start();
+    await pool.createRoom({ roomId: "room-1" });
+    const send = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "publisher",
+      roomId: "room-1",
+    });
+    const receive = await pool.createParticipantTransport({
+      direction: "receive",
+      participantId: "subscriber",
+      roomId: "room-1",
+    });
+    const track = await pool.publishTrack({
+      kind: "video",
+      participantId: "publisher",
+      roomId: "room-1",
+      rtpParameters: { encodings: [{ rid: "q" }, { rid: "h" }, { rid: "f" }] },
+      trackType: "camera_video",
+      transportId: send.id,
+    });
+    await pool.subscribeTrack({
+      participantId: "subscriber",
+      roomId: "room-1",
+      rtpCapabilities: { codecs: [] },
+      trackId: track.id,
+      transportId: receive.id,
+    });
+
+    await pool.ingestSubscriberStats({
+      participantId: "subscriber",
+      roomId: "room-1",
+      stats: {
+        availableIncomingBitrate: 3_000_000,
+        jitter: 0.01,
+        packetsLost: 1,
+        packetsReceived: 99,
+        roundTripTime: 0.1,
+        timestamp: 1,
+      },
+    });
+    const consumer = consumers[0];
+    expect(consumer).toBeDefined();
+    const qualityConsumer = consumer as unknown as {
+      pause: Mock;
+      setPreferredLayers: Mock;
+    };
+    expect(qualityConsumer.setPreferredLayers).toHaveBeenCalledWith({
+      spatialLayer: 2,
+      temporalLayer: 2,
+    });
+    await pool.ingestSubscriberStats({
+      participantId: "subscriber",
+      roomId: "room-1",
+      stats: {
+        availableIncomingBitrate: 50_000,
+        jitter: 0.2,
+        packetsLost: 25,
+        packetsReceived: 75,
+        roundTripTime: 1,
+        timestamp: 2,
+      },
+    });
+    expect(qualityConsumer.pause).toHaveBeenCalledOnce();
+    await pool.close();
+  });
+
   it("connects and restarts transports and lists published tracks", async () => {
     const { factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool(config, factory);
@@ -197,9 +263,7 @@ describe("MediasoupWorkerPool", () => {
         roomId: "room-1",
         transportId: transport.id,
       }),
-    ).resolves.toEqual(
-      expect.objectContaining({ usernameFragment: "new-user" }),
-    );
+    ).resolves.toEqual(expect.objectContaining({ usernameFragment: "new-user" }));
     const track = await pool.publishTrack({
       kind: "audio",
       trackType: "audio",
