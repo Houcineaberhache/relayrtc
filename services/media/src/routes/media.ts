@@ -7,6 +7,7 @@ import type {
   MediaTrackType,
   MediaTransportDirection,
 } from "../engine/media-engine.js";
+import type { MediaPriority, SubscriberQualityMode } from "../engine/quality-controller.js";
 
 interface MediaRoutesOptions {
   engine: MediaEngine;
@@ -40,6 +41,7 @@ interface PublishTrackBody {
   rtpParameters: Readonly<Record<string, unknown>>;
   transportId: string;
   trackType: MediaTrackType;
+  priority?: MediaPriority;
 }
 
 interface SubscribeTrackBody {
@@ -47,6 +49,32 @@ interface SubscribeTrackBody {
   rtpCapabilities: Readonly<Record<string, unknown>>;
   trackId: string;
   transportId: string;
+  quality?: SubscriberQualityMode;
+}
+
+interface ParticipantParameters extends RoomParameters {
+  participantId: string;
+}
+interface SubscriptionParameters extends RoomParameters {
+  subscriptionId: string;
+}
+interface PriorityBody {
+  priority: MediaPriority;
+}
+interface QualityBody {
+  participantId: string;
+  quality: SubscriberQualityMode;
+}
+interface StatsBody {
+  participantId: string;
+  stats: {
+    availableIncomingBitrate: number | null;
+    jitter: number | null;
+    packetsLost: number;
+    packetsReceived: number;
+    roundTripTime: number | null;
+    timestamp: number;
+  };
 }
 
 interface TrackParameters extends RoomParameters {
@@ -73,11 +101,11 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
             ? 403
             : error.code === "INVALID_REQUEST"
               ? 400
-          : error.code === "CAPACITY_EXCEEDED"
-            ? 429
-            : error.code === "NOT_READY"
-              ? 503
-              : 501;
+              : error.code === "CAPACITY_EXCEEDED"
+                ? 429
+                : error.code === "NOT_READY"
+                  ? 503
+                  : 501;
       return reply.code(statusCode).send({ code: error.code, description: error.message });
     }
     throw error;
@@ -201,6 +229,7 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
             rtpParameters: rtcParametersSchema,
             transportId: { type: "string", minLength: 1, maxLength: 256 },
             trackType: { enum: ["audio", "camera_video", "screen_audio", "screen_video"] },
+            priority: { enum: ["high", "normal", "low"] },
           },
         },
         params: roomParametersSchema,
@@ -228,6 +257,7 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
             rtpCapabilities: rtcParametersSchema,
             trackId: { type: "string", minLength: 1, maxLength: 256 },
             transportId: { type: "string", minLength: 1, maxLength: 256 },
+            quality: { enum: ["auto", "1080p", "720p", "360p", "audio-only"] },
           },
         },
         params: roomParametersSchema,
@@ -239,6 +269,107 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
         roomId: request.params.roomId,
       });
       return reply.code(201).send({ roomId: request.params.roomId, subscription });
+    },
+  );
+
+  app.post<{ Body: StatsBody; Params: RoomParameters }>(
+    "/rooms/:roomId/stats",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["participantId", "stats"],
+          properties: {
+            participantId: { type: "string", minLength: 1, maxLength: 128 },
+            stats: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "availableIncomingBitrate",
+                "jitter",
+                "packetsLost",
+                "packetsReceived",
+                "roundTripTime",
+                "timestamp",
+              ],
+              properties: {
+                availableIncomingBitrate: { type: ["number", "null"], minimum: 0 },
+                jitter: { type: ["number", "null"], minimum: 0 },
+                packetsLost: { type: "number", minimum: 0 },
+                packetsReceived: { type: "number", minimum: 0 },
+                roundTripTime: { type: ["number", "null"], minimum: 0 },
+                timestamp: { type: "number", minimum: 0 },
+              },
+            },
+          },
+        },
+        params: roomParametersSchema,
+      },
+    },
+    async (request, reply) => {
+      await options.engine.ingestSubscriberStats({
+        ...request.body,
+        roomId: request.params.roomId,
+      });
+      return reply.code(202).send({ accepted: true });
+    },
+  );
+
+  app.patch<{ Body: QualityBody; Params: SubscriptionParameters }>(
+    "/rooms/:roomId/subscriptions/:subscriptionId/quality",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["participantId", "quality"],
+          properties: {
+            participantId: { type: "string", minLength: 1, maxLength: 128 },
+            quality: { enum: ["auto", "1080p", "720p", "360p", "audio-only"] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.setSubscriptionQuality({ ...request.body, ...request.params });
+      return reply.code(204).send();
+    },
+  );
+
+  app.patch<{ Body: PriorityBody; Params: ParticipantParameters }>(
+    "/rooms/:roomId/participants/:participantId/priority",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["priority"],
+          properties: { priority: { enum: ["high", "normal", "low"] } },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.setParticipantPriority({ ...request.body, ...request.params });
+      return reply.code(204).send();
+    },
+  );
+
+  app.patch<{ Body: PriorityBody; Params: TrackParameters }>(
+    "/rooms/:roomId/participants/:participantId/tracks/:trackId/priority",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["priority"],
+          properties: { priority: { enum: ["high", "normal", "low"] } },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.setTrackPriority({ ...request.body, ...request.params });
+      return reply.code(204).send();
     },
   );
 
