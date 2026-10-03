@@ -1,3 +1,4 @@
+import type { RoomQualityMode } from "@relayrtc/types";
 import type { FastifyPluginCallback } from "fastify";
 
 import { MediaEngineError } from "../engine/errors.js";
@@ -64,6 +65,9 @@ interface PriorityBody {
 interface QualityBody {
   participantId: string;
   quality: SubscriberQualityMode;
+}
+interface QualityModeBody {
+  mode: RoomQualityMode;
 }
 interface StatsBody {
   participantId: string;
@@ -351,6 +355,24 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
     },
     async (request, reply) => {
       await options.engine.setParticipantPriority({ ...request.body, ...request.params });
+      return reply.code(204).send();
+    },
+  );
+
+  app.patch<{ Body: QualityModeBody; Params: ParticipantParameters }>(
+    "/rooms/:roomId/participants/:participantId/quality-mode",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["mode"],
+          properties: { mode: { enum: ["auto", "high", "balanced", "data-saver"] } },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.setParticipantQualityMode({ ...request.body, ...request.params });
       return reply.code(204).send();
     },
   );

@@ -10,6 +10,7 @@ import type {
   Worker,
   WorkerSettings,
 } from "mediasoup/types";
+import { roomQualityModeSettings, type ConnectionQuality } from "@relayrtc/types";
 
 import type { MediaConfig } from "../config/environment.js";
 import { MediaEngineError } from "./errors.js";
@@ -28,12 +29,12 @@ import type {
   RemoveParticipantRequest,
   RestartTransportRequest,
   SetPriorityRequest,
+  SetParticipantQualityModeRequest,
   SetSubscriptionQualityRequest,
   SubscribeTrackRequest,
   TrackSubscription,
 } from "./media-engine.js";
 import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
-import type { ConnectionQuality } from "@relayrtc/types";
 import type { QualityEventPublisher } from "../quality/quality-event-publisher.js";
 import { qualityEvent } from "../quality/quality-event-publisher.js";
 import type { QualityMetricsStore } from "../quality/quality-metrics-store.js";
@@ -77,6 +78,7 @@ interface RoomState {
   consumers: Map<string, ConsumerState>;
   participantPriorities: Map<string, MediaPriority>;
   participantQualities: Map<string, ConnectionQuality>;
+  participantQualityPreferences: Map<string, SubscriberQualityMode>;
   participantStats: Map<string, SubscriberNetworkStats>;
   producers: Map<string, Producer>;
   router: Router;
@@ -200,6 +202,7 @@ export class MediasoupWorkerPool implements MediaEngine {
       consumers: new Map(),
       participantPriorities: new Map(),
       participantQualities: new Map(),
+      participantQualityPreferences: new Map(),
       participantStats: new Map(),
       producers: new Map(),
       router,
@@ -392,7 +395,8 @@ export class MediasoupWorkerPool implements MediaEngine {
       (producer.appData.priority as MediaPriority | undefined) ??
       room.participantPriorities.get(String(producer.appData.participantId)) ??
       "normal";
-    const quality = request.quality ?? "auto";
+    const quality =
+      request.quality ?? room.participantQualityPreferences.get(request.participantId) ?? "auto";
     const selectedQuality = consumer.kind === "video" && quality !== "auto" ? quality : null;
     room.consumers.set(consumer.id, {
       consumer,
@@ -485,6 +489,24 @@ export class MediasoupWorkerPool implements MediaEngine {
     state.selectedQuality = selected;
   }
 
+  async setParticipantQualityMode(request: SetParticipantQualityModeRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    const quality = roomQualityModeSettings[request.mode].receive;
+    room.participantQualityPreferences.set(request.participantId, quality);
+    await Promise.all(
+      [...room.consumers.entries()]
+        .filter(([, state]) => state.participantId === request.participantId)
+        .map(([subscriptionId]) =>
+          this.setSubscriptionQuality({
+            participantId: request.participantId,
+            quality,
+            roomId: request.roomId,
+            subscriptionId,
+          }),
+        ),
+    );
+  }
+
   async setTrackPriority(request: SetPriorityRequest & { trackId: string }): Promise<void> {
     const room = this.#getRoom(request.roomId);
     const producer = room.producers.get(request.trackId);
@@ -560,6 +582,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     }
     room.participantPriorities.delete(request.participantId);
     room.participantQualities.delete(request.participantId);
+    room.participantQualityPreferences.delete(request.participantId);
     room.participantStats.delete(request.participantId);
     return Promise.resolve();
   }
