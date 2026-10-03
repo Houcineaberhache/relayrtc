@@ -20,6 +20,12 @@ export class TestPeerConnection {
   readonly #listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
   readonly addTrack: Mock<(track: MediaStreamTrack) => TestRtcSender> = vi.fn(() => this.sender);
+  readonly addTransceiver: Mock<() => RTCRtpTransceiver> = vi.fn(
+    () => ({ sender: this.sender }) as unknown as RTCRtpTransceiver,
+  );
+  readonly getStats: Mock<() => Promise<RTCStatsReport>> = vi.fn(() =>
+    Promise.resolve(new Map() as unknown as RTCStatsReport),
+  );
   readonly removeTrack: Mock<(sender: RTCRtpSender) => void> = vi.fn();
   readonly createOffer: Mock<(options?: RTCOfferOptions) => Promise<RTCSessionDescriptionInit>> =
     vi.fn(() => Promise.resolve({ type: "offer", sdp: "offer-sdp" } as RTCSessionDescriptionInit));

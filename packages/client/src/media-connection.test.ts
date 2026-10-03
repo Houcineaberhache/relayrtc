@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MediaConnection } from "./media-connection.js";
+import { simulcastEncodings } from "./quality.js";
 import { TestPeerConnection } from "./rtc-test-fixtures.js";
 import { mediaEnvironment, mediaStream, mediaTrack } from "./test-fixtures.js";
 
@@ -22,7 +23,11 @@ describe("MediaConnection", () => {
     await connection.enableCamera({ width: 1280 });
 
     expect(peer.addTrack).toHaveBeenNthCalledWith(1, microphone);
-    expect(peer.addTrack).toHaveBeenNthCalledWith(2, camera);
+    expect(peer.addTransceiver).toHaveBeenCalledWith(camera, {
+      direction: "sendonly",
+      sendEncodings: [...simulcastEncodings],
+      streams: [],
+    });
   });
 
   it("replaces the live sender when an input device changes", async () => {
@@ -82,8 +87,12 @@ describe("MediaConnection", () => {
     await connection.startScreenShare({ video: true, audio: true });
     connection.stopScreenShare();
 
-    expect(peer.addTrack).toHaveBeenNthCalledWith(1, video);
-    expect(peer.addTrack).toHaveBeenNthCalledWith(2, audio);
+    expect(peer.addTransceiver).toHaveBeenCalledWith(video, {
+      direction: "sendonly",
+      sendEncodings: [...simulcastEncodings],
+      streams: [],
+    });
+    expect(peer.addTrack).toHaveBeenCalledWith(audio);
     expect(peer.removeTrack).toHaveBeenCalledTimes(2);
     expect(video.stop).toHaveBeenCalledOnce();
     expect(audio.stop).toHaveBeenCalledOnce();

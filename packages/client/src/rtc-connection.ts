@@ -9,7 +9,9 @@ import type {
   RtcDescription,
   RtcIceCandidate,
   RtcIceCandidateListener,
+  RtcStatsCollectorOptions,
 } from "./rtc-types.js";
+import { normalizeRtcStats } from "./quality.js";
 
 const defaultIceGatheringTimeoutMs = 10_000;
 
@@ -86,6 +88,35 @@ export class RtcConnection {
   addTrack(track: MediaStreamTrack, ...streams: MediaStream[]): RTCRtpSender {
     this.#assertOpen();
     return this.#connection.addTrack(track, ...streams);
+  }
+
+  addSimulcastTrack(
+    track: MediaStreamTrack,
+    encodings: readonly RTCRtpEncodingParameters[],
+    ...streams: MediaStream[]
+  ): RTCRtpSender {
+    this.#assertOpen();
+    return this.#connection.addTransceiver(track, {
+      direction: "sendonly",
+      sendEncodings: [...encodings],
+      streams,
+    }).sender;
+  }
+
+  async getStats(): Promise<import("./quality.js").RtcQualityStats> {
+    this.#assertOpen();
+    return normalizeRtcStats(await this.#connection.getStats());
+  }
+
+  collectStats(options: RtcStatsCollectorOptions): () => void {
+    const interval = setInterval(() => {
+      void this.getStats()
+        .then(options.onStats)
+        .catch(() => undefined);
+    }, options.intervalMs ?? 5_000);
+    return () => {
+      clearInterval(interval);
+    };
   }
 
   removeTrack(sender: RTCRtpSender): void {

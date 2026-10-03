@@ -5,6 +5,7 @@ export * from "./local-media-track.js";
 export * from "./media-connection.js";
 export * from "./media-manager.js";
 export * from "./permissions.js";
+export * from "./quality.js";
 export * from "./rtc-connection.js";
 export * from "./rtc-environment.js";
 export * from "./rtc-errors.js";
