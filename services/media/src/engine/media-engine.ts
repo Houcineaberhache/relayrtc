@@ -72,6 +72,10 @@ export interface RemoveTrackRequest extends MediaRoomRequest {
   trackId: string;
 }
 
+export interface RemoveParticipantRequest extends MediaRoomRequest {
+  participantId: string;
+}
+
 export interface SubscribeTrackRequest extends MediaRoomRequest {
   participantId: string;
   rtpCapabilities: Readonly<Record<string, unknown>>;
@@ -120,6 +124,7 @@ export interface MediaEngine {
   getRouterCapabilities(request: MediaRoomRequest): Promise<Readonly<Record<string, unknown>>>;
   publishTrack(request: PublishTrackRequest): Promise<PublishedTrack>;
   removeTrack(request: RemoveTrackRequest): Promise<void>;
+  removeParticipant(request: RemoveParticipantRequest): Promise<void>;
   restartParticipantTransport(
     request: RestartTransportRequest,
   ): Promise<Readonly<Record<string, unknown>>>;

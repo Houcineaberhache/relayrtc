@@ -27,6 +27,7 @@ const createTransport = (
   let producerIndex = 0;
   return {
     appData: {},
+    close: vi.fn(),
     closed: false,
     connect: vi.fn(() => Promise.resolve()),
     consume: vi.fn((options: { producerId: string }) => {

@@ -394,5 +394,12 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
       return reply.code(204).send();
     },
   );
+  app.delete<{ Params: ParticipantParameters }>(
+    "/rooms/:roomId/participants/:participantId",
+    async (request, reply) => {
+      await options.engine.removeParticipant(request.params);
+      return reply.code(204).send();
+    },
+  );
   done();
 };
