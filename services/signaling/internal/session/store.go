@@ -254,6 +254,31 @@ func (store *Store) Expire(ctx context.Context, roomID, participantID, sessionID
 	return store.finalize(ctx, roomID, participantID, sessionID, true)
 }
 
+func (store *Store) EndRoom(ctx context.Context, roomID string, endedAt time.Time) error {
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin room termination transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
+		UPDATE participant_session s
+		SET connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
+		FROM participant p
+		WHERE s.participant_id = p.id AND p.room_id = $2
+		  AND s.connection_state IN ('connected', 'reconnecting')`, endedAt, roomID); err != nil {
+		return fmt.Errorf("disconnect ended room sessions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE participant SET left_at = COALESCE(left_at, $1)
+		WHERE room_id = $2 AND left_at IS NULL`, endedAt, roomID); err != nil {
+		return fmt.Errorf("leave ended room participants: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit room termination: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) UpdateMetadata(
 	ctx context.Context,
 	roomID, participantID, sessionID string,

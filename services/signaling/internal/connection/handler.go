@@ -21,6 +21,7 @@ import (
 const (
 	protocolVersion   = "relayrtc.v1"
 	closeTokenExpired = 4001
+	closeRoomEnded    = 4002
 )
 
 type Options struct {
@@ -44,6 +45,7 @@ type SessionStore interface {
 	Resume(context.Context, auth.Claims, string, string, time.Time) (session.ResumeResult, error)
 	Expire(context.Context, string, string, string) (time.Time, error)
 	UpdateMetadata(context.Context, string, string, string, json.RawMessage) (session.Participant, error)
+	EndRoom(context.Context, string, time.Time) error
 }
 
 type Handler struct {
@@ -143,6 +145,22 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) ActiveConnections() int { return handler.registry.len() }
+
+func (handler *Handler) EndRoom(ctx context.Context, room session.Room) error {
+	if room.EndedAt == nil || room.Status != "ended" {
+		return errors.New("room must be ended before terminating its runtime")
+	}
+	if err := handler.sessionStore.EndRoom(ctx, room.ID, *room.EndedAt); err != nil {
+		return err
+	}
+	clients := handler.registry.roomClients(room.ID)
+	message := event("room.ended", map[string]any{"room": room})
+	for _, client := range clients {
+		_ = client.write(message)
+		client.close(closeRoomEnded, "room ended")
+	}
+	return nil
+}
 
 func (handler *Handler) Wait(ctx context.Context) error {
 	done := make(chan struct{})
@@ -593,6 +611,16 @@ func (r *registry) broadcast(roomID string, except *client, message any) {
 	for _, c := range clients {
 		_ = c.write(message)
 	}
+}
+
+func (r *registry) roomClients(roomID string) []*client {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	clients := make([]*client, 0, len(r.rooms[roomID]))
+	for client := range r.rooms[roomID] {
+		clients = append(clients, client)
+	}
+	return clients
 }
 
 func event(kind string, payload any) map[string]any {

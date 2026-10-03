@@ -25,6 +25,7 @@ type Config struct {
 	AllowedOrigins         []string
 	DatabaseURL            string
 	HeartbeatInterval      time.Duration
+	InternalSecret         string
 	MaxMessageBytes        int64
 	ParticipantTokenSecret string
 	PongTimeout            time.Duration
@@ -80,6 +81,10 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	if len(secret) < 32 {
 		return Config{}, fmt.Errorf("PARTICIPANT_TOKEN_SIGNING_SECRET must contain at least 32 characters")
 	}
+	internalSecret := valueOrDefault(lookup, "RELAYRTC_INTERNAL_SECRET", secret)
+	if len(internalSecret) < 32 {
+		return Config{}, fmt.Errorf("RELAYRTC_INTERNAL_SECRET must contain at least 32 characters")
+	}
 	databaseURL, _ := lookup("DATABASE_URL")
 	if strings.TrimSpace(databaseURL) == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -106,6 +111,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		AllowedOrigins:         allowedOrigins,
 		DatabaseURL:            databaseURL,
 		HeartbeatInterval:      heartbeatInterval,
+		InternalSecret:         internalSecret,
 		MaxMessageBytes:        maxMessageBytes,
 		ParticipantTokenSecret: secret,
 		PongTimeout:            pongTimeout,
