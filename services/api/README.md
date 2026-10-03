@@ -35,3 +35,14 @@ Participant listing accepts `limit`, `cursor`, and `status` (`active` or `left`)
 - `PARTICIPANT_TOKEN_KEY_ID` — signing key identifier, defaults to `participant-v1`
 - `PARTICIPANT_TOKEN_ISSUER` — JWT issuer, defaults to `relayrtc-api`
 - `PARTICIPANT_TOKEN_AUDIENCE` — JWT audience, defaults to `relayrtc-realtime`
+
+## Temporary TURN credentials
+
+`POST /v1/turn/credentials` creates short-lived TURN credentials using a secret API key with the `tokens:create` scope. The response contains browser-ready STUN and TURN ICE servers.
+
+Credentials use coturn REST authentication and expire after the configured lifetime. Their username includes the project and environment scope, while `TURN_SHARED_SECRET` remains private to RelayRTC services.
+
+- `TURN_SHARED_SECRET` — required coturn REST authentication secret of at least 32 characters
+- `TURN_CREDENTIAL_TTL_SECONDS` — lifetime from 60 to 3,600 seconds, defaults to `600`
+- `TURN_STUN_URLS` — comma-separated public STUN URLs
+- `TURN_URLS` — comma-separated public TURN UDP, TCP, and TLS URLs

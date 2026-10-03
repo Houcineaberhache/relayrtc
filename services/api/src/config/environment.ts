@@ -4,6 +4,22 @@ export type ApiEnvironmentSource = Readonly<Record<string, string | undefined>>;
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 
+const iceUrls = (protocols: readonly string[]) =>
+  z
+    .string()
+    .transform((value) =>
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string()).min(1))
+    .refine(
+      (values) =>
+        values.every((value) => protocols.some((protocol) => value.startsWith(`${protocol}:`))),
+      `URLs must use ${protocols.join(" or ")}`,
+    );
+
 const environmentSchema = z
   .object({
     API_HOST: z.string().trim().min(1).default("0.0.0.0"),
@@ -30,6 +46,14 @@ const environmentSchema = z
     PARTICIPANT_TOKEN_ISSUER: z.string().trim().min(1).default("relayrtc-api"),
     PARTICIPANT_TOKEN_KEY_ID: z.string().trim().min(1).max(128).default("participant-v1"),
     PARTICIPANT_TOKEN_SIGNING_SECRET: z.string().min(32),
+    TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
+    TURN_SHARED_SECRET: z.string().min(32),
+    TURN_STUN_URLS: iceUrls(["stun", "stuns"]).default(["stun:localhost:3478"]),
+    TURN_URLS: iceUrls(["turn", "turns"]).default([
+      "turn:localhost:3478?transport=udp",
+      "turn:localhost:3478?transport=tcp",
+      "turns:localhost:5349?transport=tcp",
+    ]),
   })
   .strict();
 
@@ -44,6 +68,10 @@ export interface ApiConfig {
   participantTokenSigningSecret: string;
   port: number;
   trustProxy: boolean;
+  turnCredentialTtlSeconds: number;
+  turnSharedSecret: string;
+  turnStunUrls: readonly string[];
+  turnUrls: readonly string[];
 }
 
 export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
@@ -58,6 +86,10 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     PARTICIPANT_TOKEN_ISSUER: source.PARTICIPANT_TOKEN_ISSUER,
     PARTICIPANT_TOKEN_KEY_ID: source.PARTICIPANT_TOKEN_KEY_ID,
     PARTICIPANT_TOKEN_SIGNING_SECRET: source.PARTICIPANT_TOKEN_SIGNING_SECRET,
+    TURN_CREDENTIAL_TTL_SECONDS: source.TURN_CREDENTIAL_TTL_SECONDS,
+    TURN_SHARED_SECRET: source.TURN_SHARED_SECRET,
+    TURN_STUN_URLS: source.TURN_STUN_URLS,
+    TURN_URLS: source.TURN_URLS,
   });
 
   if (!parsed.success) {
@@ -78,5 +110,9 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     participantTokenSigningSecret: parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
     port: parsed.data.API_PORT,
     trustProxy: parsed.data.API_TRUST_PROXY,
+    turnCredentialTtlSeconds: parsed.data.TURN_CREDENTIAL_TTL_SECONDS,
+    turnSharedSecret: parsed.data.TURN_SHARED_SECRET,
+    turnStunUrls: parsed.data.TURN_STUN_URLS,
+    turnUrls: parsed.data.TURN_URLS,
   };
 };
