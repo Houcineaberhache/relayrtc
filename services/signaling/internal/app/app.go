@@ -42,6 +42,7 @@ func Run(ctx context.Context) error {
 		MaxMessageBytes:   cfg.MaxMessageBytes,
 		NodeID:            cfg.SignalingNodeID,
 		PongTimeout:       cfg.PongTimeout,
+		RecoveryTimeout:   cfg.RecoveryTimeout,
 		SessionStore:      session.NewStore(pool),
 		Shutdown:          ctx,
 		Validator:         validator,

@@ -26,7 +26,8 @@ func TestLoadUsesSafeDefaults(t *testing.T) {
 		t.Fatalf("load() returned an error: %v", err)
 	}
 
-	if cfg.Address != defaultAddress || cfg.HeartbeatInterval != 20*time.Second {
+	if cfg.Address != defaultAddress || cfg.HeartbeatInterval != 20*time.Second ||
+		cfg.RecoveryTimeout != 30*time.Second {
 		t.Fatalf("load() returned unexpected defaults: %+v", cfg)
 	}
 	if cfg.TokenAudience != "relayrtc-realtime" || cfg.TokenIssuer != "relayrtc-api" || cfg.TokenKeyID != "participant-v1" {
@@ -44,12 +45,14 @@ func TestLoadUsesConfiguredConnectionSettings(t *testing.T) {
 		"RELAYRTC_SIGNALING_HEARTBEAT_INTERVAL": "15s",
 		"RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES":  "32768",
 		"RELAYRTC_SIGNALING_PONG_TIMEOUT":       "45s",
+		"RELAYRTC_SIGNALING_RECOVERY_TIMEOUT":   "20s",
 	}))
 	if err != nil {
 		t.Fatalf("load() returned an error: %v", err)
 	}
 
-	if cfg.Address != "127.0.0.1:9091" || cfg.MaxMessageBytes != 32768 {
+	if cfg.Address != "127.0.0.1:9091" || cfg.MaxMessageBytes != 32768 ||
+		cfg.RecoveryTimeout != 20*time.Second {
 		t.Fatalf("load() returned unexpected settings: %+v", cfg)
 	}
 	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != "https://app.example.com" {
@@ -66,6 +69,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"address", map[string]string{"RELAYRTC_SIGNALING_ADDRESS": "invalid-address"}, "address"},
 		{"heartbeat", map[string]string{"RELAYRTC_SIGNALING_HEARTBEAT_INTERVAL": "60s"}, "shorter"},
 		{"message size", map[string]string{"RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES": "0"}, "positive integer"},
+		{"recovery timeout", map[string]string{"RELAYRTC_SIGNALING_RECOVERY_TIMEOUT": "0s"}, "positive duration"},
 		{"origin", map[string]string{"RELAYRTC_SIGNALING_ALLOWED_ORIGINS": "https://example.com/path"}, "invalid origin"},
 		{"secret", map[string]string{"PARTICIPANT_TOKEN_SIGNING_SECRET": "too-short"}, "32 characters"},
 	}

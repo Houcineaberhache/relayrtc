@@ -15,6 +15,7 @@ const (
 	defaultHeartbeatInterval = 20 * time.Second
 	defaultMaxMessageBytes   = int64(64 * 1024)
 	defaultPongTimeout       = 60 * time.Second
+	defaultRecoveryTimeout   = 30 * time.Second
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultWriteTimeout      = 10 * time.Second
 )
@@ -27,6 +28,7 @@ type Config struct {
 	MaxMessageBytes        int64
 	ParticipantTokenSecret string
 	PongTimeout            time.Duration
+	RecoveryTimeout        time.Duration
 	ShutdownTimeout        time.Duration
 	SignalingNodeID        string
 	TokenAudience          string
@@ -50,6 +52,10 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, err
 	}
 	pongTimeout, err := duration(lookup, "RELAYRTC_SIGNALING_PONG_TIMEOUT", defaultPongTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+	recoveryTimeout, err := duration(lookup, "RELAYRTC_SIGNALING_RECOVERY_TIMEOUT", defaultRecoveryTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -103,6 +109,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		MaxMessageBytes:        maxMessageBytes,
 		ParticipantTokenSecret: secret,
 		PongTimeout:            pongTimeout,
+		RecoveryTimeout:        recoveryTimeout,
 		ShutdownTimeout:        shutdownTimeout,
 		SignalingNodeID:        valueOrDefault(lookup, "RELAYRTC_SIGNALING_NODE_ID", "signaling-local"),
 		TokenAudience:          valueOrDefault(lookup, "PARTICIPANT_TOKEN_AUDIENCE", "relayrtc-realtime"),
