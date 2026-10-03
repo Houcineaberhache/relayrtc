@@ -88,11 +88,18 @@ describe("protocol envelope", () => {
       "heartbeat.ping",
       "participant.join",
       "participant.leave",
+      "rtc.capabilities.get",
+      "rtc.transport.create",
+      "rtc.transport.connect",
+      "rtc.ice.restart",
+      "rtc.track.publish",
+      "rtc.track.control",
+      "rtc.track.subscribe",
       "session.resume",
     ]);
-    expect(protocolResponseTypes).toHaveLength(4);
+    expect(protocolResponseTypes).toHaveLength(11);
     expect(protocolEventTypes).toHaveLength(8);
-    expect(protocolMessageTypes).toHaveLength(17);
+    expect(protocolMessageTypes).toHaveLength(31);
     expectTypeOf<ProtocolMessageOfType<"participant.join">["payload"]>().toHaveProperty(
       "participantToken",
     );
