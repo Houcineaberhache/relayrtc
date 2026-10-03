@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS source
 
 COPY . .
-RUN pnpm install --offline --frozen-lockfile
+RUN pnpm install --offline --frozen-lockfile --filter @relayrtc/dashboard... --filter @relayrtc/database...
 
 FROM source AS builder
 

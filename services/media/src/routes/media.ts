@@ -16,6 +16,19 @@ interface TransportBody {
   participantId: string;
 }
 
+interface ConnectTransportBody {
+  dtlsParameters: Readonly<Record<string, unknown>>;
+  participantId: string;
+}
+
+interface OwnedTransportBody {
+  participantId: string;
+}
+
+interface TransportParameters extends RoomParameters {
+  transportId: string;
+}
+
 interface PublishTrackBody {
   kind: MediaKind;
   participantId: string;
@@ -93,6 +106,15 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
     }),
   );
 
+  app.get<{ Params: RoomParameters }>(
+    "/rooms/:roomId/tracks",
+    { schema: { params: roomParametersSchema } },
+    async (request) => ({
+      roomId: request.params.roomId,
+      tracks: await options.engine.listPublishedTracks(request.params),
+    }),
+  );
+
   app.post<{ Body: TransportBody; Params: RoomParameters }>(
     "/rooms/:roomId/transports",
     {
@@ -116,6 +138,47 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
       });
       return reply.code(201).send({ roomId: request.params.roomId, ...transport });
     },
+  );
+
+  app.patch<{ Body: ConnectTransportBody; Params: TransportParameters }>(
+    "/rooms/:roomId/transports/:transportId",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["dtlsParameters", "participantId"],
+          properties: {
+            dtlsParameters: rtcParametersSchema,
+            participantId: { type: "string", minLength: 1, maxLength: 128 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.connectParticipantTransport({ ...request.body, ...request.params });
+      return reply.code(204).send();
+    },
+  );
+
+  app.post<{ Body: OwnedTransportBody; Params: TransportParameters }>(
+    "/rooms/:roomId/transports/:transportId/restart-ice",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["participantId"],
+          properties: { participantId: { type: "string", minLength: 1, maxLength: 128 } },
+        },
+      },
+    },
+    async (request) => ({
+      iceParameters: await options.engine.restartParticipantTransport({
+        ...request.body,
+        ...request.params,
+      }),
+    }),
   );
 
   app.post<{ Body: PublishTrackBody; Params: RoomParameters }>(

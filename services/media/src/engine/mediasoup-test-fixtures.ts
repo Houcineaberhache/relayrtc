@@ -28,6 +28,7 @@ const createTransport = (
   return {
     appData: {},
     closed: false,
+    connect: vi.fn(() => Promise.resolve()),
     consume: vi.fn((options: { producerId: string }) => {
       const producer = producers.find((candidate) => candidate.id === options.producerId);
       if (!producer) return Promise.reject(new Error(`Producer ${options.producerId} not found`));
@@ -63,6 +64,9 @@ const createTransport = (
       producers.push(producer);
       return Promise.resolve(producer);
     }),
+    restartIce: vi.fn(() =>
+      Promise.resolve({ iceLite: true, password: "new-password", usernameFragment: "new-user" }),
+    ),
   } as unknown as WebRtcTransport;
 };
 

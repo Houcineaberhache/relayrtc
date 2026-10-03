@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
 
 COPY . .
-RUN pnpm install --offline --frozen-lockfile
+RUN pnpm install --offline --frozen-lockfile --filter @relayrtc/api...
 RUN pnpm turbo run build --filter=@relayrtc/api
 
 FROM node:24-alpine AS runner

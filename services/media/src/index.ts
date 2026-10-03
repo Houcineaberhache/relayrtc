@@ -7,6 +7,7 @@ export type { MediasoupWorkerFactory } from "./engine/mediasoup-factory.js";
 export { MediasoupWorkerPool } from "./engine/worker-pool.js";
 export type {
   MediaEngine,
+  ConnectTransportRequest,
   MediaEngineCapacity,
   MediaEngineHealth,
   MediaKind,
@@ -17,6 +18,7 @@ export type {
   PublishedTrack,
   PublishTrackRequest,
   RemoveTrackRequest,
+  RestartTransportRequest,
   SubscribeTrackRequest,
   TrackSubscription,
 } from "./engine/media-engine.js";

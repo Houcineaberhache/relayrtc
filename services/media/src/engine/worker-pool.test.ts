@@ -168,4 +168,43 @@ describe("MediasoupWorkerPool", () => {
     ).resolves.toBeUndefined();
     await pool.close();
   });
+
+  it("connects and restarts transports and lists published tracks", async () => {
+    const { factory } = createMediasoupTestHarness();
+    const pool = new MediasoupWorkerPool(config, factory);
+    await pool.start();
+    await pool.createRoom({ roomId: "room-1" });
+    const transport = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "participant-1",
+      roomId: "room-1",
+    });
+
+    await expect(
+      pool.connectParticipantTransport({
+        dtlsParameters: { fingerprints: [], role: "auto" },
+        participantId: "participant-1",
+        roomId: "room-1",
+        transportId: transport.id,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      pool.restartParticipantTransport({
+        participantId: "participant-1",
+        roomId: "room-1",
+        transportId: transport.id,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ usernameFragment: "new-user" }),
+    );
+    const track = await pool.publishTrack({
+      kind: "audio",
+      participantId: "participant-1",
+      roomId: "room-1",
+      rtpParameters: { codecs: [] },
+      transportId: transport.id,
+    });
+    await expect(pool.listPublishedTracks({ roomId: "room-1" })).resolves.toEqual([track]);
+    await pool.close();
+  });
 });

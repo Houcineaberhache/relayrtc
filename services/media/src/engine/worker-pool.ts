@@ -18,11 +18,13 @@ import type {
   MediaEngineCapacity,
   MediaEngineHealth,
   MediaRoomRequest,
+  ConnectTransportRequest,
   ParticipantTransport,
   ParticipantTransportRequest,
   PublishedTrack,
   PublishTrackRequest,
   RemoveTrackRequest,
+  RestartTransportRequest,
   SubscribeTrackRequest,
   TrackSubscription,
 } from "./media-engine.js";
@@ -219,6 +221,31 @@ export class MediasoupWorkerPool implements MediaEngine {
     };
   }
 
+  async connectParticipantTransport(request: ConnectTransportRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    const transport = this.#getOwnedTransport(room, request.transportId, request.participantId);
+    await transport.connect({ dtlsParameters: request.dtlsParameters as never });
+  }
+
+  async restartParticipantTransport(
+    request: RestartTransportRequest,
+  ): Promise<Readonly<Record<string, unknown>>> {
+    const room = this.#getRoom(request.roomId);
+    const transport = this.#getOwnedTransport(room, request.transportId, request.participantId);
+    return transport.restartIce();
+  }
+
+  listPublishedTracks(request: MediaRoomRequest): Promise<readonly PublishedTrack[]> {
+    const room = this.#getRoom(request.roomId);
+    return Promise.resolve(
+      [...room.producers.values()].map((producer) => ({
+        id: producer.id,
+        kind: producer.kind,
+        participantId: String(producer.appData.participantId),
+      })),
+    );
+  }
+
   getCapacity(): MediaEngineCapacity {
     let transports = 0;
     for (const room of this.#rooms.values()) transports += room.transports.size;
@@ -350,6 +377,19 @@ export class MediasoupWorkerPool implements MediaEngine {
         "INVALID_REQUEST",
         `A ${direction} transport is required for this operation`,
       );
+    }
+    return state.transport;
+  }
+
+  #getOwnedTransport(
+    room: RoomState,
+    transportId: string,
+    participantId: string,
+  ): WebRtcTransport {
+    const state = room.transports.get(transportId);
+    if (!state) throw new MediaEngineError("NOT_FOUND", `Transport ${transportId} was not found`);
+    if (state.participantId !== participantId) {
+      throw new MediaEngineError("FORBIDDEN", "The transport belongs to another participant");
     }
     return state.transport;
   }
