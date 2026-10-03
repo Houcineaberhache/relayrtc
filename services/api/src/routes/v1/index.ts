@@ -7,10 +7,13 @@ import { participantTokenRoutes } from "../../modules/participant-tokens/partici
 import type { ParticipantTokenSigner } from "../../modules/participant-tokens/participant-token.signer.js";
 import { participantRoutes } from "../../modules/participants/participant.routes.js";
 import { roomRoutes } from "../../modules/rooms/room.routes.js";
+import { turnCredentialRoutes } from "../../modules/turn-credentials/turn-credential.routes.js";
+import type { TurnCredentialIssuer } from "../../modules/turn-credentials/turn-credential.service.js";
 
 interface V1RoutesOptions {
   database: RelayKitDatabase;
   participantTokenSigner: ParticipantTokenSigner;
+  turnCredentialIssuer: TurnCredentialIssuer;
 }
 
 const contextResponseSchema = {
@@ -36,31 +39,28 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
     signer: options.participantTokenSigner,
   });
   void app.register(participantRoutes, { database: options.database });
+  void app.register(turnCredentialRoutes, { issuer: options.turnCredentialIssuer });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-relayrtc-api-version", "v1");
     return payload;
   });
 
-  app.get(
-    "/",
-    { schema: { response: { 200: contextResponseSchema } } },
-    (request) => {
-      const principal = request.apiKey;
-      if (!principal) {
-        throw new ApiError(401, "AUTHENTICATION_REQUIRED", "Provide a valid API key");
-      }
+  app.get("/", { schema: { response: { 200: contextResponseSchema } } }, (request) => {
+    const principal = request.apiKey;
+    if (!principal) {
+      throw new ApiError(401, "AUTHENTICATION_REQUIRED", "Provide a valid API key");
+    }
 
-      return {
-        apiVersion: "v1",
-        environmentId: principal.environmentId,
-        keyId: principal.keyId,
-        keyType: principal.keyType,
-        projectId: principal.projectId,
-        scopes: principal.scopes,
-      };
-    },
-  );
+    return {
+      apiVersion: "v1",
+      environmentId: principal.environmentId,
+      keyId: principal.keyId,
+      keyType: principal.keyType,
+      projectId: principal.projectId,
+      scopes: principal.scopes,
+    };
+  });
 
   done();
 };

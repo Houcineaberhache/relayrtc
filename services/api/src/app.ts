@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { ApiConfig } from "./config/environment.js";
 import { registerErrorHandling } from "./http/errors/error-handler.js";
 import { createParticipantTokenSigner } from "./modules/participant-tokens/participant-token.signer.js";
+import { createTurnCredentialService } from "./modules/turn-credentials/turn-credential.service.js";
 import { healthRoutes } from "./routes/health.js";
 import { v1Routes } from "./routes/v1/index.js";
 
@@ -49,6 +50,12 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     keyId: options.config.participantTokenKeyId,
     secret: options.config.participantTokenSigningSecret,
   });
+  const turnCredentialIssuer = createTurnCredentialService({
+    secret: options.config.turnSharedSecret,
+    stunUrls: options.config.turnStunUrls,
+    ttlSeconds: options.config.turnCredentialTtlSeconds,
+    turnUrls: options.config.turnUrls,
+  });
 
   registerErrorHandling(app);
 
@@ -64,6 +71,7 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   void app.register(v1Routes, {
     database: options.database,
     participantTokenSigner,
+    turnCredentialIssuer,
     prefix: "/v1",
   });
 
