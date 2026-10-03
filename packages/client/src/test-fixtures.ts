@@ -37,12 +37,14 @@ export const mediaDevice = (
 export const mediaEnvironment = (overrides: {
   readonly enumerateDevices?: () => Promise<MediaDeviceInfo[]>;
   readonly getUserMedia?: (constraints?: MediaStreamConstraints) => Promise<MediaStream>;
+  readonly getDisplayMedia?: (options?: DisplayMediaStreamOptions) => Promise<MediaStream>;
   readonly queryPermission?: (descriptor: PermissionDescriptor) => Promise<PermissionStatus>;
 } = {}): BrowserMediaEnvironment => {
   const listeners = new Map<string, EventListenerOrEventListenerObject>();
   const mediaDevices = {
     enumerateDevices: vi.fn(overrides.enumerateDevices ?? (() => Promise.resolve([]))),
     getUserMedia: vi.fn(overrides.getUserMedia ?? (() => Promise.resolve(mediaStream()))),
+    getDisplayMedia: vi.fn(overrides.getDisplayMedia ?? (() => Promise.resolve(mediaStream()))),
     addEventListener: vi.fn(
       (name: string, listener: EventListenerOrEventListenerObject) => listeners.set(name, listener),
     ),

@@ -9,4 +9,5 @@ export * from "./rtc-connection.js";
 export * from "./rtc-environment.js";
 export * from "./rtc-errors.js";
 export * from "./rtc-types.js";
+export * from "./screen-share.js";
 export * from "./types.js";
