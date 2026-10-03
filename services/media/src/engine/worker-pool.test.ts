@@ -1,4 +1,11 @@
-import type { Router, WebRtcServer, WebRtcTransport, Worker } from "mediasoup/types";
+import type {
+  Consumer,
+  Producer,
+  Router,
+  WebRtcServer,
+  WebRtcTransport,
+  Worker,
+} from "mediasoup/types";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MediaConfig } from "../config/environment.js";
@@ -21,20 +28,43 @@ const config: MediaConfig = {
   workerCount: 2,
 };
 
-const createTransport = (id: string): WebRtcTransport =>
-  ({
+const createTransport = (id: string): WebRtcTransport => {
+  let consumerIndex = 0;
+  let producerIndex = 0;
+  return {
     appData: {},
     closed: false,
+    consume: vi.fn((options: { producerId: string }) =>
+      Promise.resolve({
+        close: vi.fn(),
+        id: `consumer-${id}-${String(consumerIndex++)}`,
+        kind: "audio",
+        observer: { once: vi.fn() },
+        producerId: options.producerId,
+        rtpParameters: { codecs: [] },
+      } as unknown as Consumer),
+    ),
     dtlsParameters: { fingerprints: [], role: "auto" },
     iceCandidates: [{ foundation: "test", ip: "127.0.0.1", port: 40_000 }],
     iceParameters: { iceLite: true, password: "password", usernameFragment: "username" },
     id,
     observer: { once: vi.fn() },
-  }) as unknown as WebRtcTransport;
+    produce: vi.fn((options: { appData: Record<string, unknown>; kind: "audio" | "video" }) =>
+      Promise.resolve({
+        appData: options.appData,
+        close: vi.fn(),
+        id: `producer-${id}-${String(producerIndex++)}`,
+        kind: options.kind,
+        observer: { once: vi.fn() },
+      } as unknown as Producer),
+    ),
+  } as unknown as WebRtcTransport;
+};
 
 const createRouter = (id: string): Router => {
   let transportIndex = 0;
   return {
+    canConsume: vi.fn(() => true),
     close: vi.fn(),
     closed: false,
     createWebRtcTransport: vi.fn(() =>
@@ -138,6 +168,90 @@ describe("MediasoupWorkerPool", () => {
     ).rejects.toEqual(
       expect.objectContaining<Partial<MediaEngineError>>({ code: "CAPACITY_EXCEEDED" }),
     );
+    await pool.close();
+  });
+
+  it("publishes audio and video tracks and creates subscriptions", async () => {
+    const { factory } = createWorkerFactory();
+    const pool = new MediasoupWorkerPool(
+      { ...config, maxTransportsPerRoom: 2 },
+      factory,
+    );
+    await pool.start();
+    await pool.createRoom({ roomId: "room-1" });
+    const sendTransport = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "participant-1",
+      roomId: "room-1",
+    });
+    const receiveTransport = await pool.createParticipantTransport({
+      direction: "receive",
+      participantId: "participant-2",
+      roomId: "room-1",
+    });
+
+    const audio = await pool.publishTrack({
+      kind: "audio",
+      participantId: "participant-1",
+      roomId: "room-1",
+      rtpParameters: { codecs: [] },
+      transportId: sendTransport.id,
+    });
+    const video = await pool.publishTrack({
+      kind: "video",
+      participantId: "participant-1",
+      roomId: "room-1",
+      rtpParameters: { codecs: [] },
+      transportId: sendTransport.id,
+    });
+    const subscription = await pool.subscribeTrack({
+      participantId: "participant-2",
+      roomId: "room-1",
+      rtpCapabilities: { codecs: [] },
+      trackId: audio.id,
+      transportId: receiveTransport.id,
+    });
+
+    expect(audio).toEqual(expect.objectContaining({ kind: "audio" }));
+    expect(video).toEqual(expect.objectContaining({ kind: "video" }));
+    expect(subscription).toEqual(
+      expect.objectContaining({ kind: "audio", producerId: audio.id, trackId: audio.id }),
+    );
+    await pool.close();
+  });
+
+  it("only allows a track owner to remove a published track", async () => {
+    const { factory } = createWorkerFactory();
+    const pool = new MediasoupWorkerPool(config, factory);
+    await pool.start();
+    await pool.createRoom({ roomId: "room-1" });
+    const transport = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "participant-1",
+      roomId: "room-1",
+    });
+    const track = await pool.publishTrack({
+      kind: "audio",
+      participantId: "participant-1",
+      roomId: "room-1",
+      rtpParameters: { codecs: [] },
+      transportId: transport.id,
+    });
+
+    await expect(
+      pool.removeTrack({
+        participantId: "participant-2",
+        roomId: "room-1",
+        trackId: track.id,
+      }),
+    ).rejects.toEqual(expect.objectContaining<Partial<MediaEngineError>>({ code: "FORBIDDEN" }));
+    await expect(
+      pool.removeTrack({
+        participantId: "participant-1",
+        roomId: "room-1",
+        trackId: track.id,
+      }),
+    ).resolves.toBeUndefined();
     await pool.close();
   });
 });
