@@ -1,4 +1,8 @@
 import type {
+  Consumer,
+  Producer,
+  RtpCapabilities,
+  RtpParameters,
   Router,
   RouterRtpCodecCapability,
   WebRtcServer,
@@ -17,6 +21,9 @@ import type {
   ParticipantTransport,
   ParticipantTransportRequest,
   PublishedTrack,
+  PublishTrackRequest,
+  RemoveTrackRequest,
+  SubscribeTrackRequest,
   TrackSubscription,
 } from "./media-engine.js";
 import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
@@ -44,9 +51,17 @@ interface WorkerSlot {
 }
 
 interface RoomState {
+  consumers: Map<string, Consumer>;
+  producers: Map<string, Producer>;
   router: Router;
   slot: WorkerSlot;
-  transports: Map<string, WebRtcTransport>;
+  transports: Map<string, TransportState>;
+}
+
+interface TransportState {
+  direction: "receive" | "send";
+  participantId: string;
+  transport: WebRtcTransport;
 }
 
 export class MediasoupWorkerPool implements MediaEngine {
@@ -137,7 +152,13 @@ export class MediasoupWorkerPool implements MediaEngine {
       slot.rooms -= 1;
       throw error;
     }
-    const state: RoomState = { router, slot, transports: new Map() };
+    const state: RoomState = {
+      consumers: new Map(),
+      producers: new Map(),
+      router,
+      slot,
+      transports: new Map(),
+    };
     this.#rooms.set(request.roomId, state);
     router.observer.once("close", () => {
       if (this.#rooms.get(request.roomId) !== state) return;
@@ -181,7 +202,11 @@ export class MediasoupWorkerPool implements MediaEngine {
       preferUdp: true,
       webRtcServer: room.slot.webRtcServer,
     });
-    room.transports.set(transport.id, transport);
+    room.transports.set(transport.id, {
+      direction: request.direction,
+      participantId: request.participantId,
+      transport,
+    });
     transport.observer.once("close", () => room.transports.delete(transport.id));
     return {
       direction: request.direction,
@@ -219,16 +244,78 @@ export class MediasoupWorkerPool implements MediaEngine {
     };
   }
 
-  publishTrack(): Promise<PublishedTrack> {
-    return Promise.reject(
-      new MediaEngineError("UNSUPPORTED_OPERATION", "Track publishing is introduced in Phase 6.3"),
+  async publishTrack(request: PublishTrackRequest): Promise<PublishedTrack> {
+    const room = this.#getRoom(request.roomId);
+    const transport = this.#getParticipantTransport(
+      room,
+      request.transportId,
+      request.participantId,
+      "send",
     );
+    const producer = await transport.produce({
+      appData: { participantId: request.participantId, roomId: request.roomId },
+      kind: request.kind,
+      rtpParameters: request.rtpParameters as RtpParameters,
+    });
+    room.producers.set(producer.id, producer);
+    producer.observer.once("close", () => room.producers.delete(producer.id));
+    return { id: producer.id, kind: producer.kind, participantId: request.participantId };
   }
 
-  subscribeTrack(): Promise<TrackSubscription> {
-    return Promise.reject(
-      new MediaEngineError("UNSUPPORTED_OPERATION", "Track subscriptions are introduced in Phase 6.3"),
+  async subscribeTrack(request: SubscribeTrackRequest): Promise<TrackSubscription> {
+    const room = this.#getRoom(request.roomId);
+    const producer = room.producers.get(request.trackId);
+    if (!producer) {
+      throw new MediaEngineError("NOT_FOUND", `Media track ${request.trackId} was not found`);
+    }
+    const transport = this.#getParticipantTransport(
+      room,
+      request.transportId,
+      request.participantId,
+      "receive",
     );
+    const rtpCapabilities = request.rtpCapabilities as RtpCapabilities;
+    if (!room.router.canConsume({ producerId: producer.id, rtpCapabilities })) {
+      throw new MediaEngineError(
+        "INVALID_REQUEST",
+        `Participant cannot consume media track ${request.trackId}`,
+      );
+    }
+    const consumer = await transport.consume({
+      appData: { participantId: request.participantId, roomId: request.roomId },
+      paused: false,
+      producerId: producer.id,
+      rtpCapabilities,
+    });
+    room.consumers.set(consumer.id, consumer);
+    consumer.observer.once("close", () => room.consumers.delete(consumer.id));
+    return {
+      id: consumer.id,
+      kind: consumer.kind,
+      producerId: producer.id,
+      rtpParameters: consumer.rtpParameters,
+      trackId: producer.id,
+    };
+  }
+
+  removeTrack(request: RemoveTrackRequest): Promise<void> {
+    const room = this.#getRoom(request.roomId);
+    const producer = room.producers.get(request.trackId);
+    if (!producer) return Promise.resolve();
+    if (producer.appData.participantId !== request.participantId) {
+      return Promise.reject(
+        new MediaEngineError("FORBIDDEN", "A participant can only remove their own tracks"),
+      );
+    }
+    for (const [consumerId, consumer] of room.consumers) {
+      if (consumer.producerId === producer.id) {
+        consumer.close();
+        room.consumers.delete(consumerId);
+      }
+    }
+    producer.close();
+    room.producers.delete(producer.id);
+    return Promise.resolve();
   }
 
   #assertReady(): void {
@@ -242,6 +329,26 @@ export class MediasoupWorkerPool implements MediaEngine {
     const room = this.#rooms.get(roomId);
     if (!room) throw new MediaEngineError("NOT_FOUND", `Media room ${roomId} was not found`);
     return room;
+  }
+
+  #getParticipantTransport(
+    room: RoomState,
+    transportId: string,
+    participantId: string,
+    direction: "receive" | "send",
+  ): WebRtcTransport {
+    const state = room.transports.get(transportId);
+    if (!state) throw new MediaEngineError("NOT_FOUND", `Transport ${transportId} was not found`);
+    if (state.participantId !== participantId) {
+      throw new MediaEngineError("FORBIDDEN", "The transport belongs to another participant");
+    }
+    if (state.direction !== direction) {
+      throw new MediaEngineError(
+        "INVALID_REQUEST",
+        `A ${direction} transport is required for this operation`,
+      );
+    }
+    return state.transport;
   }
 
   #handleWorkerDeath(slot: WorkerSlot): void {
