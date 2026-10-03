@@ -28,6 +28,9 @@ import type {
   ParticipantLeftEvent,
   ParticipantLeaveRequest,
   ParticipantReconnectedEvent,
+  ParticipantMetadataUpdateRequest,
+  ParticipantMetadataUpdatedResponse,
+  ParticipantMetadataUpdatedEvent,
 } from "./participant.js";
 import {
   participantJoinAcceptedResponseSchema,
@@ -37,6 +40,9 @@ import {
   participantLeftEventSchema,
   participantLeaveRequestSchema,
   participantReconnectedEventSchema,
+  participantMetadataUpdateRequestSchema,
+  participantMetadataUpdatedResponseSchema,
+  participantMetadataUpdatedEventSchema,
 } from "./participant.js";
 import type { RoomEndedEvent } from "./room.js";
 import { roomEndedEventSchema } from "./room.js";
@@ -93,6 +99,7 @@ export const protocolRequestTypes = [
   "event.emit",
   "participant.join",
   "participant.leave",
+  "participant.metadata.update",
   "rtc.capabilities.get",
   "rtc.transport.create",
   "rtc.transport.connect",
@@ -109,6 +116,7 @@ export const protocolResponseTypes = [
   "event.emitted",
   "participant.join.accepted",
   "participant.leave.accepted",
+  "participant.metadata.update.accepted",
   "rtc.capabilities",
   "rtc.transport.created",
   "rtc.transport.connected",
@@ -126,6 +134,7 @@ export const protocolEventTypes = [
   "participant.joined",
   "participant.left",
   "participant.reconnected",
+  "participant.metadata.updated",
   "track.published",
   "track.paused",
   "track.resumed",
@@ -138,6 +147,7 @@ export type ProtocolRequestMessage =
   | CustomEventEmitRequest
   | ParticipantJoinRequest
   | ParticipantLeaveRequest
+  | ParticipantMetadataUpdateRequest
   | RtcCapabilitiesGetRequest
   | RtcTransportCreateRequest
   | RtcTransportConnectRequest
@@ -153,6 +163,7 @@ export type ProtocolResponseMessage =
   | CustomEventEmittedResponse
   | ParticipantJoinAcceptedResponse
   | ParticipantLeaveAcceptedResponse
+  | ParticipantMetadataUpdatedResponse
   | RtcCapabilitiesResponse
   | RtcTransportCreatedResponse
   | RtcTransportConnectedResponse
@@ -169,6 +180,7 @@ export type ProtocolEventMessage =
   | ParticipantJoinedEvent
   | ParticipantLeftEvent
   | ParticipantReconnectedEvent
+  | ParticipantMetadataUpdatedEvent
   | TrackPublishedEvent
   | TrackPausedEvent
   | TrackResumedEvent
@@ -204,6 +216,9 @@ export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminated
   participantJoinAcceptedResponseSchema,
   participantLeaveRequestSchema,
   participantLeaveAcceptedResponseSchema,
+  participantMetadataUpdateRequestSchema,
+  participantMetadataUpdatedResponseSchema,
+  participantMetadataUpdatedEventSchema,
   rtcCapabilitiesGetRequestSchema,
   rtcCapabilitiesResponseSchema,
   rtcTransportCreateRequestSchema,
