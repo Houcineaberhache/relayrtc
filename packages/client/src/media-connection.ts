@@ -16,6 +16,8 @@ export class MediaConnection {
   readonly rtc: RtcConnection;
   #cameraSender: RTCRtpSender | null = null;
   #microphoneSender: RTCRtpSender | null = null;
+  #screenAudioSender: RTCRtpSender | null = null;
+  #screenVideoSender: RTCRtpSender | null = null;
 
   constructor(options: MediaConnectionOptions = {}) {
     this.media = new MediaManager(options.mediaEnvironment ?? browserMediaEnvironment());
@@ -28,6 +30,9 @@ export class MediaConnection {
       },
       options.peerConnectionFactory ?? browserPeerConnectionFactory,
     );
+    this.media.screen.subscribe((screen) => {
+      if (!screen.active) this.#removeScreenSenders();
+    });
   }
 
   async enableMicrophone(constraints: MediaTrackConstraints = {}): Promise<MediaStreamTrack> {
@@ -70,10 +75,34 @@ export class MediaConnection {
     this.media.camera.disable();
   }
 
+  async startScreenShare(
+    options: DisplayMediaStreamOptions = { video: true },
+  ): Promise<readonly MediaStreamTrack[]> {
+    const screen = await this.media.screen.start(options);
+    if (!screen.videoTrack) return [];
+    this.#screenVideoSender = this.rtc.addTrack(screen.videoTrack);
+    if (screen.audioTrack) this.#screenAudioSender = this.rtc.addTrack(screen.audioTrack);
+    return screen.audioTrack ? [screen.videoTrack, screen.audioTrack] : [screen.videoTrack];
+  }
+
+  stopScreenShare(): void {
+    this.#removeScreenSenders();
+    this.media.screen.stop();
+  }
+
   close(): void {
     this.#microphoneSender = null;
     this.#cameraSender = null;
+    this.#screenAudioSender = null;
+    this.#screenVideoSender = null;
     this.media.dispose();
     this.rtc.close();
+  }
+
+  #removeScreenSenders(): void {
+    if (this.#screenVideoSender) this.rtc.removeTrack(this.#screenVideoSender);
+    if (this.#screenAudioSender) this.rtc.removeTrack(this.#screenAudioSender);
+    this.#screenVideoSender = null;
+    this.#screenAudioSender = null;
   }
 }

@@ -254,6 +254,31 @@ func (store *Store) Expire(ctx context.Context, roomID, participantID, sessionID
 	return store.finalize(ctx, roomID, participantID, sessionID, true)
 }
 
+func (store *Store) UpdateMetadata(
+	ctx context.Context,
+	roomID, participantID, sessionID string,
+	metadata json.RawMessage,
+) (Participant, error) {
+	participant := Participant{}
+	err := store.pool.QueryRow(ctx, `
+		UPDATE participant p
+		SET metadata = $1
+		FROM participant_session s
+		WHERE p.id = $2 AND p.room_id = $3 AND p.left_at IS NULL
+		  AND s.id = $4 AND s.participant_id = p.id AND s.connection_state = 'connected'
+		RETURNING p.id, p.room_id, p.external_id, p.name, p.metadata, p.role,
+		          p.joined_at, p.left_at`,
+		metadata, participantID, roomID, sessionID,
+	).Scan(
+		&participant.ID, &participant.RoomID, &participant.ExternalID, &participant.Name,
+		&participant.Metadata, &participant.Role, &participant.JoinedAt, &participant.LeftAt,
+	)
+	if err != nil {
+		return Participant{}, fmt.Errorf("update participant metadata: %w", err)
+	}
+	return participant, nil
+}
+
 func (store *Store) finalize(
 	ctx context.Context,
 	roomID, participantID, sessionID string,

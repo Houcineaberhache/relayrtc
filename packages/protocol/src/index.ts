@@ -1,6 +1,7 @@
 export * from "./envelope.js";
 export * from "./error.js";
 export * from "./heartbeat.js";
+export * from "./messaging.js";
 export * from "./messages.js";
 export * from "./participant.js";
 export * from "./room.js";

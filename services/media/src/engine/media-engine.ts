@@ -1,4 +1,5 @@
 export type MediaKind = "audio" | "video";
+export type MediaTrackType = "audio" | "camera_video" | "screen_audio" | "screen_video";
 export type MediaTransportDirection = "receive" | "send";
 
 export interface MediaRoomRequest {
@@ -48,12 +49,14 @@ export interface PublishTrackRequest extends MediaRoomRequest {
   participantId: string;
   rtpParameters: Readonly<Record<string, unknown>>;
   transportId: string;
+  trackType: MediaTrackType;
 }
 
 export interface PublishedTrack {
   id: string;
   kind: MediaKind;
   participantId: string;
+  trackType: MediaTrackType;
 }
 
 export interface RemoveTrackRequest extends MediaRoomRequest {
@@ -74,6 +77,7 @@ export interface TrackSubscription {
   producerId: string;
   rtpParameters: Readonly<Record<string, unknown>>;
   trackId: string;
+  trackType: MediaTrackType;
 }
 
 export interface MediaEngine {

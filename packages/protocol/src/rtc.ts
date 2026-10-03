@@ -15,6 +15,13 @@ const rtcIdentifierSchema = z.string().trim().min(1).max(256).regex(/^\S+$/u);
 const rtcParametersSchema = z.record(z.string(), z.unknown());
 const transportDirectionSchema = z.enum(["send", "receive"]);
 const trackControlActionSchema = z.enum(["pause", "resume", "unpublish"]);
+const rtcTrackTypeSchema = z.enum([
+  "audio",
+  "camera_video",
+  "screen_video",
+  "screen_audio",
+  "data",
+]);
 
 const rtcSessionScopeSchema = z
   .object({ roomId: roomIdSchema, sessionId: sessionIdSchema })
@@ -113,6 +120,7 @@ export interface RtcTrackSubscribedPayload extends RtcSessionScope {
   readonly subscriptionId: string;
   readonly trackId: TrackId;
   readonly rtpParameters: Readonly<Record<string, unknown>>;
+  readonly trackType: Track["type"];
 }
 
 export type RtcCapabilitiesGetRequest = ProtocolRequest<
@@ -206,7 +214,7 @@ export const rtcTrackPublishRequestSchema = protocolRequestSchema(
   rtcSessionScopeSchema
     .extend({
       transportId: rtcIdentifierSchema,
-      trackType: z.enum(["audio", "camera_video", "screen_video", "screen_audio", "data"]),
+      trackType: rtcTrackTypeSchema,
       rtpParameters: rtcParametersSchema,
       metadata: metadataSchema.default({}),
     })
@@ -243,6 +251,7 @@ export const rtcTrackSubscribedResponseSchema = protocolResponseSchema(
       subscriptionId: rtcIdentifierSchema,
       trackId: trackIdSchema,
       rtpParameters: rtcParametersSchema,
+      trackType: rtcTrackTypeSchema,
     })
     .strict(),
 );

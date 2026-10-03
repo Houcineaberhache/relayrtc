@@ -106,6 +106,7 @@ describe("MediasoupWorkerPool", () => {
 
     const audio = await pool.publishTrack({
       kind: "audio",
+      trackType: "audio",
       participantId: "participant-1",
       roomId: "room-1",
       rtpParameters: { codecs: [] },
@@ -113,6 +114,7 @@ describe("MediasoupWorkerPool", () => {
     });
     const video = await pool.publishTrack({
       kind: "video",
+      trackType: "camera_video",
       participantId: "participant-1",
       roomId: "room-1",
       rtpParameters: { codecs: [] },
@@ -146,6 +148,7 @@ describe("MediasoupWorkerPool", () => {
     });
     const track = await pool.publishTrack({
       kind: "audio",
+      trackType: "audio",
       participantId: "participant-1",
       roomId: "room-1",
       rtpParameters: { codecs: [] },
@@ -199,6 +202,7 @@ describe("MediasoupWorkerPool", () => {
     );
     const track = await pool.publishTrack({
       kind: "audio",
+      trackType: "audio",
       participantId: "participant-1",
       roomId: "room-1",
       rtpParameters: { codecs: [] },

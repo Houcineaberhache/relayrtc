@@ -5,6 +5,22 @@ import { protocolErrorMessageSchema } from "./error.js";
 import type { HeartbeatPingRequest, HeartbeatPongResponse } from "./heartbeat.js";
 import { heartbeatPingRequestSchema, heartbeatPongResponseSchema } from "./heartbeat.js";
 import type {
+  CustomEventEmittedResponse,
+  CustomEventEmitRequest,
+  CustomEventReceivedEvent,
+  TextMessageReceivedEvent,
+  TextMessageSendRequest,
+  TextMessageSentResponse,
+} from "./messaging.js";
+import {
+  customEventEmittedResponseSchema,
+  customEventEmitRequestSchema,
+  customEventReceivedEventSchema,
+  textMessageReceivedEventSchema,
+  textMessageSendRequestSchema,
+  textMessageSentResponseSchema,
+} from "./messaging.js";
+import type {
   ParticipantJoinAcceptedResponse,
   ParticipantJoinedEvent,
   ParticipantJoinRequest,
@@ -12,6 +28,9 @@ import type {
   ParticipantLeftEvent,
   ParticipantLeaveRequest,
   ParticipantReconnectedEvent,
+  ParticipantMetadataUpdateRequest,
+  ParticipantMetadataUpdatedResponse,
+  ParticipantMetadataUpdatedEvent,
 } from "./participant.js";
 import {
   participantJoinAcceptedResponseSchema,
@@ -21,6 +40,9 @@ import {
   participantLeftEventSchema,
   participantLeaveRequestSchema,
   participantReconnectedEventSchema,
+  participantMetadataUpdateRequestSchema,
+  participantMetadataUpdatedResponseSchema,
+  participantMetadataUpdatedEventSchema,
 } from "./participant.js";
 import type { RoomEndedEvent } from "./room.js";
 import { roomEndedEventSchema } from "./room.js";
@@ -73,8 +95,11 @@ import {
 
 export const protocolRequestTypes = [
   "heartbeat.ping",
+  "message.send",
+  "event.emit",
   "participant.join",
   "participant.leave",
+  "participant.metadata.update",
   "rtc.capabilities.get",
   "rtc.transport.create",
   "rtc.transport.connect",
@@ -87,8 +112,11 @@ export const protocolRequestTypes = [
 
 export const protocolResponseTypes = [
   "heartbeat.pong",
+  "message.sent",
+  "event.emitted",
   "participant.join.accepted",
   "participant.leave.accepted",
+  "participant.metadata.update.accepted",
   "rtc.capabilities",
   "rtc.transport.created",
   "rtc.transport.connected",
@@ -101,9 +129,12 @@ export const protocolResponseTypes = [
 
 export const protocolEventTypes = [
   "room.ended",
+  "message.received",
+  "event.received",
   "participant.joined",
   "participant.left",
   "participant.reconnected",
+  "participant.metadata.updated",
   "track.published",
   "track.paused",
   "track.resumed",
@@ -112,8 +143,11 @@ export const protocolEventTypes = [
 
 export type ProtocolRequestMessage =
   | HeartbeatPingRequest
+  | TextMessageSendRequest
+  | CustomEventEmitRequest
   | ParticipantJoinRequest
   | ParticipantLeaveRequest
+  | ParticipantMetadataUpdateRequest
   | RtcCapabilitiesGetRequest
   | RtcTransportCreateRequest
   | RtcTransportConnectRequest
@@ -125,8 +159,11 @@ export type ProtocolRequestMessage =
 
 export type ProtocolResponseMessage =
   | HeartbeatPongResponse
+  | TextMessageSentResponse
+  | CustomEventEmittedResponse
   | ParticipantJoinAcceptedResponse
   | ParticipantLeaveAcceptedResponse
+  | ParticipantMetadataUpdatedResponse
   | RtcCapabilitiesResponse
   | RtcTransportCreatedResponse
   | RtcTransportConnectedResponse
@@ -138,9 +175,12 @@ export type ProtocolResponseMessage =
 
 export type ProtocolEventMessage =
   | RoomEndedEvent
+  | TextMessageReceivedEvent
+  | CustomEventReceivedEvent
   | ParticipantJoinedEvent
   | ParticipantLeftEvent
   | ParticipantReconnectedEvent
+  | ParticipantMetadataUpdatedEvent
   | TrackPublishedEvent
   | TrackPausedEvent
   | TrackResumedEvent
@@ -166,10 +206,19 @@ export const protocolMessageTypes = [
 export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminatedUnion("type", [
   heartbeatPingRequestSchema,
   heartbeatPongResponseSchema,
+  textMessageSendRequestSchema,
+  textMessageSentResponseSchema,
+  textMessageReceivedEventSchema,
+  customEventEmitRequestSchema,
+  customEventEmittedResponseSchema,
+  customEventReceivedEventSchema,
   participantJoinRequestSchema,
   participantJoinAcceptedResponseSchema,
   participantLeaveRequestSchema,
   participantLeaveAcceptedResponseSchema,
+  participantMetadataUpdateRequestSchema,
+  participantMetadataUpdatedResponseSchema,
+  participantMetadataUpdatedEventSchema,
   rtcCapabilitiesGetRequestSchema,
   rtcCapabilitiesResponseSchema,
   rtcTransportCreateRequestSchema,

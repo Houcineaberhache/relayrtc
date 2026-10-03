@@ -36,10 +36,32 @@ describe("RTC signaling messages", () => {
     ).toBe(true);
     expect(
       safeParseProtocolMessage(
+        request("rtc.track.publish", {
+          ...scope,
+          transportId: "transport_123",
+          trackType: "screen_video",
+          rtpParameters: { codecs: [] },
+          metadata: { source: "display" },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      safeParseProtocolMessage(
         request("rtc.transport.connect", {
           ...scope,
           transportId: "transport_123",
           dtlsParameters,
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      safeParseProtocolMessage(
+        response("rtc.track.subscribe.accepted", {
+          ...scope,
+          subscriptionId: "subscription_123",
+          trackId: "track_123",
+          rtpParameters: { codecs: [] },
+          trackType: "screen_video",
         }),
       ).success,
     ).toBe(true);

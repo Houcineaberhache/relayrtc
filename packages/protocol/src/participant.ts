@@ -7,6 +7,7 @@ import type {
   RoomId,
   SessionId,
   Track,
+  Metadata,
 } from "@relayrtc/types";
 import {
   isoDateTimeSchema,
@@ -17,6 +18,7 @@ import {
   roomSchema,
   sessionIdSchema,
   trackSchema,
+  metadataSchema,
 } from "@relayrtc/validation";
 import { z } from "zod";
 
@@ -62,6 +64,17 @@ export interface ParticipantReconnectedEventPayload {
   readonly session: ParticipantSession;
 }
 
+export interface ParticipantMetadataUpdatePayload {
+  readonly roomId: RoomId;
+  readonly participantId: ParticipantId;
+  readonly sessionId: SessionId;
+  readonly metadata: Metadata;
+}
+
+export interface ParticipantMetadataUpdatedPayload {
+  readonly participant: Participant;
+}
+
 export type ParticipantJoinRequest = ProtocolRequest<
   "participant.join",
   ParticipantJoinRequestPayload
@@ -86,6 +99,18 @@ export type ParticipantLeftEvent = ProtocolEvent<"participant.left", Participant
 export type ParticipantReconnectedEvent = ProtocolEvent<
   "participant.reconnected",
   ParticipantReconnectedEventPayload
+>;
+export type ParticipantMetadataUpdateRequest = ProtocolRequest<
+  "participant.metadata.update",
+  ParticipantMetadataUpdatePayload
+>;
+export type ParticipantMetadataUpdatedResponse = ProtocolResponse<
+  "participant.metadata.update.accepted",
+  ParticipantMetadataUpdatedPayload
+>;
+export type ParticipantMetadataUpdatedEvent = ProtocolEvent<
+  "participant.metadata.updated",
+  ParticipantMetadataUpdatedPayload
 >;
 
 const participantJoinRequestPayloadSchema = z
@@ -173,3 +198,29 @@ export const participantReconnectedEventSchema = protocolEventSchema(
     })
     .strict(),
 ) satisfies z.ZodType<ParticipantReconnectedEvent>;
+
+export const participantMetadataUpdateRequestSchema = protocolRequestSchema(
+  "participant.metadata.update",
+  z
+    .object({
+      roomId: roomIdSchema,
+      participantId: participantIdSchema,
+      sessionId: sessionIdSchema,
+      metadata: metadataSchema,
+    })
+    .strict(),
+) satisfies z.ZodType<ParticipantMetadataUpdateRequest>;
+
+const participantMetadataUpdatedPayloadSchema = z
+  .object({ participant: participantSchema })
+  .strict();
+
+export const participantMetadataUpdatedResponseSchema = protocolResponseSchema(
+  "participant.metadata.update.accepted",
+  participantMetadataUpdatedPayloadSchema,
+) satisfies z.ZodType<ParticipantMetadataUpdatedResponse>;
+
+export const participantMetadataUpdatedEventSchema = protocolEventSchema(
+  "participant.metadata.updated",
+  participantMetadataUpdatedPayloadSchema,
+) satisfies z.ZodType<ParticipantMetadataUpdatedEvent>;
