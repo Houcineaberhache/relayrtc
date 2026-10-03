@@ -46,6 +46,8 @@ import {
 } from "./participant.js";
 import type { RoomEndedEvent } from "./room.js";
 import { roomEndedEventSchema } from "./room.js";
+import type { ConnectionDegradedEvent, ConnectionRecoveredEvent } from "./quality.js";
+import { connectionDegradedEventSchema, connectionRecoveredEventSchema } from "./quality.js";
 import type {
   RtcCapabilitiesGetRequest,
   RtcCapabilitiesResponse,
@@ -139,6 +141,8 @@ export const protocolEventTypes = [
   "track.paused",
   "track.resumed",
   "track.unpublished",
+  "connection.degraded",
+  "connection.recovered",
 ] as const;
 
 export type ProtocolRequestMessage =
@@ -184,7 +188,9 @@ export type ProtocolEventMessage =
   | TrackPublishedEvent
   | TrackPausedEvent
   | TrackResumedEvent
-  | TrackUnpublishedEvent;
+  | TrackUnpublishedEvent
+  | ConnectionDegradedEvent
+  | ConnectionRecoveredEvent;
 
 export type ClientProtocolMessage = ProtocolRequestMessage;
 export type ServerProtocolMessage =
@@ -243,6 +249,8 @@ export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminated
   trackPausedEventSchema,
   trackResumedEventSchema,
   trackUnpublishedEventSchema,
+  connectionDegradedEventSchema,
+  connectionRecoveredEventSchema,
   protocolErrorMessageSchema,
 ]);
 

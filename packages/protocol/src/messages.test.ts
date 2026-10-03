@@ -101,8 +101,8 @@ describe("protocol envelope", () => {
       "session.resume",
     ]);
     expect(protocolResponseTypes).toHaveLength(14);
-    expect(protocolEventTypes).toHaveLength(11);
-    expect(protocolMessageTypes).toHaveLength(40);
+    expect(protocolEventTypes).toHaveLength(13);
+    expect(protocolMessageTypes).toHaveLength(42);
     expectTypeOf<ProtocolMessageOfType<"participant.join">["payload"]>().toHaveProperty(
       "participantToken",
     );
