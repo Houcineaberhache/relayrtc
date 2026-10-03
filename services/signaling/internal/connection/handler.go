@@ -29,6 +29,7 @@ type Options struct {
 	MaxMessageBytes   int64
 	NodeID            string
 	PongTimeout       time.Duration
+	RTCService        RTCSignalService
 	SessionStore      SessionStore
 	Shutdown          context.Context
 	Validator         *auth.Validator
@@ -46,6 +47,7 @@ type Handler struct {
 	nodeID            string
 	pongTimeout       time.Duration
 	registry          *registry
+	rtcService        RTCSignalService
 	sessionStore      SessionStore
 	shutdown          context.Context
 	upgrader          websocket.Upgrader
@@ -70,6 +72,7 @@ func NewHandler(options Options) *Handler {
 		nodeID:            options.NodeID,
 		pongTimeout:       options.PongTimeout,
 		registry:          newRegistry(),
+		rtcService:        options.RTCService,
 		sessionStore:      options.SessionStore,
 		shutdown:          options.Shutdown,
 		upgrader: websocket.Upgrader{
@@ -245,9 +248,52 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 		client.close(websocket.CloseNormalClosure, "participant left")
 		return true, nil
 	default:
+		if _, ok := rtcResponseTypes[request.Type]; ok {
+			handler.handleRTCMessage(client, claims, joined, request)
+			return false, joined
+		}
 		client.protocolError(request.ID, "invalid_message", "The protocol message type is unsupported")
 	}
 	return false, nil
+}
+
+func (handler *Handler) handleRTCMessage(client *client, claims auth.Claims, joined *joinedSession, request requestEnvelope) {
+	if joined == nil {
+		client.protocolError(request.ID, "forbidden", "Join the room before RTC negotiation")
+		return
+	}
+	scope := rtcSessionScope{}
+	if json.Unmarshal(request.Payload, &scope) != nil || scope.RoomID != claims.RoomID ||
+		scope.SessionID != joined.session.ID {
+		client.protocolError(request.ID, "forbidden", "The RTC request does not match this room session")
+		return
+	}
+	if handler.rtcService == nil {
+		client.protocolError(request.ID, "temporarily_unavailable", "The RTC media service is not available")
+		return
+	}
+
+	operationContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	response, err := handler.rtcService.Handle(operationContext, claims, RTCSignalRequest{
+		Type: request.Type, RoomID: scope.RoomID, SessionID: scope.SessionID,
+		ParticipantID: claims.ParticipantID, Payload: request.Payload,
+	})
+	cancel()
+	if err != nil {
+		code := "internal_error"
+		message := "The RTC request could not be completed"
+		if errors.Is(err, ErrRTCNotAvailable) {
+			code = "temporarily_unavailable"
+			message = "The RTC media service is not available"
+		}
+		client.protocolError(request.ID, code, message)
+		return
+	}
+	if response.Type != rtcResponseTypes[request.Type] || response.Payload == nil {
+		client.protocolError(request.ID, "internal_error", "The RTC media service returned an invalid response")
+		return
+	}
+	client.response(request.ID, response.Type, response.Payload)
 }
 
 func (handler *Handler) disconnect(client *client, joined *joinedSession, roomID string) {
