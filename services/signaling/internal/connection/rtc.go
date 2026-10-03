@@ -41,3 +41,20 @@ type rtcSessionScope struct {
 	RoomID    string `json:"roomId"`
 	SessionID string `json:"sessionId"`
 }
+
+type rtcTrackPublishScope struct {
+	TrackType string `json:"trackType"`
+}
+
+func (scope rtcTrackPublishScope) permission() string {
+	switch scope.TrackType {
+	case "audio":
+		return "audio:publish"
+	case "camera_video":
+		return "video:publish"
+	case "screen_audio", "screen_video":
+		return "screen:publish"
+	default:
+		return ""
+	}
+}

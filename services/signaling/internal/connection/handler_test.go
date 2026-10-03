@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -263,6 +264,19 @@ func (store *fakeSessionStore) Expire(context.Context, string, string, string) (
 		}
 	}
 	return time.Now().UTC(), nil
+}
+
+func (store *fakeSessionStore) UpdateMetadata(
+	_ context.Context,
+	roomID, participantID, _ string,
+	metadata json.RawMessage,
+) (session.Participant, error) {
+	participant := store.joinResult.Participant
+	participant.RoomID = roomID
+	participant.ID = participantID
+	participant.Metadata = metadata
+	store.joinResult.Participant = participant
+	return participant, nil
 }
 
 func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {

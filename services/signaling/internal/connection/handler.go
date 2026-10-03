@@ -43,6 +43,7 @@ type SessionStore interface {
 	Disconnect(context.Context, string, string) (time.Time, error)
 	Resume(context.Context, auth.Claims, string, string, time.Time) (session.ResumeResult, error)
 	Expire(context.Context, string, string, string) (time.Time, error)
+	UpdateMetadata(context.Context, string, string, string, json.RawMessage) (session.Participant, error)
 }
 
 type Handler struct {
@@ -301,6 +302,9 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 		handler.registry.releaseSession(joined.session.ID, client)
 		client.close(websocket.CloseNormalClosure, "participant left")
 		return true, nil
+	case "participant.metadata.update":
+		handler.handleMetadataUpdate(client, claims, joined, request)
+		return false, joined
 	case "message.send", "event.emit":
 		handler.handleMessagingMessage(client, claims, joined, request)
 		return false, joined
@@ -324,6 +328,14 @@ func (handler *Handler) handleRTCMessage(client *client, claims auth.Claims, joi
 		scope.SessionID != joined.session.ID {
 		client.protocolError(request.ID, "forbidden", "The RTC request does not match this room session")
 		return
+	}
+	if request.Type == "rtc.track.publish" {
+		publication := rtcTrackPublishScope{}
+		if json.Unmarshal(request.Payload, &publication) != nil ||
+			!hasPermission(claims.Permissions, publication.permission()) {
+			client.protocolError(request.ID, "forbidden", "The participant cannot publish this track")
+			return
+		}
 	}
 	if handler.rtcService == nil {
 		client.protocolError(request.ID, "temporarily_unavailable", "The RTC media service is not available")
