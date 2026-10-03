@@ -29,6 +29,7 @@ type Options struct {
 	MaxMessageBytes   int64
 	NodeID            string
 	PongTimeout       time.Duration
+	RecoveryTimeout   time.Duration
 	RTCService        RTCSignalService
 	SessionStore      SessionStore
 	Shutdown          context.Context
@@ -39,6 +40,9 @@ type Options struct {
 type SessionStore interface {
 	Join(context.Context, auth.Claims, string, string) (session.JoinResult, error)
 	Leave(context.Context, string, string, string) (time.Time, error)
+	Disconnect(context.Context, string, string) (time.Time, error)
+	Resume(context.Context, auth.Claims, string, string, time.Time) (session.ResumeResult, error)
+	Expire(context.Context, string, string, string) (time.Time, error)
 }
 
 type Handler struct {
@@ -46,6 +50,9 @@ type Handler struct {
 	maxMessageBytes   int64
 	nodeID            string
 	pongTimeout       time.Duration
+	recoveries        map[string]chan struct{}
+	recoveryMu        sync.Mutex
+	recoveryTimeout   time.Duration
 	registry          *registry
 	rtcService        RTCSignalService
 	sessionStore      SessionStore
@@ -66,11 +73,17 @@ func NewHandler(options Options) *Handler {
 	for _, origin := range options.AllowedOrigins {
 		allowedOrigins[origin] = struct{}{}
 	}
+	recoveryTimeout := options.RecoveryTimeout
+	if recoveryTimeout <= 0 {
+		recoveryTimeout = 30 * time.Second
+	}
 	return &Handler{
 		heartbeatInterval: options.HeartbeatInterval,
 		maxMessageBytes:   options.MaxMessageBytes,
 		nodeID:            options.NodeID,
 		pongTimeout:       options.PongTimeout,
+		recoveries:        make(map[string]chan struct{}),
+		recoveryTimeout:   recoveryTimeout,
 		registry:          newRegistry(),
 		rtcService:        options.RTCService,
 		sessionStore:      options.SessionStore,
@@ -123,7 +136,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
 	joined := handler.serve(client, claims, rawToken)
 	if joined != nil {
-		handler.disconnect(client, joined, claims.RoomID)
+		handler.disconnect(client, joined, claims)
 	}
 	slog.Info("signaling connection disconnected", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
 }
@@ -219,12 +232,52 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 			return false, nil
 		}
 		next := &joinedSession{participant: result.Participant, session: result.Session}
+		if !handler.registry.claimSession(result.Session.ID, client) {
+			client.protocolError(request.ID, "conflict", "The participant session is already connected")
+			return false, nil
+		}
 		handler.registry.join(claims.RoomID, client)
 		client.response(request.ID, "participant.join.accepted", map[string]any{
 			"room": result.Room, "localParticipant": result.Participant, "session": result.Session,
 			"participants": result.Participants, "tracks": []any{},
 		})
 		handler.registry.broadcast(claims.RoomID, client, event("participant.joined", map[string]any{"participant": result.Participant}))
+		return false, next
+	case "session.resume":
+		if joined != nil || handler.sessionStore == nil {
+			client.protocolError(request.ID, "conflict", "The connection already owns a room session")
+			return false, joined
+		}
+		payload := resumePayload{}
+		if json.Unmarshal(request.Payload, &payload) != nil || payload.RoomID != claims.RoomID ||
+			subtle.ConstantTimeCompare([]byte(payload.ResumeToken), []byte(rawToken)) != 1 {
+			client.protocolError(request.ID, "forbidden", "The resume request does not match the participant token")
+			return false, nil
+		}
+		operationContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		result, err := handler.sessionStore.Resume(
+			operationContext, claims, payload.SessionID, handler.nodeID,
+			time.Now().UTC().Add(-handler.recoveryTimeout),
+		)
+		cancel()
+		if err != nil {
+			client.protocolError(request.ID, sessionErrorCode(err), sessionErrorMessage(err))
+			return false, nil
+		}
+		if !handler.registry.claimSession(result.Session.ID, client) {
+			client.protocolError(request.ID, "conflict", "The participant session is already connected")
+			return false, nil
+		}
+		handler.cancelRecovery(result.Session.ID)
+		handler.registry.join(claims.RoomID, client)
+		next := &joinedSession{participant: result.Participant, session: result.Session}
+		client.response(request.ID, "session.resume.accepted", map[string]any{
+			"roomId": claims.RoomID, "session": result.Session,
+			"participants": result.Participants, "tracks": []any{},
+		})
+		handler.registry.broadcast(claims.RoomID, client, event("participant.reconnected", map[string]any{
+			"participantId": claims.ParticipantID, "session": result.Session,
+		}))
 		return false, next
 	case "participant.leave":
 		payload := leavePayload{}
@@ -245,6 +298,7 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 		client.response(request.ID, "participant.leave.accepted", leavePayload)
 		handler.registry.broadcast(claims.RoomID, client, event("participant.left", leavePayload))
 		handler.registry.leave(claims.RoomID, client)
+		handler.registry.releaseSession(joined.session.ID, client)
 		client.close(websocket.CloseNormalClosure, "participant left")
 		return true, nil
 	default:
@@ -296,14 +350,78 @@ func (handler *Handler) handleRTCMessage(client *client, claims auth.Claims, joi
 	client.response(request.ID, response.Type, response.Payload)
 }
 
-func (handler *Handler) disconnect(client *client, joined *joinedSession, roomID string) {
+func (handler *Handler) disconnect(client *client, joined *joinedSession, claims auth.Claims) {
+	handler.registry.leave(claims.RoomID, client)
+	handler.registry.releaseSession(joined.session.ID, client)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if handler.shutdown.Err() != nil || !time.Now().Before(claims.ExpiresAt.Time) {
+		handler.finalizeSession(ctx, claims.RoomID, joined)
+		return
+	}
+	if _, err := handler.sessionStore.Disconnect(ctx, joined.participant.ID, joined.session.ID); err != nil {
+		handler.finalizeSession(ctx, claims.RoomID, joined)
+		return
+	}
+	handler.scheduleRecovery(claims.RoomID, joined)
+}
+
+func (handler *Handler) scheduleRecovery(roomID string, joined *joinedSession) {
+	cancelRecovery := make(chan struct{})
+	handler.recoveryMu.Lock()
+	if existing := handler.recoveries[joined.session.ID]; existing != nil {
+		close(existing)
+	}
+	handler.recoveries[joined.session.ID] = cancelRecovery
+	handler.recoveryMu.Unlock()
+
+	handler.wg.Add(1)
+	go func() {
+		defer handler.wg.Done()
+		timer := time.NewTimer(handler.recoveryTimeout)
+		defer timer.Stop()
+		select {
+		case <-cancelRecovery:
+			return
+		case <-handler.shutdown.Done():
+			return
+		case <-timer.C:
+		}
+		handler.recoveryMu.Lock()
+		if handler.recoveries[joined.session.ID] != cancelRecovery {
+			handler.recoveryMu.Unlock()
+			return
+		}
+		delete(handler.recoveries, joined.session.ID)
+		handler.recoveryMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		leftAt, err := handler.sessionStore.Expire(ctx, roomID, joined.participant.ID, joined.session.ID)
+		if err == nil {
+			handler.registry.broadcast(roomID, nil, event("participant.left", map[string]any{
+				"roomId": roomID, "participantId": joined.participant.ID,
+				"sessionId": joined.session.ID, "leftAt": leftAt,
+			}))
+		}
+	}()
+}
+
+func (handler *Handler) cancelRecovery(sessionID string) {
+	handler.recoveryMu.Lock()
+	cancelRecovery := handler.recoveries[sessionID]
+	delete(handler.recoveries, sessionID)
+	handler.recoveryMu.Unlock()
+	if cancelRecovery != nil {
+		close(cancelRecovery)
+	}
+}
+
+func (handler *Handler) finalizeSession(ctx context.Context, roomID string, joined *joinedSession) {
 	leftAt, err := handler.sessionStore.Leave(ctx, roomID, joined.participant.ID, joined.session.ID)
 	if err == nil {
-		handler.registry.leave(roomID, client)
-		handler.registry.broadcast(roomID, client, event("participant.left", map[string]any{
-			"roomId": roomID, "participantId": joined.participant.ID, "sessionId": joined.session.ID, "leftAt": leftAt,
+		handler.registry.broadcast(roomID, nil, event("participant.left", map[string]any{
+			"roomId": roomID, "participantId": joined.participant.ID,
+			"sessionId": joined.session.ID, "leftAt": leftAt,
 		}))
 	}
 }
@@ -346,6 +464,11 @@ type leavePayload struct {
 	ParticipantID string `json:"participantId"`
 	SessionID     string `json:"sessionId"`
 }
+type resumePayload struct {
+	RoomID      string `json:"roomId"`
+	SessionID   string `json:"sessionId"`
+	ResumeToken string `json:"resumeToken"`
+}
 type heartbeatPayload struct {
 	Nonce string `json:"nonce"`
 }
@@ -385,10 +508,14 @@ type registry struct {
 	mu          sync.RWMutex
 	connections map[*client]struct{}
 	rooms       map[string]map[*client]struct{}
+	sessions    map[string]*client
 }
 
 func newRegistry() *registry {
-	return &registry{connections: make(map[*client]struct{}), rooms: make(map[string]map[*client]struct{})}
+	return &registry{
+		connections: make(map[*client]struct{}), rooms: make(map[string]map[*client]struct{}),
+		sessions: make(map[string]*client),
+	}
 }
 func (r *registry) add(c *client) { r.mu.Lock(); defer r.mu.Unlock(); r.connections[c] = struct{}{} }
 func (r *registry) remove(c *client) {
@@ -400,6 +527,29 @@ func (r *registry) remove(c *client) {
 		if len(clients) == 0 {
 			delete(r.rooms, roomID)
 		}
+	}
+	for sessionID, owner := range r.sessions {
+		if owner == c {
+			delete(r.sessions, sessionID)
+		}
+	}
+}
+
+func (r *registry) claimSession(sessionID string, c *client) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if owner := r.sessions[sessionID]; owner != nil && owner != c {
+		return false
+	}
+	r.sessions[sessionID] = c
+	return true
+}
+
+func (r *registry) releaseSession(sessionID string, c *client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sessions[sessionID] == c {
+		delete(r.sessions, sessionID)
 	}
 }
 func (r *registry) join(roomID string, c *client) {
@@ -444,7 +594,8 @@ func sessionErrorCode(err error) string {
 	if errors.Is(err, session.ErrRoomNotJoinable) {
 		return "not_found"
 	}
-	if errors.Is(err, session.ErrRoomFull) || errors.Is(err, session.ErrParticipantConflict) {
+	if errors.Is(err, session.ErrRoomFull) || errors.Is(err, session.ErrParticipantConflict) ||
+		errors.Is(err, session.ErrSessionNotResumable) {
 		return "conflict"
 	}
 	return "internal_error"
@@ -458,6 +609,9 @@ func sessionErrorMessage(err error) string {
 	}
 	if errors.Is(err, session.ErrParticipantConflict) {
 		return "The participant has already joined"
+	}
+	if errors.Is(err, session.ErrSessionNotResumable) {
+		return "The participant session cannot be resumed"
 	}
 	return "The room session could not be created"
 }

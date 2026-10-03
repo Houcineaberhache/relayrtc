@@ -18,6 +18,7 @@ var (
 	ErrParticipantConflict = errors.New("participant already joined")
 	ErrRoomFull            = errors.New("room is full")
 	ErrRoomNotJoinable     = errors.New("room is not joinable")
+	ErrSessionNotResumable = errors.New("session is not resumable")
 )
 
 type Room struct {
@@ -58,6 +59,12 @@ type ParticipantSession struct {
 
 type JoinResult struct {
 	Room         Room
+	Participant  Participant
+	Session      ParticipantSession
+	Participants []Participant
+}
+
+type ResumeResult struct {
 	Participant  Participant
 	Session      ParticipantSession
 	Participants []Participant
@@ -155,6 +162,103 @@ func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nod
 }
 
 func (store *Store) Leave(ctx context.Context, roomID, participantID, sessionID string) (time.Time, error) {
+	return store.finalize(ctx, roomID, participantID, sessionID, false)
+}
+
+func (store *Store) Disconnect(ctx context.Context, participantID, sessionID string) (time.Time, error) {
+	disconnectedAt := time.Now().UTC()
+	command, err := store.pool.Exec(ctx, `
+		UPDATE participant_session
+		SET connection_state = 'reconnecting', disconnected_at = $1
+		WHERE id = $2 AND participant_id = $3 AND connection_state = 'connected'`,
+		disconnectedAt, sessionID, participantID,
+	)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("mark participant session reconnecting: %w", err)
+	}
+	if command.RowsAffected() == 0 {
+		return time.Time{}, ErrSessionNotResumable
+	}
+	return disconnectedAt, nil
+}
+
+func (store *Store) Resume(
+	ctx context.Context,
+	claims auth.Claims,
+	sessionID, nodeID string,
+	notDisconnectedBefore time.Time,
+) (ResumeResult, error) {
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return ResumeResult{}, fmt.Errorf("begin resume transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	participant := Participant{}
+	session := ParticipantSession{}
+	err = tx.QueryRow(ctx, `
+		SELECT p.id, p.room_id, p.external_id, p.name, p.metadata, p.role, p.joined_at, p.left_at,
+		       s.id, s.participant_id, s.signaling_node_id, s.media_node_id, s.connection_state,
+		       s.transport_type, s.joined_at, s.disconnected_at, s.reconnected_at
+		FROM participant_session s
+		JOIN participant p ON p.id = s.participant_id
+		JOIN room r ON r.id = p.room_id
+		WHERE s.id = $1 AND s.participant_id = $2 AND p.room_id = $3
+		  AND r.project_id = $4 AND r.environment_id = $5
+		  AND p.left_at IS NULL AND s.connection_state = 'reconnecting'
+		  AND s.disconnected_at >= $6
+		FOR UPDATE`,
+		sessionID, claims.ParticipantID, claims.RoomID, claims.ProjectID, claims.EnvironmentID,
+		notDisconnectedBefore,
+	).Scan(
+		&participant.ID, &participant.RoomID, &participant.ExternalID, &participant.Name,
+		&participant.Metadata, &participant.Role, &participant.JoinedAt, &participant.LeftAt,
+		&session.ID, &session.ParticipantID, &session.SignalingNodeID, &session.MediaNodeID,
+		&session.ConnectionState, &session.TransportType, &session.JoinedAt,
+		&session.DisconnectedAt, &session.ReconnectedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ResumeResult{}, ErrSessionNotResumable
+		}
+		return ResumeResult{}, fmt.Errorf("select resumable participant session: %w", err)
+	}
+
+	reconnectedAt := time.Now().UTC()
+	err = tx.QueryRow(ctx, `
+		UPDATE participant_session
+		SET connection_state = 'connected', signaling_node_id = $1, reconnected_at = $2
+		WHERE id = $3 AND connection_state = 'reconnecting'
+		RETURNING id, participant_id, signaling_node_id, media_node_id, connection_state,
+		          transport_type, joined_at, disconnected_at, reconnected_at`,
+		nodeID, reconnectedAt, sessionID,
+	).Scan(
+		&session.ID, &session.ParticipantID, &session.SignalingNodeID, &session.MediaNodeID,
+		&session.ConnectionState, &session.TransportType, &session.JoinedAt,
+		&session.DisconnectedAt, &session.ReconnectedAt,
+	)
+	if err != nil {
+		return ResumeResult{}, ErrSessionNotResumable
+	}
+	participants, err := listParticipants(ctx, tx, claims.RoomID)
+	if err != nil {
+		return ResumeResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ResumeResult{}, fmt.Errorf("commit session resume: %w", err)
+	}
+	return ResumeResult{Participant: participant, Session: session, Participants: participants}, nil
+}
+
+func (store *Store) Expire(ctx context.Context, roomID, participantID, sessionID string) (time.Time, error) {
+	return store.finalize(ctx, roomID, participantID, sessionID, true)
+}
+
+func (store *Store) finalize(
+	ctx context.Context,
+	roomID, participantID, sessionID string,
+	reconnectingOnly bool,
+) (time.Time, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return time.Time{}, fmt.Errorf("begin leave transaction: %w", err)
@@ -162,10 +266,14 @@ func (store *Store) Leave(ctx context.Context, roomID, participantID, sessionID 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	leftAt := time.Now().UTC()
-	command, err := tx.Exec(ctx, `
+	query := `
 		UPDATE participant_session
 		SET connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
-		WHERE id = $2 AND participant_id = $3`, leftAt, sessionID, participantID)
+		WHERE id = $2 AND participant_id = $3`
+	if reconnectingOnly {
+		query += ` AND connection_state = 'reconnecting'`
+	}
+	command, err := tx.Exec(ctx, query, leftAt, sessionID, participantID)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("disconnect participant session: %w", err)
 	}
