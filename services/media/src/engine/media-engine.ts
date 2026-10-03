@@ -1,6 +1,12 @@
 export type MediaKind = "audio" | "video";
 export type MediaTrackType = "audio" | "camera_video" | "screen_audio" | "screen_video";
 export type MediaTransportDirection = "receive" | "send";
+import type {
+  MediaPriority,
+  SelectedVideoQuality,
+  SubscriberNetworkStats,
+  SubscriberQualityMode,
+} from "./quality-controller.js";
 
 export interface MediaRoomRequest {
   roomId: string;
@@ -50,6 +56,7 @@ export interface PublishTrackRequest extends MediaRoomRequest {
   rtpParameters: Readonly<Record<string, unknown>>;
   transportId: string;
   trackType: MediaTrackType;
+  priority?: MediaPriority;
 }
 
 export interface PublishedTrack {
@@ -57,6 +64,7 @@ export interface PublishedTrack {
   kind: MediaKind;
   participantId: string;
   trackType: MediaTrackType;
+  priority: MediaPriority;
 }
 
 export interface RemoveTrackRequest extends MediaRoomRequest {
@@ -69,6 +77,7 @@ export interface SubscribeTrackRequest extends MediaRoomRequest {
   rtpCapabilities: Readonly<Record<string, unknown>>;
   trackId: string;
   transportId: string;
+  quality?: SubscriberQualityMode;
 }
 
 export interface TrackSubscription {
@@ -78,18 +87,35 @@ export interface TrackSubscription {
   rtpParameters: Readonly<Record<string, unknown>>;
   trackId: string;
   trackType: MediaTrackType;
+  priority: MediaPriority;
+  quality: SelectedVideoQuality | null;
+}
+
+export interface IngestSubscriberStatsRequest extends MediaRoomRequest {
+  participantId: string;
+  stats: SubscriberNetworkStats;
+}
+
+export interface SetSubscriptionQualityRequest extends MediaRoomRequest {
+  participantId: string;
+  quality: SubscriberQualityMode;
+  subscriptionId: string;
+}
+
+export interface SetPriorityRequest extends MediaRoomRequest {
+  participantId: string;
+  priority: MediaPriority;
 }
 
 export interface MediaEngine {
   close(): Promise<void>;
   closeRoom(request: MediaRoomRequest): Promise<void>;
   connectParticipantTransport(request: ConnectTransportRequest): Promise<void>;
-  createParticipantTransport(
-    request: ParticipantTransportRequest,
-  ): Promise<ParticipantTransport>;
+  createParticipantTransport(request: ParticipantTransportRequest): Promise<ParticipantTransport>;
   createRoom(request: MediaRoomRequest): Promise<void>;
   getCapacity(): MediaEngineCapacity;
   getHealth(): Promise<MediaEngineHealth>;
+  ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void>;
   listPublishedTracks(request: MediaRoomRequest): Promise<readonly PublishedTrack[]>;
   getRouterCapabilities(request: MediaRoomRequest): Promise<Readonly<Record<string, unknown>>>;
   publishTrack(request: PublishTrackRequest): Promise<PublishedTrack>;
@@ -98,5 +124,8 @@ export interface MediaEngine {
     request: RestartTransportRequest,
   ): Promise<Readonly<Record<string, unknown>>>;
   start(): Promise<void>;
+  setParticipantPriority(request: SetPriorityRequest): Promise<void>;
+  setSubscriptionQuality(request: SetSubscriptionQualityRequest): Promise<void>;
+  setTrackPriority(request: SetPriorityRequest & { trackId: string }): Promise<void>;
   subscribeTrack(request: SubscribeTrackRequest): Promise<TrackSubscription>;
 }

@@ -38,6 +38,17 @@ const createTransport = (
         kind: producer.kind,
         observer: { once: vi.fn() },
         producerId: options.producerId,
+        paused: false,
+        pause: vi.fn(function (this: { paused: boolean }) {
+          this.paused = true;
+          return Promise.resolve();
+        }),
+        resume: vi.fn(function (this: { paused: boolean }) {
+          this.paused = false;
+          return Promise.resolve();
+        }),
+        setPreferredLayers: vi.fn(() => Promise.resolve()),
+        setPriority: vi.fn(() => Promise.resolve()),
         rtpParameters: producer.rtpParameters,
       } as unknown as Consumer;
       consumers.push(consumer);
@@ -48,33 +59,31 @@ const createTransport = (
     iceParameters: { iceLite: true, password: "password", usernameFragment: "username" },
     id,
     observer: { once: vi.fn() },
-    produce: vi.fn((options: {
-      appData: Record<string, unknown>;
-      kind: "audio" | "video";
-      rtpParameters: Readonly<Record<string, unknown>>;
-    }) => {
-      const producer = {
-        appData: options.appData,
-        close: vi.fn(),
-        id: `producer-${id}-${String(producerIndex++)}`,
-        kind: options.kind,
-        observer: { once: vi.fn() },
-        rtpParameters: options.rtpParameters,
-      } as unknown as Producer;
-      producers.push(producer);
-      return Promise.resolve(producer);
-    }),
+    produce: vi.fn(
+      (options: {
+        appData: Record<string, unknown>;
+        kind: "audio" | "video";
+        rtpParameters: Readonly<Record<string, unknown>>;
+      }) => {
+        const producer = {
+          appData: options.appData,
+          close: vi.fn(),
+          id: `producer-${id}-${String(producerIndex++)}`,
+          kind: options.kind,
+          observer: { once: vi.fn() },
+          rtpParameters: options.rtpParameters,
+        } as unknown as Producer;
+        producers.push(producer);
+        return Promise.resolve(producer);
+      },
+    ),
     restartIce: vi.fn(() =>
       Promise.resolve({ iceLite: true, password: "new-password", usernameFragment: "new-user" }),
     ),
   } as unknown as WebRtcTransport;
 };
 
-const createRouter = (
-  id: string,
-  consumers: Consumer[],
-  producers: Producer[],
-): Router => {
+const createRouter = (id: string, consumers: Consumer[], producers: Producer[]): Router => {
   let transportIndex = 0;
   return {
     canConsume: vi.fn(() => true),
