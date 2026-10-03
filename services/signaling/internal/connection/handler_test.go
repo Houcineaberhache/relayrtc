@@ -206,8 +206,11 @@ func TestHandlerDisconnectsOnShutdown(t *testing.T) {
 }
 
 type fakeSessionStore struct {
-	joinResult session.JoinResult
-	left       chan struct{}
+	joinResult   session.JoinResult
+	left         chan struct{}
+	disconnected chan struct{}
+	expired      chan struct{}
+	resumeResult session.ResumeResult
 }
 
 type fakeRTCService struct {
@@ -230,6 +233,30 @@ func (store *fakeSessionStore) Leave(context.Context, string, string, string) (t
 	select {
 	case store.left <- struct{}{}:
 	default:
+	}
+	return time.Now().UTC(), nil
+}
+
+func (store *fakeSessionStore) Disconnect(context.Context, string, string) (time.Time, error) {
+	if store.disconnected != nil {
+		select {
+		case store.disconnected <- struct{}{}:
+		default:
+		}
+	}
+	return time.Now().UTC(), nil
+}
+
+func (store *fakeSessionStore) Resume(context.Context, auth.Claims, string, string, time.Time) (session.ResumeResult, error) {
+	return store.resumeResult, nil
+}
+
+func (store *fakeSessionStore) Expire(context.Context, string, string, string) (time.Time, error) {
+	if store.expired != nil {
+		select {
+		case store.expired <- struct{}{}:
+		default:
+		}
 	}
 	return time.Now().UTC(), nil
 }
@@ -347,6 +374,158 @@ func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
 	case <-store.left:
 	case <-time.After(time.Second):
 		t.Fatal("leave was not persisted")
+	}
+}
+
+func recoverySessionStore(now time.Time) *fakeSessionStore {
+	participant := session.Participant{
+		ID: "participant_123", RoomID: "room_123", Name: "Ada",
+		Metadata: []byte(`{}`), Role: "participant", JoinedAt: now,
+	}
+	participantSession := session.ParticipantSession{
+		ID: "session_123", ParticipantID: participant.ID, SignalingNodeID: "signaling-test",
+		ConnectionState: "connected", TransportType: "tcp", JoinedAt: now,
+	}
+	reconnectedAt := now.Add(time.Second)
+	resumedSession := participantSession
+	resumedSession.ReconnectedAt = &reconnectedAt
+	return &fakeSessionStore{
+		joinResult: session.JoinResult{
+			Room: session.Room{
+				ID: "room_123", ProjectID: "project_123", EnvironmentID: "env_development",
+				Name: "Room", Metadata: []byte(`{}`), Status: "active", MaxParticipants: 10,
+				CreatedAt: now, StartedAt: &now,
+			},
+			Participant: participant, Session: participantSession,
+			Participants: []session.Participant{participant},
+		},
+		resumeResult: session.ResumeResult{
+			Participant: participant, Session: resumedSession,
+			Participants: []session.Participant{participant},
+		},
+		left: make(chan struct{}, 1), disconnected: make(chan struct{}, 2),
+		expired: make(chan struct{}, 2),
+	}
+}
+
+func recoveryHandler(t *testing.T, shutdown context.Context, store SessionStore, timeout time.Duration) (*Handler, *httptest.Server) {
+	t.Helper()
+	handler := NewHandler(Options{
+		AllowedOrigins: []string{"https://app.example.com"}, HeartbeatInterval: time.Second,
+		MaxMessageBytes: 4096, NodeID: "signaling-test", PongTimeout: 2 * time.Second,
+		RecoveryTimeout: timeout, SessionStore: store, Shutdown: shutdown,
+		Validator:    auth.NewValidator(connectionTestSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"),
+		WriteTimeout: time.Second,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return handler, server
+}
+
+func joinTestSession(t *testing.T, connection *websocket.Conn, token string, now time.Time) {
+	t.Helper()
+	if err := connection.WriteJSON(map[string]any{
+		"v": 1, "id": "request_join", "sentAt": now, "type": "participant.join",
+		"payload": map[string]any{"roomId": "room_123", "participantToken": token},
+	}); err != nil {
+		t.Fatalf("WriteJSON(join) error = %v", err)
+	}
+	response := map[string]any{}
+	if err := connection.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(join) error = %v", err)
+	}
+	if response["type"] != "participant.join.accepted" {
+		t.Fatalf("join response type = %v", response["type"])
+	}
+}
+
+func TestHandlerResumesDisconnectedSessionAndRejectsDuplicateResume(t *testing.T) {
+	shutdown, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Now().UTC()
+	store := recoverySessionStore(now)
+	_, server := recoveryHandler(t, shutdown, store, 200*time.Millisecond)
+	token := connectionToken(t, time.Now().Add(time.Minute))
+
+	first, _, err := dial(t, server, token, "")
+	if err != nil {
+		t.Fatalf("Dial(first) error = %v", err)
+	}
+	joinTestSession(t, first, token, now)
+	_ = first.Close()
+	select {
+	case <-store.disconnected:
+	case <-time.After(time.Second):
+		t.Fatal("session was not marked reconnecting")
+	}
+
+	resumed, _, err := dial(t, server, token, "")
+	if err != nil {
+		t.Fatalf("Dial(resumed) error = %v", err)
+	}
+	defer resumed.Close()
+	if err := resumed.WriteJSON(map[string]any{
+		"v": 1, "id": "request_resume", "sentAt": now, "type": "session.resume",
+		"payload": map[string]any{
+			"roomId": "room_123", "sessionId": "session_123", "resumeToken": token,
+		},
+	}); err != nil {
+		t.Fatalf("WriteJSON(resume) error = %v", err)
+	}
+	response := map[string]any{}
+	if err := resumed.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(resume) error = %v", err)
+	}
+	if response["type"] != "session.resume.accepted" {
+		t.Fatalf("resume response type = %v", response["type"])
+	}
+
+	duplicate, _, err := dial(t, server, token, "")
+	if err != nil {
+		t.Fatalf("Dial(duplicate) error = %v", err)
+	}
+	defer duplicate.Close()
+	if err := duplicate.WriteJSON(map[string]any{
+		"v": 1, "id": "request_duplicate", "sentAt": now, "type": "session.resume",
+		"payload": map[string]any{
+			"roomId": "room_123", "sessionId": "session_123", "resumeToken": token,
+		},
+	}); err != nil {
+		t.Fatalf("WriteJSON(duplicate) error = %v", err)
+	}
+	response = map[string]any{}
+	if err := duplicate.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON(duplicate) error = %v", err)
+	}
+	if response["type"] != "protocol.error" {
+		t.Fatalf("duplicate response type = %v", response["type"])
+	}
+
+	select {
+	case <-store.expired:
+		t.Fatal("resumed session was expired")
+	case <-time.After(250 * time.Millisecond):
+	}
+}
+
+func TestHandlerExpiresSessionAfterRecoveryTimeout(t *testing.T) {
+	shutdown, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Now().UTC()
+	store := recoverySessionStore(now)
+	_, server := recoveryHandler(t, shutdown, store, 30*time.Millisecond)
+	token := connectionToken(t, time.Now().Add(time.Minute))
+	connection, _, err := dial(t, server, token, "")
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	joinTestSession(t, connection, token, now)
+	_ = connection.Close()
+
+	select {
+	case <-store.expired:
+	case <-time.After(time.Second):
+		t.Fatal("recovery timeout did not expire the session")
 	}
 }
 

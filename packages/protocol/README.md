@@ -28,3 +28,5 @@ rtc.track.subscribe        = rtc.track.subscribe.accepted
 ```
 
 Every RTC request carries the joined `roomId` and `sessionId`. The signaling service validates that scope before forwarding the request to the configured media service.
+
+After an unexpected WebSocket disconnect, reconnect with the same participant token and send `session.resume` using the original `roomId`, `sessionId`, and participant token as `resumeToken`. A successful `session.resume.accepted` restores the existing logical participant rather than creating a duplicate.
