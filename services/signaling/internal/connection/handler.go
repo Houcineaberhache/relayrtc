@@ -301,6 +301,9 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 		handler.registry.releaseSession(joined.session.ID, client)
 		client.close(websocket.CloseNormalClosure, "participant left")
 		return true, nil
+	case "message.send", "event.emit":
+		handler.handleMessagingMessage(client, claims, joined, request)
+		return false, joined
 	default:
 		if _, ok := rtcResponseTypes[request.Type]; ok {
 			handler.handleRTCMessage(client, claims, joined, request)
