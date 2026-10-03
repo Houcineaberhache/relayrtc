@@ -279,6 +279,10 @@ func (store *fakeSessionStore) UpdateMetadata(
 	return participant, nil
 }
 
+func (store *fakeSessionStore) EndRoom(context.Context, string, time.Time) error {
+	return nil
+}
+
 func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
 	shutdown, cancel := context.WithCancel(context.Background())
 	defer cancel()
