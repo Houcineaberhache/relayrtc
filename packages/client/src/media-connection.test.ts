@@ -61,4 +61,31 @@ describe("MediaConnection", () => {
     expect(peer.removeTrack).toHaveBeenCalledWith(peer.sender);
     expect(microphone.stop).toHaveBeenCalledOnce();
   });
+
+  it("publishes and stops screen video and system audio", async () => {
+    const listeners = new Map<string, EventListenerOrEventListenerObject>();
+    const video = Object.assign(mediaTrack("video", "display-1"), {
+      addEventListener: vi.fn((name: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.set(name, listener);
+      }),
+      removeEventListener: vi.fn((name: string) => listeners.delete(name)),
+    });
+    const audio = mediaTrack("audio", "display-audio-1");
+    const peer = new TestPeerConnection();
+    const connection = new MediaConnection({
+      mediaEnvironment: mediaEnvironment({
+        getDisplayMedia: () => Promise.resolve(mediaStream(video, audio)),
+      }),
+      peerConnectionFactory: () => peer.asPeerConnection(),
+    });
+
+    await connection.startScreenShare({ video: true, audio: true });
+    connection.stopScreenShare();
+
+    expect(peer.addTrack).toHaveBeenNthCalledWith(1, video);
+    expect(peer.addTrack).toHaveBeenNthCalledWith(2, audio);
+    expect(peer.removeTrack).toHaveBeenCalledTimes(2);
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(audio.stop).toHaveBeenCalledOnce();
+  });
 });
