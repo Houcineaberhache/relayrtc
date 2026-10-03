@@ -42,9 +42,14 @@ export const selectVideoQuality = (
 ): SelectedVideoQuality => {
   const totalPackets = stats.packetsLost + stats.packetsReceived;
   const loss = totalPackets === 0 ? 0 : stats.packetsLost / totalPackets;
-  const bitrate = stats.availableIncomingBitrate ?? 0;
-  if (loss >= 0.2 || (stats.roundTripTime ?? 0) >= 1 || bitrate < 80_000) return "audio-only";
+  const bitrate = stats.availableIncomingBitrate;
+  if (loss >= 0.2 || (stats.roundTripTime ?? 0) >= 1 || (bitrate !== null && bitrate < 80_000))
+    return "audio-only";
   const factor = priorityFactor[priority];
+  if (bitrate === null) {
+    if (loss < 0.08 && (stats.roundTripTime ?? 0) < 0.5) return "720p";
+    return "360p";
+  }
   if (
     loss < 0.03 &&
     (stats.roundTripTime ?? 0) < 0.25 &&

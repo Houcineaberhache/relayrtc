@@ -46,6 +46,7 @@ func TestLoadUsesConfiguredConnectionSettings(t *testing.T) {
 		"RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES":  "32768",
 		"RELAYRTC_SIGNALING_PONG_TIMEOUT":       "45s",
 		"RELAYRTC_SIGNALING_RECOVERY_TIMEOUT":   "20s",
+		"RELAYRTC_MEDIA_INTERNAL_URL":           "https://media.example.com/internal/v1/",
 	}))
 	if err != nil {
 		t.Fatalf("load() returned an error: %v", err)
@@ -57,6 +58,9 @@ func TestLoadUsesConfiguredConnectionSettings(t *testing.T) {
 	}
 	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != "https://app.example.com" {
 		t.Fatalf("load() allowed origins = %v", cfg.AllowedOrigins)
+	}
+	if cfg.MediaInternalURL != "https://media.example.com/internal/v1" {
+		t.Fatalf("load() media URL = %s", cfg.MediaInternalURL)
 	}
 }
 
@@ -72,6 +76,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"recovery timeout", map[string]string{"RELAYRTC_SIGNALING_RECOVERY_TIMEOUT": "0s"}, "positive duration"},
 		{"origin", map[string]string{"RELAYRTC_SIGNALING_ALLOWED_ORIGINS": "https://example.com/path"}, "invalid origin"},
 		{"secret", map[string]string{"PARTICIPANT_TOKEN_SIGNING_SECRET": "too-short"}, "32 characters"},
+		{"media URL", map[string]string{"RELAYRTC_MEDIA_INTERNAL_URL": "file:///tmp/media"}, "HTTP URL"},
 	}
 
 	for _, test := range tests {

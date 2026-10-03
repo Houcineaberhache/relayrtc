@@ -35,4 +35,14 @@ describe("selectVideoQuality", () => {
       "audio-only",
     );
   });
+
+  it("uses a safe video layer when the browser omits bandwidth estimates", () => {
+    expect(selectVideoQuality(stats({ availableIncomingBitrate: null }), "normal")).toBe("720p");
+    expect(
+      selectVideoQuality(
+        stats({ availableIncomingBitrate: null, packetsLost: 10, packetsReceived: 90 }),
+        "normal",
+      ),
+    ).toBe("360p");
+  });
 });

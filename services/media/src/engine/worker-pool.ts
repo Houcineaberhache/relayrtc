@@ -25,6 +25,7 @@ import type {
   PublishedTrack,
   PublishTrackRequest,
   RemoveTrackRequest,
+  RemoveParticipantRequest,
   RestartTransportRequest,
   SetPriorityRequest,
   SetSubscriptionQualityRequest,
@@ -467,10 +468,21 @@ export class MediasoupWorkerPool implements MediaEngine {
     if (state.participantId !== request.participantId)
       throw new MediaEngineError("FORBIDDEN", "The subscription belongs to another participant");
     state.quality = request.quality;
-    if (state.consumer.kind === "video" && request.quality !== "auto") {
+    if (state.consumer.kind !== "video") return;
+    if (request.quality !== "auto") {
       await this.#applyQuality(state.consumer, request.quality);
       state.selectedQuality = request.quality;
+      return;
     }
+    const producer = room.producers.get(state.consumer.producerId);
+    const priority =
+      (producer?.appData.priority as MediaPriority | undefined) ??
+      room.participantPriorities.get(String(producer?.appData.participantId)) ??
+      "normal";
+    const stats = room.participantStats.get(request.participantId);
+    const selected = stats ? selectVideoQuality(stats, priority) : "720p";
+    await this.#applyQuality(state.consumer, selected);
+    state.selectedQuality = selected;
   }
 
   async setTrackPriority(request: SetPriorityRequest & { trackId: string }): Promise<void> {
@@ -516,6 +528,39 @@ export class MediasoupWorkerPool implements MediaEngine {
     }
     producer.close();
     room.producers.delete(producer.id);
+    return Promise.resolve();
+  }
+
+  removeParticipant(request: RemoveParticipantRequest): Promise<void> {
+    const room = this.#rooms.get(request.roomId);
+    if (!room) return Promise.resolve();
+    const ownedProducerIds = new Set(
+      [...room.producers.values()]
+        .filter((producer) => producer.appData.participantId === request.participantId)
+        .map((producer) => producer.id),
+    );
+    for (const [consumerId, state] of room.consumers) {
+      if (
+        state.participantId === request.participantId ||
+        ownedProducerIds.has(state.consumer.producerId)
+      ) {
+        state.consumer.close();
+        room.consumers.delete(consumerId);
+      }
+    }
+    for (const producerId of ownedProducerIds) {
+      room.producers.get(producerId)?.close();
+      room.producers.delete(producerId);
+    }
+    for (const [transportId, state] of room.transports) {
+      if (state.participantId === request.participantId) {
+        state.transport.close();
+        room.transports.delete(transportId);
+      }
+    }
+    room.participantPriorities.delete(request.participantId);
+    room.participantQualities.delete(request.participantId);
+    room.participantStats.delete(request.participantId);
     return Promise.resolve();
   }
 

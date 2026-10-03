@@ -29,6 +29,7 @@ type Options struct {
 	HeartbeatInterval time.Duration
 	MaxMessageBytes   int64
 	NodeID            string
+	ParticipantMedia  ParticipantMediaService
 	PongTimeout       time.Duration
 	RecoveryTimeout   time.Duration
 	RTCService        RTCSignalService
@@ -36,6 +37,10 @@ type Options struct {
 	Shutdown          context.Context
 	Validator         *auth.Validator
 	WriteTimeout      time.Duration
+}
+
+type ParticipantMediaService interface {
+	RemoveParticipant(context.Context, string, string) error
 }
 
 type SessionStore interface {
@@ -52,6 +57,7 @@ type Handler struct {
 	heartbeatInterval time.Duration
 	maxMessageBytes   int64
 	nodeID            string
+	participantMedia  ParticipantMediaService
 	pongTimeout       time.Duration
 	recoveries        map[string]chan struct{}
 	recoveryMu        sync.Mutex
@@ -84,6 +90,7 @@ func NewHandler(options Options) *Handler {
 		heartbeatInterval: options.HeartbeatInterval,
 		maxMessageBytes:   options.MaxMessageBytes,
 		nodeID:            options.NodeID,
+		participantMedia:  options.ParticipantMedia,
 		pongTimeout:       options.PongTimeout,
 		recoveries:        make(map[string]chan struct{}),
 		recoveryTimeout:   recoveryTimeout,
@@ -431,6 +438,11 @@ func (handler *Handler) scheduleRecovery(roomID string, joined *joinedSession) {
 		defer cancel()
 		leftAt, err := handler.sessionStore.Expire(ctx, roomID, joined.participant.ID, joined.session.ID)
 		if err == nil {
+			if handler.participantMedia != nil {
+				if cleanupErr := handler.participantMedia.RemoveParticipant(ctx, roomID, joined.participant.ID); cleanupErr != nil {
+					slog.Warn("participant media cleanup failed", "error", cleanupErr, "participantId", joined.participant.ID, "roomId", roomID)
+				}
+			}
 			handler.registry.broadcast(roomID, nil, event("participant.left", map[string]any{
 				"roomId": roomID, "participantId": joined.participant.ID,
 				"sessionId": joined.session.ID, "leftAt": leftAt,
@@ -452,6 +464,11 @@ func (handler *Handler) cancelRecovery(sessionID string) {
 func (handler *Handler) finalizeSession(ctx context.Context, roomID string, joined *joinedSession) {
 	leftAt, err := handler.sessionStore.Leave(ctx, roomID, joined.participant.ID, joined.session.ID)
 	if err == nil {
+		if handler.participantMedia != nil {
+			if cleanupErr := handler.participantMedia.RemoveParticipant(ctx, roomID, joined.participant.ID); cleanupErr != nil {
+				slog.Warn("participant media cleanup failed", "error", cleanupErr, "participantId", joined.participant.ID, "roomId", roomID)
+			}
+		}
 		handler.registry.broadcast(roomID, nil, event("participant.left", map[string]any{
 			"roomId": roomID, "participantId": joined.participant.ID,
 			"sessionId": joined.session.ID, "leftAt": leftAt,

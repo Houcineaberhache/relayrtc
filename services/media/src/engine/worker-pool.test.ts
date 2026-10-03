@@ -172,6 +172,45 @@ describe("MediasoupWorkerPool", () => {
     await pool.close();
   });
 
+  it("closes participant producers and subscriptions during session cleanup", async () => {
+    const { consumers, factory, producers } = createMediasoupTestHarness();
+    const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory);
+    await pool.start();
+    await pool.createRoom({ roomId: "room-1" });
+    const send = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "participant-1",
+      roomId: "room-1",
+    });
+    const receive = await pool.createParticipantTransport({
+      direction: "receive",
+      participantId: "participant-2",
+      roomId: "room-1",
+    });
+    const track = await pool.publishTrack({
+      kind: "video",
+      participantId: "participant-1",
+      roomId: "room-1",
+      rtpParameters: { codecs: [] },
+      trackType: "camera_video",
+      transportId: send.id,
+    });
+    await pool.subscribeTrack({
+      participantId: "participant-2",
+      roomId: "room-1",
+      rtpCapabilities: { codecs: [] },
+      trackId: track.id,
+      transportId: receive.id,
+    });
+
+    await pool.removeParticipant({ participantId: "participant-1", roomId: "room-1" });
+
+    expect(vi.mocked(producers[0]!.close)).toHaveBeenCalledOnce();
+    expect(vi.mocked(consumers[0]!.close)).toHaveBeenCalledOnce();
+    await expect(pool.listPublishedTracks({ roomId: "room-1" })).resolves.toEqual([]);
+    await pool.close();
+  });
+
   it("selects video layers from subscriber stats and supports audio-only fallback", async () => {
     const { consumers, factory } = createMediasoupTestHarness();
     const publish = vi.fn(() => Promise.resolve());
@@ -200,7 +239,7 @@ describe("MediasoupWorkerPool", () => {
       trackType: "camera_video",
       transportId: send.id,
     });
-    await pool.subscribeTrack({
+    const autoSubscription = await pool.subscribeTrack({
       participantId: "subscriber",
       roomId: "room-1",
       rtpCapabilities: { codecs: [] },
@@ -224,12 +263,28 @@ describe("MediasoupWorkerPool", () => {
     expect(consumer).toBeDefined();
     const qualityConsumer = consumer as unknown as {
       pause: Mock;
+      resume: Mock;
       setPreferredLayers: Mock;
     };
+    await pool.setSubscriptionQuality({
+      participantId: "subscriber",
+      quality: "audio-only",
+      roomId: "room-1",
+      subscriptionId: autoSubscription.id,
+    });
+    await pool.setSubscriptionQuality({
+      participantId: "subscriber",
+      quality: "auto",
+      roomId: "room-1",
+      subscriptionId: autoSubscription.id,
+    });
+    expect(qualityConsumer.resume).toHaveBeenCalledOnce();
     expect(qualityConsumer.setPreferredLayers).toHaveBeenCalledWith({
       spatialLayer: 2,
       temporalLayer: 2,
     });
+    qualityConsumer.pause.mockClear();
+    qualityConsumer.setPreferredLayers.mockClear();
     await pool.ingestSubscriberStats({
       participantId: "subscriber",
       roomId: "room-1",

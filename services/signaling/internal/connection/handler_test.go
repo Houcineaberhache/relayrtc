@@ -222,6 +222,15 @@ type fakeRTCService struct {
 	requests chan RTCSignalRequest
 }
 
+type fakeParticipantMedia struct {
+	removed chan string
+}
+
+func (media *fakeParticipantMedia) RemoveParticipant(_ context.Context, roomID, participantID string) error {
+	media.removed <- roomID + "/" + participantID
+	return nil
+}
+
 func (service *fakeRTCService) Handle(_ context.Context, _ auth.Claims, request RTCSignalRequest) (RTCSignalResponse, error) {
 	service.requests <- request
 	return RTCSignalResponse{
@@ -430,14 +439,15 @@ func recoverySessionStore(now time.Time) *fakeSessionStore {
 	}
 }
 
-func recoveryHandler(t *testing.T, shutdown context.Context, store SessionStore, timeout time.Duration) (*Handler, *httptest.Server) {
+func recoveryHandler(t *testing.T, shutdown context.Context, store SessionStore, timeout time.Duration, media ParticipantMediaService) (*Handler, *httptest.Server) {
 	t.Helper()
 	handler := NewHandler(Options{
 		AllowedOrigins: []string{"https://app.example.com"}, HeartbeatInterval: time.Second,
 		MaxMessageBytes: 4096, NodeID: "signaling-test", PongTimeout: 2 * time.Second,
 		RecoveryTimeout: timeout, SessionStore: store, Shutdown: shutdown,
-		Validator:    auth.NewValidator(connectionTestSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"),
-		WriteTimeout: time.Second,
+		ParticipantMedia: media,
+		Validator:        auth.NewValidator(connectionTestSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1"),
+		WriteTimeout:     time.Second,
 	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -466,7 +476,7 @@ func TestHandlerResumesDisconnectedSessionAndRejectsDuplicateResume(t *testing.T
 	defer cancel()
 	now := time.Now().UTC()
 	store := recoverySessionStore(now)
-	_, server := recoveryHandler(t, shutdown, store, 200*time.Millisecond)
+	_, server := recoveryHandler(t, shutdown, store, 200*time.Millisecond, nil)
 	token := connectionToken(t, time.Now().Add(time.Minute))
 
 	first, _, err := dial(t, server, token, "")
@@ -535,7 +545,8 @@ func TestHandlerExpiresSessionAfterRecoveryTimeout(t *testing.T) {
 	defer cancel()
 	now := time.Now().UTC()
 	store := recoverySessionStore(now)
-	_, server := recoveryHandler(t, shutdown, store, 30*time.Millisecond)
+	media := &fakeParticipantMedia{removed: make(chan string, 1)}
+	_, server := recoveryHandler(t, shutdown, store, 30*time.Millisecond, media)
 	token := connectionToken(t, time.Now().Add(time.Minute))
 	connection, _, err := dial(t, server, token, "")
 	if err != nil {
@@ -548,6 +559,14 @@ func TestHandlerExpiresSessionAfterRecoveryTimeout(t *testing.T) {
 	case <-store.expired:
 	case <-time.After(time.Second):
 		t.Fatal("recovery timeout did not expire the session")
+	}
+	select {
+	case removed := <-media.removed:
+		if removed != "room_123/participant_123" {
+			t.Fatalf("removed participant = %s", removed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("recovery timeout did not clean up participant media")
 	}
 }
 
