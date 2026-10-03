@@ -64,6 +64,13 @@
       "when": 1790978043123,
       "tag": "0008_room_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791056338922,
+      "tag": "0009_rtc_quality_metrics",
+      "breakpoints": true
     }
   ]
 }
