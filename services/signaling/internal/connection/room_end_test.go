@@ -15,7 +15,7 @@ func TestHandlerEndsRoomAndDisconnectsJoinedParticipants(t *testing.T) {
 	defer cancel()
 	now := time.Now().UTC()
 	store := recoverySessionStore(now)
-	handler, server := recoveryHandler(t, shutdown, store, time.Second)
+	handler, server := recoveryHandler(t, shutdown, store, time.Second, nil)
 	token := connectionToken(t, time.Now().Add(time.Minute))
 	client, _, err := dial(t, server, token, "")
 	if err != nil {

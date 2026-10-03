@@ -41,6 +41,7 @@ func Run(ctx context.Context) error {
 		HeartbeatInterval: cfg.HeartbeatInterval,
 		MaxMessageBytes:   cfg.MaxMessageBytes,
 		NodeID:            cfg.SignalingNodeID,
+		ParticipantMedia:  newParticipantMediaClient(cfg.MediaInternalURL, cfg.InternalSecret),
 		PongTimeout:       cfg.PongTimeout,
 		RecoveryTimeout:   cfg.RecoveryTimeout,
 		SessionStore:      session.NewStore(pool),

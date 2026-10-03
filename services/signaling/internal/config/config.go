@@ -27,6 +27,7 @@ type Config struct {
 	HeartbeatInterval      time.Duration
 	InternalSecret         string
 	MaxMessageBytes        int64
+	MediaInternalURL       string
 	ParticipantTokenSecret string
 	PongTimeout            time.Duration
 	RecoveryTimeout        time.Duration
@@ -89,6 +90,11 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	if strings.TrimSpace(databaseURL) == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
+	mediaInternalURL := valueOrDefault(lookup, "RELAYRTC_MEDIA_INTERNAL_URL", "http://media:8082/internal/v1")
+	parsedMediaURL, err := url.Parse(mediaInternalURL)
+	if err != nil || (parsedMediaURL.Scheme != "http" && parsedMediaURL.Scheme != "https") || parsedMediaURL.Host == "" {
+		return Config{}, fmt.Errorf("RELAYRTC_MEDIA_INTERNAL_URL must be a valid HTTP URL")
+	}
 
 	allowedOrigins := splitList(valueOrDefault(
 		lookup,
@@ -113,6 +119,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		HeartbeatInterval:      heartbeatInterval,
 		InternalSecret:         internalSecret,
 		MaxMessageBytes:        maxMessageBytes,
+		MediaInternalURL:       strings.TrimRight(mediaInternalURL, "/"),
 		ParticipantTokenSecret: secret,
 		PongTimeout:            pongTimeout,
 		RecoveryTimeout:        recoveryTimeout,

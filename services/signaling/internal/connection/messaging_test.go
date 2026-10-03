@@ -79,7 +79,7 @@ func TestHandlerRejectsMessagingWithoutPermission(t *testing.T) {
 	defer cancel()
 	now := time.Now().UTC()
 	store := recoverySessionStore(now)
-	_, server := recoveryHandler(t, shutdown, store, time.Second)
+	_, server := recoveryHandler(t, shutdown, store, time.Second, nil)
 	token := connectionToken(t, time.Now().Add(time.Minute))
 	connection, _, err := dial(t, server, token, "")
 	if err != nil {
