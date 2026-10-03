@@ -5,5 +5,6 @@ export * from "./participant.js";
 export * from "./project.js";
 export * from "./room.js";
 export * from "./track.js";
+export * from "./turn.js";
 export * from "./usage.js";
 export * from "./webhook.js";
