@@ -16,6 +16,7 @@ export type {
   ParticipantTransportRequest,
   PublishedTrack,
   PublishTrackRequest,
+  RemoveTrackRequest,
   SubscribeTrackRequest,
   TrackSubscription,
 } from "./engine/media-engine.js";

@@ -35,22 +35,33 @@ export interface MediaEngineHealth {
 export interface PublishTrackRequest extends MediaRoomRequest {
   kind: MediaKind;
   participantId: string;
+  rtpParameters: Readonly<Record<string, unknown>>;
   transportId: string;
 }
 
 export interface PublishedTrack {
   id: string;
   kind: MediaKind;
+  participantId: string;
+}
+
+export interface RemoveTrackRequest extends MediaRoomRequest {
+  participantId: string;
+  trackId: string;
 }
 
 export interface SubscribeTrackRequest extends MediaRoomRequest {
   participantId: string;
+  rtpCapabilities: Readonly<Record<string, unknown>>;
   trackId: string;
   transportId: string;
 }
 
 export interface TrackSubscription {
   id: string;
+  kind: MediaKind;
+  producerId: string;
+  rtpParameters: Readonly<Record<string, unknown>>;
   trackId: string;
 }
 
@@ -65,6 +76,7 @@ export interface MediaEngine {
   getHealth(): Promise<MediaEngineHealth>;
   getRouterCapabilities(request: MediaRoomRequest): Promise<Readonly<Record<string, unknown>>>;
   publishTrack(request: PublishTrackRequest): Promise<PublishedTrack>;
+  removeTrack(request: RemoveTrackRequest): Promise<void>;
   start(): Promise<void>;
   subscribeTrack(request: SubscribeTrackRequest): Promise<TrackSubscription>;
 }
