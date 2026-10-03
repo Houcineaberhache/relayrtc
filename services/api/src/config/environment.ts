@@ -46,6 +46,9 @@ const environmentSchema = z
     PARTICIPANT_TOKEN_ISSUER: z.string().trim().min(1).default("relayrtc-api"),
     PARTICIPANT_TOKEN_KEY_ID: z.string().trim().min(1).max(128).default("participant-v1"),
     PARTICIPANT_TOKEN_SIGNING_SECRET: z.string().min(32),
+    RELAYRTC_INTERNAL_SECRET: z.string().min(32).optional(),
+    RELAYRTC_MEDIA_INTERNAL_URL: z.string().url().default("http://media:8082/internal/v1"),
+    RELAYRTC_SIGNALING_INTERNAL_URL: z.string().url().default("http://signaling:8081/internal/v1"),
     TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
     TURN_SHARED_SECRET: z.string().min(32),
     TURN_STUN_URLS: iceUrls(["stun", "stuns"]).default(["stun:localhost:3478"]),
@@ -66,7 +69,10 @@ export interface ApiConfig {
   participantTokenIssuer: string;
   participantTokenKeyId: string;
   participantTokenSigningSecret: string;
+  internalSecret: string;
+  mediaInternalUrl: string;
   port: number;
+  signalingInternalUrl: string;
   trustProxy: boolean;
   turnCredentialTtlSeconds: number;
   turnSharedSecret: string;
@@ -86,6 +92,9 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     PARTICIPANT_TOKEN_ISSUER: source.PARTICIPANT_TOKEN_ISSUER,
     PARTICIPANT_TOKEN_KEY_ID: source.PARTICIPANT_TOKEN_KEY_ID,
     PARTICIPANT_TOKEN_SIGNING_SECRET: source.PARTICIPANT_TOKEN_SIGNING_SECRET,
+    RELAYRTC_INTERNAL_SECRET: source.RELAYRTC_INTERNAL_SECRET,
+    RELAYRTC_MEDIA_INTERNAL_URL: source.RELAYRTC_MEDIA_INTERNAL_URL,
+    RELAYRTC_SIGNALING_INTERNAL_URL: source.RELAYRTC_SIGNALING_INTERNAL_URL,
     TURN_CREDENTIAL_TTL_SECONDS: source.TURN_CREDENTIAL_TTL_SECONDS,
     TURN_SHARED_SECRET: source.TURN_SHARED_SECRET,
     TURN_STUN_URLS: source.TURN_STUN_URLS,
@@ -108,7 +117,11 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     participantTokenIssuer: parsed.data.PARTICIPANT_TOKEN_ISSUER,
     participantTokenKeyId: parsed.data.PARTICIPANT_TOKEN_KEY_ID,
     participantTokenSigningSecret: parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
+    internalSecret:
+      parsed.data.RELAYRTC_INTERNAL_SECRET ?? parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
+    mediaInternalUrl: parsed.data.RELAYRTC_MEDIA_INTERNAL_URL,
     port: parsed.data.API_PORT,
+    signalingInternalUrl: parsed.data.RELAYRTC_SIGNALING_INTERNAL_URL,
     trustProxy: parsed.data.API_TRUST_PROXY,
     turnCredentialTtlSeconds: parsed.data.TURN_CREDENTIAL_TTL_SECONDS,
     turnSharedSecret: parsed.data.TURN_SHARED_SECRET,

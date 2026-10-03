@@ -11,9 +11,11 @@ import {
   roomParamsSchema,
 } from "./room.schema.js";
 import { createRoomService } from "./room.service.js";
+import type { RoomRuntimeService } from "./room-runtime.service.js";
 
 interface RoomRoutesOptions {
   database: RelayKitDatabase;
+  roomRuntime: RoomRuntimeService;
 }
 
 const requestScope = (request: FastifyRequest) => {
@@ -29,7 +31,7 @@ const requestScope = (request: FastifyRequest) => {
 };
 
 export const roomRoutes: FastifyPluginCallback<RoomRoutesOptions> = (app, options, done) => {
-  const service = createRoomService(createRoomRepository(options.database));
+  const service = createRoomService(createRoomRepository(options.database), options.roomRuntime);
 
   app.post(
     "/rooms",
