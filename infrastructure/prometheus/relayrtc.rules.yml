@@ -1,0 +1,20 @@
+groups:
+  - name: relayrtc-turn
+    interval: 15s
+    rules:
+      - record: relayrtc_turn_allocations
+        expr: sum(turn_total_allocations)
+      - record: relayrtc_turn_allocations_by_transport
+        expr: sum by (type) (turn_total_allocations)
+      - record: relayrtc_turn_sessions
+        expr: sum(turn_total_allocations)
+      - record: relayrtc_turn_ingress_bytes_total
+        expr: sum(turn_total_traffic_rcvb) + sum(turn_total_traffic_peer_rcvb)
+      - record: relayrtc_turn_egress_bytes_total
+        expr: sum(turn_total_traffic_sentb) + sum(turn_total_traffic_peer_sentb)
+      - record: relayrtc_turn_ingress_bytes_per_second
+        expr: sum(rate(turn_total_traffic_rcvb[5m])) + sum(rate(turn_total_traffic_peer_rcvb[5m]))
+      - record: relayrtc_turn_egress_bytes_per_second
+        expr: sum(rate(turn_total_traffic_sentb[5m])) + sum(rate(turn_total_traffic_peer_sentb[5m]))
+      - record: relayrtc_turn_relay_seconds_per_second
+        expr: sum(turn_total_allocations)
