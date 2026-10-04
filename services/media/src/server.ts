@@ -5,6 +5,7 @@ import { createMediasoupWorker } from "./engine/mediasoup-factory.js";
 import { MediasoupWorkerPool } from "./engine/worker-pool.js";
 import { createHttpQualityEventPublisher } from "./quality/quality-event-publisher.js";
 import { createQualityMetricsStore } from "./quality/quality-metrics-store.js";
+import { createMediaUsageMetricsStore } from "./usage/usage-metrics-store.js";
 
 const start = async (): Promise<void> => {
   const config = readMediaEnvironment(process.env);
@@ -15,10 +16,17 @@ const start = async (): Promise<void> => {
       signalingUrl: config.signalingInternalUrl,
     }),
     metricsStore: createQualityMetricsStore(database.db),
+    usageMetricsStore: createMediaUsageMetricsStore(database.db),
   });
   await engine.start();
+  const usageTimer = setInterval(() => void engine.flushUsage(), 2_000);
+  usageTimer.unref();
   const app = buildApp({ config, engine });
-  app.addHook("onClose", async () => database.close());
+  app.addHook("onClose", async () => {
+    clearInterval(usageTimer);
+    await engine.flushUsage();
+    await database.close();
+  });
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     app.log.info({ signal }, "Stopping RelayRTC media service");

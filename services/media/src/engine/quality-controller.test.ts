@@ -45,4 +45,13 @@ describe("selectVideoQuality", () => {
       ),
     ).toBe("360p");
   });
+
+  it("keeps video enabled while a new subscription has no packet sample", () => {
+    expect(
+      selectVideoQuality(
+        stats({ availableIncomingBitrate: 0, packetsLost: 0, packetsReceived: 0 }),
+        "normal",
+      ),
+    ).toBe("720p");
+  });
 });

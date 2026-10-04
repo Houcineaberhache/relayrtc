@@ -5,3 +5,4 @@ export * from "./participant.js";
 export * from "./project.js";
 export * from "./quality.js";
 export * from "./room.js";
+export * from "./usage.js";

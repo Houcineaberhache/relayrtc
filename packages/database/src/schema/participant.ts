@@ -1,5 +1,14 @@
 import { relations, sql } from "drizzle-orm";
-import { check, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  check,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 import { room } from "./room.js";
 
@@ -48,6 +57,9 @@ export const participantSession = pgTable(
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
     disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
     reconnectedAt: timestamp("reconnected_at", { withTimezone: true }),
+    messagesIn: integer("messages_in").default(0).notNull(),
+    messagesOut: integer("messages_out").default(0).notNull(),
+    connectionSeconds: doublePrecision("connection_seconds").default(0).notNull(),
   },
   (table) => [
     index("participant_session_participant_id_idx").on(table.participantId),

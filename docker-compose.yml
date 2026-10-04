@@ -64,6 +64,11 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in .env}
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY must be set in .env}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL must be set in .env}
+      RELAYRTC_API_HEALTH_URL: http://api:8080/ready
+      RELAYRTC_MEDIA_HEALTH_URL: http://media:8082/ready
+      RELAYRTC_PROMETHEUS_HEALTH_URL: http://prometheus:9090/-/ready
+      RELAYRTC_PROMETHEUS_URL: http://prometheus:9090
+      RELAYRTC_SIGNALING_HEALTH_URL: http://signaling:8081/ready
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -183,7 +188,9 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relayrtc
+      relayrtc:
+      rtc-internal:
+        ipv4_address: 172.30.0.10
     logging: *default-logging
 
   postgres:
@@ -223,7 +230,7 @@ services:
       - /etc/coturn/turnserver.conf
       - --realm=${TURN_REALM:-relayrtc.local}
       - --static-auth-secret=${TURN_SHARED_SECRET:?TURN_SHARED_SECRET must be set in .env}
-      - --external-ip=${TURN_PUBLIC_IP:-127.0.0.1}
+      - --external-ip=${TURN_PUBLIC_IP:-127.0.0.1}/${TURN_DOCKER_RELAY_ADDRESS:-172.30.0.11}
       - --min-port=${RTC_MIN_PORT:-49160}
       - --max-port=${RTC_MAX_PORT:-49200}
       - --cert=${TURN_TLS_CERT_FILE:-/etc/coturn/tls/tls.crt}
@@ -245,7 +252,9 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relayrtc
+      relayrtc:
+      rtc-internal:
+        ipv4_address: 172.30.0.11
     logging: *default-logging
 
   prometheus:
@@ -256,7 +265,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=1GB
       - --web.enable-lifecycle
     ports:
@@ -275,7 +284,8 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - relayrtc
+      relayrtc:
+      rtc-internal:
     logging: *default-logging
 
   grafana:
@@ -315,6 +325,12 @@ services:
 networks:
   relayrtc:
     driver: bridge
+  rtc-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   postgres-data:

@@ -1,6 +1,6 @@
 groups:
   - name: relayrtc-turn
-    interval: 15s
+    interval: 2s
     rules:
       - record: relayrtc_turn_allocations
         expr: sum(turn_total_allocations)

@@ -78,6 +78,17 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+func (store *Store) RecordUsage(ctx context.Context, sessionID string, messagesIn, messagesOut int64) error {
+	_, err := store.pool.Exec(ctx, `
+		UPDATE participant_session
+		SET messages_in = messages_in + $2, messages_out = messages_out + $3
+		WHERE id = $1`, sessionID, messagesIn, messagesOut)
+	if err != nil {
+		return fmt.Errorf("record signaling usage: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nodeID string) (JoinResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -169,7 +180,8 @@ func (store *Store) Disconnect(ctx context.Context, participantID, sessionID str
 	disconnectedAt := time.Now().UTC()
 	command, err := store.pool.Exec(ctx, `
 		UPDATE participant_session
-		SET connection_state = 'reconnecting', disconnected_at = $1
+		SET connection_state = 'reconnecting', disconnected_at = $1,
+		    connection_seconds = connection_seconds + extract(epoch from ($1 - coalesce(reconnected_at, joined_at)))
 		WHERE id = $2 AND participant_id = $3 AND connection_state = 'connected'`,
 		disconnectedAt, sessionID, participantID,
 	)
@@ -227,7 +239,8 @@ func (store *Store) Resume(
 	reconnectedAt := time.Now().UTC()
 	err = tx.QueryRow(ctx, `
 		UPDATE participant_session
-		SET connection_state = 'connected', signaling_node_id = $1, reconnected_at = $2
+		SET connection_state = 'connected', signaling_node_id = $1, reconnected_at = $2,
+		    disconnected_at = NULL
 		WHERE id = $3 AND connection_state = 'reconnecting'
 		RETURNING id, participant_id, signaling_node_id, media_node_id, connection_state,
 		          transport_type, joined_at, disconnected_at, reconnected_at`,
@@ -262,7 +275,9 @@ func (store *Store) EndRoom(ctx context.Context, roomID string, endedAt time.Tim
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `
 		UPDATE participant_session s
-		SET connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
+		SET connection_seconds = connection_seconds + case when connection_state = 'connected'
+		      then extract(epoch from ($1 - coalesce(reconnected_at, joined_at))) else 0 end,
+		    connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
 		FROM participant p
 		WHERE s.participant_id = p.id AND p.room_id = $2
 		  AND s.connection_state IN ('connected', 'reconnecting')`, endedAt, roomID); err != nil {
@@ -318,7 +333,9 @@ func (store *Store) finalize(
 	leftAt := time.Now().UTC()
 	query := `
 		UPDATE participant_session
-		SET connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
+		SET connection_seconds = connection_seconds + case when connection_state = 'connected'
+		      then extract(epoch from ($1 - coalesce(reconnected_at, joined_at))) else 0 end,
+		    connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
 		WHERE id = $2 AND participant_id = $3`
 	if reconnectingOnly {
 		query += ` AND connection_state = 'reconnecting'`
