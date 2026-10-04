@@ -6,11 +6,14 @@ import {
   AvatarImage,
 } from "@relayrtc/ui/components/avatar"
 import { Building2 } from "lucide-react"
+import Link from "next/link"
 
 interface DashboardHeaderProps {
-  activeOrganization?: {
-    name: string
-  } | undefined
+  activeOrganization?:
+    | {
+        name: string
+      }
+    | undefined
   user: {
     email: string
     image?: string | null | undefined
@@ -27,6 +30,20 @@ export function DashboardHeader({
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-4">
           <RelayKitLogo />
+          <nav className="hidden items-center gap-3 text-sm sm:flex">
+            <Link
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="/"
+            >
+              Workspace
+            </Link>
+            <Link
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="/metrics"
+            >
+              Metrics
+            </Link>
+          </nav>
           <div className="hidden min-w-0 items-center gap-2 border-l pl-4 md:flex">
             <Building2 className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate text-sm font-medium">
