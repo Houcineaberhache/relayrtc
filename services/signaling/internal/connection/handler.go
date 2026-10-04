@@ -147,6 +147,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	joined := handler.serve(client, claims, rawToken)
 	if joined != nil {
 		handler.disconnect(client, joined, claims)
+		handler.flushClientUsage(client, joined.session.ID)
 	}
 	slog.Info("signaling connection disconnected", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
 }
@@ -193,6 +194,8 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken strin
 	go readPump(readContext, client.connection, read)
 	heartbeat := time.NewTicker(handler.heartbeatInterval)
 	defer heartbeat.Stop()
+	usage := time.NewTicker(2 * time.Second)
+	defer usage.Stop()
 	expires := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer expires.Stop()
 	var joined *joinedSession
@@ -209,18 +212,45 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken strin
 			if message.err != nil {
 				return joined
 			}
+			client.recordMessageReceived()
 			leave, next := handler.handleMessage(client, claims, rawToken, joined, message.data)
 			if next != nil {
 				joined = next
 			}
 			if leave {
+				if joined != nil {
+					handler.flushClientUsage(client, joined.session.ID)
+				}
 				return nil
+			}
+		case <-usage.C:
+			if joined != nil {
+				handler.flushClientUsage(client, joined.session.ID)
 			}
 		case now := <-heartbeat.C:
 			if err := client.control(websocket.PingMessage, []byte(now.UTC().Format(time.RFC3339Nano))); err != nil {
 				return joined
 			}
 		}
+	}
+}
+
+func (handler *Handler) flushClientUsage(client *client, sessionID string) {
+	recorder, ok := handler.sessionStore.(interface {
+		RecordUsage(context.Context, string, int64, int64) error
+	})
+	if !ok {
+		return
+	}
+	messagesIn, messagesOut := client.drainUsage()
+	if messagesIn == 0 && messagesOut == 0 {
+		return
+	}
+	usageContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := recorder.RecordUsage(usageContext, sessionID, messagesIn, messagesOut); err != nil {
+		client.restoreUsage(messagesIn, messagesOut)
+		slog.Warn("signaling usage persistence failed", "error", err, "session_id", sessionID)
 	}
 }
 
@@ -527,13 +557,41 @@ type client struct {
 	connection   *websocket.Conn
 	writeTimeout time.Duration
 	mu           sync.Mutex
+	messagesIn   int64
+	messagesOut  int64
+	recordedIn   int64
+	recordedOut  int64
 }
 
 func (client *client) write(value any) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	_ = client.connection.SetWriteDeadline(time.Now().Add(client.writeTimeout))
-	return client.connection.WriteJSON(value)
+	err := client.connection.WriteJSON(value)
+	if err == nil {
+		client.messagesOut++
+	}
+	return err
+}
+func (client *client) recordMessageReceived() {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	client.messagesIn++
+}
+func (client *client) drainUsage() (int64, int64) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	messagesIn := client.messagesIn - client.recordedIn
+	messagesOut := client.messagesOut - client.recordedOut
+	client.recordedIn = client.messagesIn
+	client.recordedOut = client.messagesOut
+	return messagesIn, messagesOut
+}
+func (client *client) restoreUsage(messagesIn, messagesOut int64) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	client.recordedIn -= messagesIn
+	client.recordedOut -= messagesOut
 }
 func (client *client) control(kind int, data []byte) error {
 	client.mu.Lock()
