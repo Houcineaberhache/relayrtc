@@ -89,7 +89,7 @@ describe("MediasoupWorkerPool", () => {
   });
 
   it("publishes audio and video tracks and creates subscriptions", async () => {
-    const { factory } = createMediasoupTestHarness();
+    const { consumers, factory } = createMediasoupTestHarness();
     const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory);
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
@@ -133,6 +133,13 @@ describe("MediasoupWorkerPool", () => {
     expect(subscription).toEqual(
       expect.objectContaining({ kind: "audio", producerId: audio.id, trackId: audio.id }),
     );
+    expect(consumers[0]?.paused).toBe(true);
+    await pool.resumeSubscription({
+      participantId: "participant-2",
+      roomId: "room-1",
+      subscriptionId: subscription.id,
+    });
+    expect(consumers[0]?.paused).toBe(false);
     await pool.close();
   });
 
@@ -215,9 +222,11 @@ describe("MediasoupWorkerPool", () => {
     const { consumers, factory } = createMediasoupTestHarness();
     const publish = vi.fn(() => Promise.resolve());
     const record = vi.fn(() => Promise.resolve());
+    const usageRecord = vi.fn(() => Promise.resolve());
     const pool = new MediasoupWorkerPool({ ...config, maxTransportsPerRoom: 2 }, factory, {
       eventPublisher: { publish },
       metricsStore: { record },
+      usageMetricsStore: { record: usageRecord },
     });
     await pool.start();
     await pool.createRoom({ roomId: "room-1" });
@@ -246,6 +255,11 @@ describe("MediasoupWorkerPool", () => {
       trackId: track.id,
       transportId: receive.id,
     });
+    await pool.resumeSubscription({
+      participantId: "subscriber",
+      roomId: "room-1",
+      subscriptionId: autoSubscription.id,
+    });
 
     await pool.ingestSubscriberStats({
       participantId: "subscriber",
@@ -257,6 +271,8 @@ describe("MediasoupWorkerPool", () => {
         packetsReceived: 99,
         roundTripTime: 0.1,
         timestamp: 1,
+        turnBytesReceived: 100,
+        turnBytesSent: 200,
       },
     });
     const consumer = consumers[0];
@@ -266,6 +282,7 @@ describe("MediasoupWorkerPool", () => {
       resume: Mock;
       setPreferredLayers: Mock;
     };
+    qualityConsumer.resume.mockClear();
     await pool.setSubscriptionQuality({
       participantId: "subscriber",
       quality: "audio-only",
@@ -295,10 +312,14 @@ describe("MediasoupWorkerPool", () => {
         packetsReceived: 75,
         roundTripTime: 1,
         timestamp: 2,
+        turnBytesReceived: 160,
+        turnBytesSent: 350,
       },
     });
     expect(qualityConsumer.pause).toHaveBeenCalledOnce();
     expect(record).toHaveBeenCalledTimes(2);
+    expect(usageRecord).toHaveBeenCalledWith("room-1", "turnIngressBytes", 150);
+    expect(usageRecord).toHaveBeenCalledWith("room-1", "turnEgressBytes", 60);
     expect(publish).toHaveBeenCalledWith(
       "connection.degraded",
       expect.objectContaining({

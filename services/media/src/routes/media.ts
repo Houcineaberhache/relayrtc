@@ -66,6 +66,9 @@ interface QualityBody {
   participantId: string;
   quality: SubscriberQualityMode;
 }
+interface SubscriptionOwnerBody {
+  participantId: string;
+}
 interface QualityModeBody {
   mode: RoomQualityMode;
 }
@@ -78,6 +81,8 @@ interface StatsBody {
     packetsReceived: number;
     roundTripTime: number | null;
     timestamp: number;
+    turnBytesReceived?: number;
+    turnBytesSent?: number;
   };
 }
 
@@ -304,6 +309,8 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
                 packetsReceived: { type: "number", minimum: 0 },
                 roundTripTime: { type: ["number", "null"], minimum: 0 },
                 timestamp: { type: "number", minimum: 0 },
+                turnBytesReceived: { type: "number", minimum: 0 },
+                turnBytesSent: { type: "number", minimum: 0 },
               },
             },
           },
@@ -317,6 +324,24 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
         roomId: request.params.roomId,
       });
       return reply.code(202).send({ accepted: true });
+    },
+  );
+
+  app.patch<{ Body: SubscriptionOwnerBody; Params: SubscriptionParameters }>(
+    "/rooms/:roomId/subscriptions/:subscriptionId/resume",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["participantId"],
+          properties: { participantId: { type: "string", minLength: 1, maxLength: 128 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      await options.engine.resumeSubscription({ ...request.body, ...request.params });
+      return reply.code(204).send();
     },
   );
 

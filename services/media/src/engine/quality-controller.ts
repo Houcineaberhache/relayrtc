@@ -12,6 +12,8 @@ export interface SubscriberNetworkStats {
   packetsReceived: number;
   roundTripTime: number | null;
   timestamp: number;
+  turnBytesReceived?: number;
+  turnBytesSent?: number;
 }
 
 export interface PreferredLayers {
@@ -43,6 +45,7 @@ export const selectVideoQuality = (
   const totalPackets = stats.packetsLost + stats.packetsReceived;
   const loss = totalPackets === 0 ? 0 : stats.packetsLost / totalPackets;
   const bitrate = stats.availableIncomingBitrate;
+  if (totalPackets === 0) return "720p";
   if (loss >= 0.2 || (stats.roundTripTime ?? 0) >= 1 || (bitrate !== null && bitrate < 80_000))
     return "audio-only";
   const factor = priorityFactor[priority];

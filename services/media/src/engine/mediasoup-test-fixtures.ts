@@ -30,7 +30,7 @@ const createTransport = (
     close: vi.fn(),
     closed: false,
     connect: vi.fn(() => Promise.resolve()),
-    consume: vi.fn((options: { producerId: string }) => {
+    consume: vi.fn((options: { paused?: boolean; producerId: string }) => {
       const producer = producers.find((candidate) => candidate.id === options.producerId);
       if (!producer) return Promise.reject(new Error(`Producer ${options.producerId} not found`));
       const consumer = {
@@ -39,7 +39,7 @@ const createTransport = (
         kind: producer.kind,
         observer: { once: vi.fn() },
         producerId: options.producerId,
-        paused: false,
+        paused: options.paused ?? false,
         pause: vi.fn(function (this: { paused: boolean }) {
           this.paused = true;
           return Promise.resolve();

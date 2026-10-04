@@ -108,6 +108,11 @@ export interface SetSubscriptionQualityRequest extends MediaRoomRequest {
   subscriptionId: string;
 }
 
+export interface ResumeSubscriptionRequest extends MediaRoomRequest {
+  participantId: string;
+  subscriptionId: string;
+}
+
 export interface SetParticipantQualityModeRequest extends MediaRoomRequest {
   mode: RoomQualityMode;
   participantId: string;
@@ -126,6 +131,7 @@ export interface MediaEngine {
   createRoom(request: MediaRoomRequest): Promise<void>;
   getCapacity(): MediaEngineCapacity;
   getHealth(): Promise<MediaEngineHealth>;
+  flushUsage(): Promise<void>;
   ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void>;
   listPublishedTracks(request: MediaRoomRequest): Promise<readonly PublishedTrack[]>;
   getRouterCapabilities(request: MediaRoomRequest): Promise<Readonly<Record<string, unknown>>>;
@@ -135,6 +141,7 @@ export interface MediaEngine {
   restartParticipantTransport(
     request: RestartTransportRequest,
   ): Promise<Readonly<Record<string, unknown>>>;
+  resumeSubscription(request: ResumeSubscriptionRequest): Promise<void>;
   start(): Promise<void>;
   setParticipantPriority(request: SetPriorityRequest): Promise<void>;
   setParticipantQualityMode(request: SetParticipantQualityModeRequest): Promise<void>;
