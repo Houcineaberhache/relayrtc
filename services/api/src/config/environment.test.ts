@@ -128,3 +128,36 @@ describe("production API configuration", () => {
     ).toThrow("DATABASE_URL");
   });
 });
+
+describe("trusted proxy configuration", () => {
+  const base = {
+    DATABASE_URL: "postgresql://localhost/relayrtc",
+    PARTICIPANT_TOKEN_SIGNING_SECRET: "independent-participant-signing-key",
+    TURN_SHARED_SECRET: "independent-turn-authentication-key",
+  };
+  it("requires explicit CIDRs when proxy trust is enabled", () => {
+    expect(() => readApiEnvironment({ ...base, API_TRUST_PROXY: "true" })).toThrow(
+      "API_TRUSTED_PROXY_CIDRS",
+    );
+    expect(
+      readApiEnvironment({
+        ...base,
+        API_TRUST_PROXY: "true",
+        API_TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8:10::/48",
+      }).trustProxy,
+    ).toEqual(["10.0.0.0/8", "2001:db8:10::/48"]);
+  });
+  it.each([
+    "true",
+    "0.0.0.0/0",
+    "::/0",
+    "hostname/24",
+    "10.0.0.1/33",
+    "2001:db8::/129",
+    "10.0.0.1/24/extra",
+  ])("rejects invalid or unrestricted proxy CIDRs", (cidrs) => {
+    expect(() =>
+      readApiEnvironment({ ...base, API_TRUST_PROXY: "true", API_TRUSTED_PROXY_CIDRS: cidrs }),
+    ).toThrow("API_TRUSTED_PROXY_CIDRS");
+  });
+});

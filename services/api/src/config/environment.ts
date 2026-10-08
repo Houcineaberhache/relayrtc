@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { z } from "zod";
 
@@ -26,6 +27,7 @@ const environmentSchema = z
     API_HOST: z.string().trim().min(1).default("0.0.0.0"),
     API_LOG_LEVEL: z.enum(logLevels).default("info"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+    API_TRUSTED_PROXY_CIDRS: z.string().default(""),
     API_TRUST_PROXY: z
       .enum(["true", "false"])
       .default("false")
@@ -74,7 +76,7 @@ export interface ApiConfig {
   mediaInternalUrl: string;
   port: number;
   signalingInternalUrl: string;
-  trustProxy: boolean;
+  trustProxy: false | string[];
   turnCredentialTtlSeconds: number;
   turnSharedSecret: string;
   turnStunUrls: readonly string[];
@@ -95,6 +97,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     API_LOG_LEVEL: source.API_LOG_LEVEL,
     API_PORT: source.API_PORT,
     API_TRUST_PROXY: source.API_TRUST_PROXY,
+    API_TRUSTED_PROXY_CIDRS: source.API_TRUSTED_PROXY_CIDRS,
     DATABASE_URL: source.DATABASE_URL,
     NODE_ENV: source.NODE_ENV,
     PARTICIPANT_TOKEN_AUDIENCE: source.PARTICIPANT_TOKEN_AUDIENCE,
@@ -117,6 +120,27 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     throw new Error(`Invalid API configuration: ${description}`);
   }
 
+  const trustedProxyCIDRs = parsed.data.API_TRUSTED_PROXY_CIDRS.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  for (const cidr of trustedProxyCIDRs) {
+    const [address, bits, extra] = cidr.split("/");
+    const family = address ? isIP(address) : 0;
+    if (
+      !family ||
+      !bits ||
+      !/^\d+$/u.test(bits) ||
+      extra !== undefined ||
+      Number(bits) < 1 ||
+      Number(bits) > (family === 4 ? 32 : 128) ||
+      address?.includes("%")
+    ) {
+      throw new Error("API_TRUSTED_PROXY_CIDRS must contain explicit IPv4 or IPv6 CIDRs");
+    }
+  }
+  if (parsed.data.API_TRUST_PROXY && trustedProxyCIDRs.length === 0) {
+    throw new Error("API_TRUSTED_PROXY_CIDRS is required when API_TRUST_PROXY is true");
+  }
   return {
     databaseUrl: parsed.data.DATABASE_URL,
     host: parsed.data.API_HOST,
@@ -130,7 +154,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     mediaInternalUrl: parsed.data.RELAYRTC_MEDIA_INTERNAL_URL,
     port: parsed.data.API_PORT,
     signalingInternalUrl: parsed.data.RELAYRTC_SIGNALING_INTERNAL_URL,
-    trustProxy: parsed.data.API_TRUST_PROXY,
+    trustProxy: parsed.data.API_TRUST_PROXY ? trustedProxyCIDRs : false,
     turnCredentialTtlSeconds: parsed.data.TURN_CREDENTIAL_TTL_SECONDS,
     turnSharedSecret: parsed.data.TURN_SHARED_SECRET,
     turnStunUrls: parsed.data.TURN_STUN_URLS,
