@@ -113,3 +113,40 @@ func TestExtractToken(t *testing.T) {
 		t.Fatal("ExtractToken() accepted a missing token")
 	}
 }
+
+func TestParticipantKeyRotationAndControlKeySubstitution(t *testing.T) {
+	oldToken := signedToken(t, nil)
+	original := NewValidator(testSecret, "relayrtc-api", "relayrtc-realtime", "participant-v1")
+	rotatedSecret := "new-independent-participant-signing-key"
+	rotated := NewValidator(rotatedSecret, "relayrtc-api", "relayrtc-realtime", "participant-v2")
+	if _, err := rotated.Validate(oldToken); err == nil {
+		t.Fatal("old token survived key rotation")
+	}
+	claims, err := original.Validate(oldToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = "participant-v2"
+	currentToken, err := token.SignedString([]byte(rotatedSecret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rotated.Validate(currentToken); err != nil {
+		t.Fatal("new token rejected after rotation")
+	}
+	if _, err := original.Validate(currentToken); err == nil {
+		t.Fatal("rotated token accepted by old verifier")
+	}
+	token.Header["kid"] = "participant-v1"
+	controlSigned, err := token.SignedString([]byte("independent-internal-control-key-456"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := original.Validate(controlSigned); err == nil {
+		t.Fatal("control key substituted for participant key")
+	}
+	if _, err := original.Validate(oldToken); err != nil {
+		t.Fatal("participant verification changed with control credential")
+	}
+}

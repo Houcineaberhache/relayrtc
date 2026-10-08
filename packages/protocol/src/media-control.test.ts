@@ -113,3 +113,13 @@ describe("media control tokens", () => {
     ).toThrow();
   });
 });
+
+it("rejects old grants after internal rotation and accepts newly signed grants", () => {
+  const rotatedSecret = "new-independent-internal-control-key";
+  const oldGrant = createMediaControlToken(secret, options, 1000);
+  const newGrant = createMediaControlToken(rotatedSecret, options, 1000);
+  expect(verifyMediaControlToken(rotatedSecret, oldGrant, 1000)).toBeNull();
+  expect(verifyMediaControlToken(rotatedSecret, newGrant, 1000)).not.toBeNull();
+  expect(verifyMediaControlToken(secret, newGrant, 1000)).toBeNull();
+  expect(verifyMediaControlToken("independent-participant-signing-key", newGrant, 1000)).toBeNull();
+});

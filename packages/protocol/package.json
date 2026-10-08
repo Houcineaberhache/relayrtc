@@ -16,6 +16,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./credential-policy": {
+      "types": "./dist/credential-policy.d.ts",
+      "import": "./dist/credential-policy.js"
     }
   },
   "main": "./dist/index.js",
