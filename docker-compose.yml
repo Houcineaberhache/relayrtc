@@ -10,6 +10,8 @@ services:
       API_HOST: 0.0.0.0
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
       API_PORT: 8080
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL must be set in .env}
       API_TRUST_PROXY: ${API_TRUST_PROXY:-false}
       API_TRUSTED_PROXY_CIDRS: ${API_TRUSTED_PROXY_CIDRS:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}

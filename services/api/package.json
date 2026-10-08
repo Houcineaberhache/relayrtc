@@ -14,6 +14,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@relayrtc/auth": "workspace:*",
     "@relayrtc/protocol": "workspace:*",
     "@relayrtc/database": "workspace:*",
     "@relayrtc/types": "workspace:*",

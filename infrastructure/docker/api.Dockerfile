@@ -29,6 +29,9 @@ ENV API_PORT=8080
 ENV NODE_ENV=production
 
 COPY --from=builder --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=builder --chown=node:node /workspace/packages/auth/package.json ./packages/auth/package.json
+COPY --from=builder --chown=node:node /workspace/packages/auth/dist ./packages/auth/dist
+COPY --from=builder --chown=node:node /workspace/packages/auth/node_modules ./packages/auth/node_modules
 COPY --from=builder --chown=node:node /workspace/packages/database/package.json ./packages/database/package.json
 COPY --from=builder --chown=node:node /workspace/packages/database/dist ./packages/database/dist
 COPY --from=builder --chown=node:node /workspace/packages/database/node_modules ./packages/database/node_modules

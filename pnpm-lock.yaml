@@ -308,6 +308,9 @@ importers:
 
   services/api:
     dependencies:
+      '@relayrtc/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@relayrtc/database':
         specifier: workspace:*
         version: link:../../packages/database

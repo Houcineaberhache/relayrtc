@@ -2,6 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import { readApiEnvironment } from "./environment.js";
 
+describe("console session configuration", () => {
+  const base = {
+    DATABASE_URL: "postgresql://localhost/relayrtc",
+    PARTICIPANT_TOKEN_SIGNING_SECRET: "independent-participant-signing-key",
+    TURN_SHARED_SECRET: "independent-turn-authentication-key",
+  };
+  it("uses the existing console origin and secret", () => {
+    const consoleAuth = {
+      baseUrl: "http://localhost:3002",
+      secret: "independent-console-session-secret",
+    };
+    expect(
+      readApiEnvironment({
+        ...base,
+        BETTER_AUTH_URL: consoleAuth.baseUrl,
+        BETTER_AUTH_SECRET: consoleAuth.secret,
+      }).consoleAuth,
+    ).toEqual(consoleAuth);
+  });
+  it.each([
+    { BETTER_AUTH_URL: "http://localhost:3002" },
+    { BETTER_AUTH_SECRET: "independent-console-session-secret" },
+  ])("rejects incomplete session configuration: %j", (auth) => {
+    expect(() => readApiEnvironment({ ...base, ...auth })).toThrow("configured together");
+  });
+  it.each([
+    "ftp://localhost",
+    "http://user:password@localhost",
+    "http://localhost/path",
+    "http://localhost?query=1",
+  ])("rejects invalid auth origins: %s", (url) => {
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        BETTER_AUTH_URL: url,
+        BETTER_AUTH_SECRET: "independent-console-session-secret",
+      }),
+    ).toThrow("HTTP origin");
+  });
+});
+
 describe("readApiEnvironment", () => {
   it("applies safe service defaults", () => {
     expect(

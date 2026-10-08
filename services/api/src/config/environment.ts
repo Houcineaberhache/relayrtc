@@ -27,6 +27,8 @@ const environmentSchema = z
     API_HOST: z.string().trim().min(1).default("0.0.0.0"),
     API_LOG_LEVEL: z.enum(logLevels).default("info"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+    BETTER_AUTH_SECRET: z.string().trim().min(32).optional(),
+    BETTER_AUTH_URL: z.url().trim().optional(),
     API_TRUSTED_PROXY_CIDRS: z.string().default(""),
     API_TRUST_PROXY: z
       .enum(["true", "false"])
@@ -64,6 +66,7 @@ const environmentSchema = z
   .strict();
 
 export interface ApiConfig {
+  consoleAuth?: { baseUrl: string; secret: string };
   databaseUrl: string;
   host: string;
   logLevel: (typeof logLevels)[number];
@@ -96,6 +99,8 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     API_HOST: source.API_HOST,
     API_LOG_LEVEL: source.API_LOG_LEVEL,
     API_PORT: source.API_PORT,
+    BETTER_AUTH_SECRET: source.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: source.BETTER_AUTH_URL,
     API_TRUST_PROXY: source.API_TRUST_PROXY,
     API_TRUSTED_PROXY_CIDRS: source.API_TRUSTED_PROXY_CIDRS,
     DATABASE_URL: source.DATABASE_URL,
@@ -120,6 +125,25 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     throw new Error(`Invalid API configuration: ${description}`);
   }
 
+  const authSecret = parsed.data.BETTER_AUTH_SECRET;
+  const authUrl = parsed.data.BETTER_AUTH_URL;
+  if ((authSecret === undefined) !== (authUrl === undefined)) {
+    throw new Error("BETTER_AUTH_SECRET and BETTER_AUTH_URL must be configured together");
+  }
+  if (authUrl) {
+    const url = new URL(authUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error("BETTER_AUTH_URL must be an HTTP origin without credentials or a path");
+    }
+  }
+
   const trustedProxyCIDRs = parsed.data.API_TRUSTED_PROXY_CIDRS.split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -142,6 +166,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     throw new Error("API_TRUSTED_PROXY_CIDRS is required when API_TRUST_PROXY is true");
   }
   return {
+    ...(authSecret && authUrl ? { consoleAuth: { baseUrl: authUrl, secret: authSecret } } : {}),
     databaseUrl: parsed.data.DATABASE_URL,
     host: parsed.data.API_HOST,
     logLevel: parsed.data.API_LOG_LEVEL,
