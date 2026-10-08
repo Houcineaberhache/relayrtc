@@ -27,7 +27,6 @@ export const createProjectInputSchema = z
   .object({
     name: nameSchema,
     organizationId: organizationIdSchema,
-    slug: slugSchema,
   })
   .strict();
 
@@ -37,7 +36,6 @@ export const updateProjectInputSchema = z
   .object({
     name: nameSchema,
     projectId: projectIdSchema,
-    slug: slugSchema,
   })
   .strict();
 

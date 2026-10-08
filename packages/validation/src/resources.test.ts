@@ -31,9 +31,8 @@ describe("organization schemas", () => {
     expect(
       createOrganizationInputSchema.parse({
         name: "  RelayRTC Labs  ",
-        slug: "relayrtc-labs",
       }),
-    ).toEqual({ name: "RelayRTC Labs", slug: "relayrtc-labs" });
+    ).toEqual({ name: "RelayRTC Labs" });
     expect(createOrganizationInputSchema.safeParse({ name: "Labs", slug: "RelayRTC Labs" }).success)
       .toBe(false);
   });
@@ -47,12 +46,10 @@ describe("organization schemas", () => {
       updateOrganizationInputSchema.parse({
         organizationId: "organization_123",
         name: "  Acme Realtime  ",
-        slug: "acme-realtime",
       }),
     ).toEqual({
       organizationId: "organization_123",
       name: "Acme Realtime",
-      slug: "acme-realtime",
     });
     expect(
       updateOrganizationInputSchema.safeParse({
@@ -174,12 +171,10 @@ describe("project schemas", () => {
       createProjectInputSchema.parse({
         name: "  Video Classroom  ",
         organizationId: "org_123",
-        slug: "video-classroom",
       }),
     ).toEqual({
       name: "Video Classroom",
       organizationId: "org_123",
-      slug: "video-classroom",
     });
     expect(projectSlugFromName(" Café Support App ")).toBe("cafe-support-app");
     expect(
