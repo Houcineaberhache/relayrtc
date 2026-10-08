@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { verifyMediaControlToken } from "@relayrtc/protocol/media-control";
 
 import type { RoomRecord } from "./room.repository.js";
 import { createRoomRuntimeService } from "./room-runtime.service.js";
@@ -20,7 +21,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("room runtime service", () => {
   it("terminates signaling sessions and media resources", async () => {
-    const fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    const fetch = vi.fn<typeof globalThis.fetch>(() =>
+      Promise.resolve(new Response(null, { status: 204 })),
+    );
     vi.stubGlobal("fetch", fetch);
     const runtime = createRoomRuntimeService({
       internalSecret: "a-secure-internal-service-secret-123",
@@ -39,5 +42,18 @@ describe("room runtime service", () => {
       "http://media/internal/v1/rooms/room_123",
       expect.objectContaining({ method: "DELETE" }),
     );
+    const mediaRequest = fetch.mock.calls.find(
+      ([url]) => url === "http://media/internal/v1/rooms/room_123",
+    );
+    const headers = new Headers(mediaRequest?.[1]?.headers);
+    const authorization = headers.get("authorization") ?? "";
+    expect(
+      verifyMediaControlToken("a-secure-internal-service-secret-123", authorization.slice(7)),
+    ).toMatchObject({
+      iss: "relayrtc-api",
+      method: "DELETE",
+      path: "/internal/v1/rooms/room_123",
+      authority: { kind: "room", roomId: room.id },
+    });
   });
 });

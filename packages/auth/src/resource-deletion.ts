@@ -1,4 +1,5 @@
 import { schema, type RelayKitDatabase } from "@relayrtc/database";
+import { createMediaControlToken } from "@relayrtc/protocol/media-control";
 import { and, count, eq, inArray, isNull, notInArray } from "drizzle-orm";
 
 export interface ResourceDeletionImpact {
@@ -123,7 +124,14 @@ export const terminateResourceRooms = async (
     });
     await requireSuccess(`${config.mediaUrl}/rooms/${roomId}`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${config.internalSecret}` },
+      headers: {
+        authorization: `Bearer ${createMediaControlToken(config.internalSecret, {
+          service: "relayrtc-console",
+          method: "DELETE",
+          path: new URL(`${config.mediaUrl}/rooms/${roomId}`).pathname,
+          authority: { kind: "room", roomId: room.id },
+        })}`,
+      },
     });
     await database
       .update(schema.room)

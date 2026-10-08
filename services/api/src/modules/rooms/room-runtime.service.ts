@@ -1,4 +1,5 @@
 import type { RoomRecord } from "./room.repository.js";
+import { createMediaControlToken } from "@relayrtc/protocol/media-control";
 
 export interface RoomRuntimeService {
   end(room: RoomRecord): Promise<void>;
@@ -13,7 +14,7 @@ interface RoomRuntimeOptions {
 const runtimeRequest = async (url: string, init: RequestInit): Promise<void> => {
   const response = await fetch(url, init);
   if (!response.ok) {
-    throw new Error(`Room runtime request failed with HTTP ${response.status}`);
+    throw new Error(`Room runtime request failed with HTTP ${String(response.status)}`);
   }
 };
 
@@ -30,7 +31,14 @@ export const createRoomRuntimeService = (options: RoomRuntimeOptions): RoomRunti
         method: "POST",
       }),
       runtimeRequest(`${options.mediaUrl}/rooms/${roomId}`, {
-        headers: { authorization: `Bearer ${options.internalSecret}` },
+        headers: {
+          authorization: `Bearer ${createMediaControlToken(options.internalSecret, {
+            service: "relayrtc-api",
+            method: "DELETE",
+            path: new URL(`${options.mediaUrl}/rooms/${roomId}`).pathname,
+            authority: { kind: "room", roomId: room.id },
+          })}`,
+        },
         method: "DELETE",
       }),
     ]);
