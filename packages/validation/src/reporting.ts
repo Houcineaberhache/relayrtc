@@ -50,6 +50,9 @@ export const reportingUsageMetricsSchema = z
     participantSeconds: quantity,
     audioParticipantSeconds: quantity,
     videoParticipantSeconds: quantity,
+    screenShareSeconds: quantity,
+    screenShareIngressBytes: quantity,
+    screenShareEgressBytes: quantity,
     sfuIngressBytes: quantity,
     sfuEgressBytes: quantity,
     turnIngressBytes: quantity,
@@ -82,6 +85,12 @@ export const projectUsageResponseSchema = z
     window: reportingWindowSchema,
     summary: reportingUsageMetricsSchema,
     buckets: z.array(usageBucketSchema),
+    dataQuality: z
+      .object({
+        sessionHistory: z.enum(["complete", "partial"]),
+        messageHistory: z.enum(["complete", "partial"]),
+      })
+      .strict(),
   })
   .strict();
 export const organizationUsageResponseSchema = z

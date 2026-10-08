@@ -18,6 +18,7 @@ import { authenticateApiKey } from "../../authentication/api-key-authenticator.j
 import { assertClaimedScope } from "../../authentication/authentication-plugin.js";
 import { ApiError } from "../../http/errors/api-error.js";
 import { validate } from "../../http/validation/validate.js";
+import { getProjectUsage } from "./project-usage.service.js";
 import {
   authorizeOrganizationReport,
   authorizeProjectReport,
@@ -135,14 +136,14 @@ export const reportingRoutes: FastifyPluginCallback<ReportingRoutesOptions> = (
     async (request) => {
       const { projectId } = validate(reportingProjectParamsSchema, request.params);
       const query = validate(projectUsageQuerySchema, request.query);
-      await authorizeProjectReport(
+      const scope = await authorizeProjectReport(
         repository,
         principalFor(request),
         projectId,
         query.environmentId,
         "usage:read",
       );
-      return unavailable();
+      return getProjectUsage(options.database, scope, query.range);
     },
   );
 
