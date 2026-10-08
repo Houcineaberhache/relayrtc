@@ -70,8 +70,14 @@ type ResumeResult struct {
 	Participants []Participant
 }
 
+type storePool interface {
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
 type Store struct {
-	pool *pgxpool.Pool
+	pool storePool
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -106,6 +112,10 @@ func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nod
 		return JoinResult{}, fmt.Errorf("begin join transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := requireActiveProject(ctx, tx, claims.ProjectID); err != nil {
+		return JoinResult{}, err
+	}
 
 	room, err := selectRoom(ctx, tx, claims.RoomID)
 	if err != nil {
@@ -217,6 +227,13 @@ func (store *Store) Resume(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := requireActiveProject(ctx, tx, claims.ProjectID); err != nil {
+		if errors.Is(err, ErrRoomNotJoinable) {
+			return ResumeResult{}, ErrSessionNotResumable
+		}
+		return ResumeResult{}, err
+	}
+
 	participant := Participant{}
 	session := ParticipantSession{}
 	err = tx.QueryRow(ctx, `
@@ -228,6 +245,7 @@ func (store *Store) Resume(
 		JOIN room r ON r.id = p.room_id
 		WHERE s.id = $1 AND s.participant_id = $2 AND p.room_id = $3
 		  AND r.project_id = $4 AND r.environment_id = $5
+		  AND r.status IN ('created', 'active')
 		  AND p.left_at IS NULL AND s.connection_state = 'reconnecting'
 		  AND s.disconnected_at >= $6
 		FOR UPDATE`,
@@ -402,4 +420,19 @@ func listParticipants(ctx context.Context, tx pgx.Tx, roomID string) ([]Particip
 		participants = append(participants, participant)
 	}
 	return participants, rows.Err()
+}
+
+func requireActiveProject(ctx context.Context, tx pgx.Tx, projectID string) error {
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM project WHERE id = $1 FOR SHARE`, projectID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrRoomNotJoinable
+	}
+	if err != nil {
+		return fmt.Errorf("check project admission: %w", err)
+	}
+	if status != "active" {
+		return ErrRoomNotJoinable
+	}
+	return nil
 }
