@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
+	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type Location struct {
@@ -22,7 +24,7 @@ type Lookup struct {
 
 func New(token string) *Lookup {
 	return &Lookup{
-		client: &http.Client{},
+		client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		token:  strings.TrimSpace(token),
 	}
 }
@@ -31,14 +33,18 @@ func (lookup *Lookup) Lookup(ctx context.Context, ip string) (Location, error) {
 	if lookup == nil || lookup.token == "" {
 		return Location{}, nil
 	}
-	parsedIP := net.ParseIP(strings.TrimSpace(ip))
-	if parsedIP == nil || parsedIP.IsPrivate() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() {
+	parsedIP, err := netip.ParseAddr(strings.TrimSpace(ip))
+	if err != nil || parsedIP.Zone() != "" {
+		return Location{}, nil
+	}
+	parsedIP = parsedIP.Unmap()
+	if !parsedIP.IsGlobalUnicast() || parsedIP.IsPrivate() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() {
 		return Location{}, nil
 	}
 
 	endpoint := fmt.Sprintf(
 		"https://api.ipinfo.io/lite/%s",
-		url.PathEscape(ip),
+		url.PathEscape(parsedIP.String()),
 	)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -48,7 +54,7 @@ func (lookup *Lookup) Lookup(ctx context.Context, ip string) (Location, error) {
 
 	response, err := lookup.client.Do(request)
 	if err != nil {
-		return Location{}, fmt.Errorf("request IPinfo: %w", err)
+		return Location{}, fmt.Errorf("IPinfo request failed")
 	}
 	defer response.Body.Close()
 
@@ -60,7 +66,7 @@ func (lookup *Lookup) Lookup(ctx context.Context, ip string) (Location, error) {
 		CountryCode string `json:"country_code"`
 		Country     string `json:"country"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&payload); err != nil {
 		return Location{}, fmt.Errorf("decode IPinfo response: %w", err)
 	}
 
