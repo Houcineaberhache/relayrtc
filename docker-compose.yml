@@ -65,6 +65,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY must be set in .env}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL must be set in .env}
       RELAYRTC_API_HEALTH_URL: http://api:8080/ready
+      RELAYRTC_INTERNAL_SECRET: ${PARTICIPANT_TOKEN_SIGNING_SECRET:?PARTICIPANT_TOKEN_SIGNING_SECRET must be set in .env}
+      RELAYRTC_MEDIA_INTERNAL_URL: http://media:8082/internal/v1
+      RELAYRTC_SIGNALING_INTERNAL_URL: http://signaling:8081/internal/v1
       RELAYRTC_MEDIA_HEALTH_URL: http://media:8082/ready
       RELAYRTC_PROMETHEUS_HEALTH_URL: http://prometheus:9090/-/ready
       RELAYRTC_PROMETHEUS_URL: http://prometheus:9090
@@ -107,6 +110,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY must be set in .env}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL must be set in .env}
       RELAYRTC_API_HEALTH_URL: http://api:8080/ready
+      RELAYRTC_INTERNAL_SECRET: ${PARTICIPANT_TOKEN_SIGNING_SECRET:?PARTICIPANT_TOKEN_SIGNING_SECRET must be set in .env}
+      RELAYRTC_MEDIA_INTERNAL_URL: http://media:8082/internal/v1
+      RELAYRTC_SIGNALING_INTERNAL_URL: http://signaling:8081/internal/v1
       RELAYRTC_MEDIA_HEALTH_URL: http://media:8082/ready
       RELAYRTC_PROMETHEUS_HEALTH_URL: http://prometheus:9090/-/ready
       RELAYRTC_PROMETHEUS_URL: http://prometheus:9090
