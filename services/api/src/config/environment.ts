@@ -1,3 +1,4 @@
+import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { z } from "zod";
 
 export type ApiEnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -47,8 +48,8 @@ const environmentSchema = z
     PARTICIPANT_TOKEN_KEY_ID: z.string().trim().min(1).max(128).default("participant-v1"),
     PARTICIPANT_TOKEN_SIGNING_SECRET: z.string().min(32),
     RELAYRTC_INTERNAL_SECRET: z.string().min(32).optional(),
-    RELAYRTC_MEDIA_INTERNAL_URL: z.string().url().default("http://media:8082/internal/v1"),
-    RELAYRTC_SIGNALING_INTERNAL_URL: z.string().url().default("http://signaling:8081/internal/v1"),
+    RELAYRTC_MEDIA_INTERNAL_URL: z.url().default("http://media:8082/internal/v1"),
+    RELAYRTC_SIGNALING_INTERNAL_URL: z.url().default("http://signaling:8081/internal/v1"),
     TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
     TURN_SHARED_SECRET: z.string().min(32),
     TURN_STUN_URLS: iceUrls(["stun", "stuns"]).default(["stun:localhost:3478"]),
@@ -81,6 +82,14 @@ export interface ApiConfig {
 }
 
 export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
+  enforceCredentialPolicy(source, [
+    "DATABASE_URL",
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_MEDIA_INTERNAL_URL",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+    "TURN_STUN_URLS",
+    "TURN_URLS",
+  ]);
   const parsed = environmentSchema.safeParse({
     API_HOST: source.API_HOST,
     API_LOG_LEVEL: source.API_LOG_LEVEL,
@@ -117,8 +126,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     participantTokenIssuer: parsed.data.PARTICIPANT_TOKEN_ISSUER,
     participantTokenKeyId: parsed.data.PARTICIPANT_TOKEN_KEY_ID,
     participantTokenSigningSecret: parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
-    internalSecret:
-      parsed.data.RELAYRTC_INTERNAL_SECRET ?? parsed.data.PARTICIPANT_TOKEN_SIGNING_SECRET,
+    internalSecret: readInternalSecret(source),
     mediaInternalUrl: parsed.data.RELAYRTC_MEDIA_INTERNAL_URL,
     port: parsed.data.API_PORT,
     signalingInternalUrl: parsed.data.RELAYRTC_SIGNALING_INTERNAL_URL,

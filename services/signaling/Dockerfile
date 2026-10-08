@@ -10,5 +10,6 @@ FROM alpine:3.22
 
 RUN addgroup -S relayrtc && adduser -S -G relayrtc relayrtc
 COPY --from=builder --chown=relayrtc:relayrtc /out/signaling /usr/local/bin/signaling
+ENV NODE_ENV=production
 USER relayrtc
 ENTRYPOINT ["signaling"]

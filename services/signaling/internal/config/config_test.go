@@ -77,6 +77,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"origin", map[string]string{"RELAYRTC_SIGNALING_ALLOWED_ORIGINS": "https://example.com/path"}, "invalid origin"},
 		{"secret", map[string]string{"PARTICIPANT_TOKEN_SIGNING_SECRET": "too-short"}, "32 characters"},
 		{"media URL", map[string]string{"RELAYRTC_MEDIA_INTERNAL_URL": "file:///tmp/media"}, "HTTP URL"},
+		{"media URL credentials", map[string]string{"RELAYRTC_MEDIA_INTERNAL_URL": "http://user:private-value@media/internal/v1"}, "HTTP URL"},
 	}
 
 	for _, test := range tests {
@@ -86,5 +87,66 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatalf("load() error = %v, want error containing %q", err, test.contains)
 			}
 		})
+	}
+}
+
+func TestCredentialsAreSeparatedInLocalMode(t *testing.T) {
+	cfg, err := load(testEnvironment(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InternalSecret == cfg.ParticipantTokenSecret || cfg.InternalSecret != "development-internal-secret-change-me" {
+		t.Fatal("local control secret was not separated")
+	}
+	_, err = load(testEnvironment(map[string]string{"RELAYRTC_INTERNAL_SECRET": "a-secure-participant-token-secret-123"}))
+	if err == nil || !strings.Contains(err.Error(), "separate credentials") {
+		t.Fatal("reused credential accepted")
+	}
+}
+
+func TestProductionConfigurationMatrix(t *testing.T) {
+	base := map[string]string{
+		"NODE_ENV":                           "production",
+		"DATABASE_URL":                       "postgresql://relayrtc:independent-database-password@postgres/relayrtc",
+		"RELAYRTC_INTERNAL_SECRET":           "independent-internal-control-key-456",
+		"RELAYRTC_MEDIA_INTERNAL_URL":        "http://media:8082/internal/v1",
+		"RELAYRTC_SIGNALING_ALLOWED_ORIGINS": "https://app.example.com",
+	}
+	if _, err := load(testEnvironment(base)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"RELAYRTC_INTERNAL_SECRET", "RELAYRTC_MEDIA_INTERNAL_URL", "RELAYRTC_SIGNALING_ALLOWED_ORIGINS"} {
+		t.Run("missing/"+name, func(t *testing.T) {
+			values := map[string]string{}
+			for key, value := range base {
+				values[key] = value
+			}
+			values[name] = ""
+			if _, err := load(testEnvironment(values)); err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("missing production setting accepted: %v", err)
+			}
+		})
+	}
+	for _, name := range []string{"RELAYRTC_INTERNAL_SECRET", "PARTICIPANT_TOKEN_SIGNING_SECRET"} {
+		t.Run("placeholder/"+name, func(t *testing.T) {
+			values := map[string]string{}
+			for key, value := range base {
+				values[key] = value
+			}
+			values[name] = "replace-with-at-least-32-random-characters"
+			if _, err := load(testEnvironment(values)); err == nil || !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), values[name]) {
+				t.Fatalf("placeholder policy failure: %v", err)
+			}
+		})
+	}
+	for _, databaseURL := range []string{"postgresql://relaykit:relaykit@postgres/relaykit", "postgresql://postgres/relaykit", "mysql://user:private-password@postgres/database"} {
+		values := map[string]string{}
+		for key, value := range base {
+			values[key] = value
+		}
+		values["DATABASE_URL"] = databaseURL
+		if _, err := load(testEnvironment(values)); err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || strings.Contains(err.Error(), databaseURL) {
+			t.Fatalf("unsafe database policy failure: %v", err)
+		}
 	}
 }

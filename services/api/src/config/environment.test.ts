@@ -13,7 +13,7 @@ describe("readApiEnvironment", () => {
     ).toEqual({
       databaseUrl: "postgresql://relayrtc:password@localhost:5432/relayrtc",
       host: "0.0.0.0",
-      internalSecret: "a-secure-participant-token-secret-123",
+      internalSecret: "development-internal-secret-change-me",
       logLevel: "info",
       mediaInternalUrl: "http://media:8082/internal/v1",
       nodeEnvironment: "development",
@@ -78,5 +78,53 @@ describe("readApiEnvironment", () => {
     expect(() => readApiEnvironment({ ...base, TURN_CREDENTIAL_TTL_SECONDS: "3601" })).toThrow(
       "TURN_CREDENTIAL_TTL_SECONDS",
     );
+  });
+});
+
+const productionEnvironment = {
+  NODE_ENV: "production",
+  DATABASE_URL: "postgresql://relayrtc:independent-database-password@postgres:5432/relayrtc",
+  PARTICIPANT_TOKEN_SIGNING_SECRET: "independent-participant-signing-key-123",
+  RELAYRTC_INTERNAL_SECRET: "independent-internal-control-key-456",
+  TURN_SHARED_SECRET: "independent-turn-authentication-key-789",
+  RELAYRTC_MEDIA_INTERNAL_URL: "http://media:8082/internal/v1",
+  RELAYRTC_SIGNALING_INTERNAL_URL: "http://signaling:8081/internal/v1",
+  TURN_STUN_URLS: "stun:rtc.example.com:3478",
+  TURN_URLS: "turn:rtc.example.com:3478?transport=udp",
+};
+
+describe("production API configuration", () => {
+  it("accepts explicitly separated production credentials", () => {
+    expect(readApiEnvironment(productionEnvironment).internalSecret).toBe(
+      productionEnvironment.RELAYRTC_INTERNAL_SECRET,
+    );
+  });
+  it.each([
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_MEDIA_INTERNAL_URL",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+    "TURN_URLS",
+    "TURN_STUN_URLS",
+  ])("requires %s", (name) => {
+    expect(() => readApiEnvironment({ ...productionEnvironment, [name]: undefined })).toThrow(name);
+  });
+  it.each(["RELAYRTC_INTERNAL_SECRET", "PARTICIPANT_TOKEN_SIGNING_SECRET", "TURN_SHARED_SECRET"])(
+    "rejects placeholder %s",
+    (name) => {
+      expect(() =>
+        readApiEnvironment({
+          ...productionEnvironment,
+          [name]: "replace-with-at-least-32-random-characters",
+        }),
+      ).toThrow(name);
+    },
+  );
+  it("rejects development database credentials without disclosure", () => {
+    expect(() =>
+      readApiEnvironment({
+        ...productionEnvironment,
+        DATABASE_URL: "postgresql://relaykit:relaykit@postgres/relaykit",
+      }),
+    ).toThrow("DATABASE_URL");
   });
 });

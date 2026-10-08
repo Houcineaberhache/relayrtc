@@ -91,3 +91,35 @@ describe("readAuthEnvironment", () => {
     },
   );
 });
+
+describe("production account credential policy", () => {
+  const production = {
+    ...validEnvironment,
+    NODE_ENV: "production",
+    BETTER_AUTH_SECRET: "independent-account-authentication-key",
+    DATABASE_URL: "postgresql://relaykit:independent-database-password@postgres/relaykit",
+    RELAYRTC_INTERNAL_SECRET: "independent-internal-control-key-456",
+    RELAYRTC_MEDIA_INTERNAL_URL: "http://media:8082/internal/v1",
+    RELAYRTC_SIGNALING_INTERNAL_URL: "http://signaling:8081/internal/v1",
+  };
+  it("accepts separated credentials", () => {
+    expect(readAuthEnvironment(production).secret).toBe(production.BETTER_AUTH_SECRET);
+  });
+  it("rejects omitted control credentials, placeholders, and account/control reuse", () => {
+    expect(() =>
+      readAuthEnvironment({ ...production, RELAYRTC_INTERNAL_SECRET: undefined }),
+    ).toThrow("RELAYRTC_INTERNAL_SECRET");
+    expect(() =>
+      readAuthEnvironment({
+        ...production,
+        BETTER_AUTH_SECRET: validEnvironment.BETTER_AUTH_SECRET,
+      }),
+    ).toThrow("BETTER_AUTH_SECRET");
+    expect(() =>
+      readAuthEnvironment({
+        ...production,
+        BETTER_AUTH_SECRET: production.RELAYRTC_INTERNAL_SECRET,
+      }),
+    ).toThrow("separate credentials");
+  });
+});

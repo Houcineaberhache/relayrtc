@@ -1,3 +1,4 @@
+import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { schema, type RelayKitDatabase } from "@relayrtc/database";
 import { createMediaControlToken } from "@relayrtc/protocol/media-control";
 import { and, count, eq, inArray, isNull, notInArray } from "drizzle-orm";
@@ -11,7 +12,8 @@ export interface ResourceDeletionImpact {
   connectedParticipants: number;
 }
 
-type DeletionScope = { organizationId: string; projectId?: never } | { projectId: string; organizationId?: never };
+type DeletionScope =
+  { organizationId: string; projectId?: never } | { projectId: string; organizationId?: never };
 
 const emptyImpact = (): ResourceDeletionImpact => ({
   projects: 0,
@@ -52,10 +54,19 @@ export const getResourceDeletionImpact = async (
 
   const projectRoom = inArray(schema.room.projectId, projectIds);
   const [environments, apiKeys, rooms, roomsToEnd, participants] = await Promise.all([
-    database.select({ value: count() }).from(schema.environment).where(inArray(schema.environment.projectId, projectIds)),
-    database.select({ value: count() }).from(schema.apiKey).where(inArray(schema.apiKey.projectId, projectIds)),
+    database
+      .select({ value: count() })
+      .from(schema.environment)
+      .where(inArray(schema.environment.projectId, projectIds)),
+    database
+      .select({ value: count() })
+      .from(schema.apiKey)
+      .where(inArray(schema.apiKey.projectId, projectIds)),
     database.select({ value: count() }).from(schema.room).where(projectRoom),
-    database.select({ value: count() }).from(schema.room).where(and(projectRoom, notInArray(schema.room.status, ["ended", "failed"]))),
+    database
+      .select({ value: count() })
+      .from(schema.room)
+      .where(and(projectRoom, notInArray(schema.room.status, ["ended", "failed"]))),
     database
       .select({ value: count() })
       .from(schema.participant)
@@ -79,11 +90,15 @@ export interface RoomTerminationConfig {
   signalingUrl: string;
 }
 
-export const readRoomTerminationConfig = (source: Record<string, string | undefined>): RoomTerminationConfig => {
-  const internalSecret = source.RELAYRTC_INTERNAL_SECRET ?? source.PARTICIPANT_TOKEN_SIGNING_SECRET;
-  if (!internalSecret || internalSecret.length < 32) {
-    throw new Error("Room termination requires RELAYRTC_INTERNAL_SECRET");
-  }
+export const readRoomTerminationConfig = (
+  source: Record<string, string | undefined>,
+): RoomTerminationConfig => {
+  enforceCredentialPolicy(source, [
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_MEDIA_INTERNAL_URL",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+  ]);
+  const internalSecret = readInternalSecret(source);
   return {
     internalSecret,
     mediaUrl: source.RELAYRTC_MEDIA_INTERNAL_URL ?? "http://media:8082/internal/v1",
@@ -106,10 +121,12 @@ export const terminateResourceRooms = async (
   const rooms = await database
     .select()
     .from(schema.room)
-    .where(and(
-      inArray(schema.room.projectId, [...projectIds]),
-      notInArray(schema.room.status, ["ended", "failed"]),
-    ));
+    .where(
+      and(
+        inArray(schema.room.projectId, [...projectIds]),
+        notInArray(schema.room.status, ["ended", "failed"]),
+      ),
+    );
 
   for (const room of rooms) {
     const endedAt = new Date();

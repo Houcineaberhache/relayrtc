@@ -83,7 +83,10 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	if len(secret) < 32 {
 		return Config{}, fmt.Errorf("PARTICIPANT_TOKEN_SIGNING_SECRET must contain at least 32 characters")
 	}
-	internalSecret := valueOrDefault(lookup, "RELAYRTC_INTERNAL_SECRET", secret)
+	internalSecret, present := lookup("RELAYRTC_INTERNAL_SECRET")
+	if !present {
+		internalSecret = "development-internal-secret-change-me"
+	}
 	if len(internalSecret) < 32 {
 		return Config{}, fmt.Errorf("RELAYRTC_INTERNAL_SECRET must contain at least 32 characters")
 	}
@@ -93,8 +96,16 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	}
 	mediaInternalURL := valueOrDefault(lookup, "RELAYRTC_MEDIA_INTERNAL_URL", "http://media:8082/internal/v1")
 	parsedMediaURL, err := url.Parse(mediaInternalURL)
-	if err != nil || (parsedMediaURL.Scheme != "http" && parsedMediaURL.Scheme != "https") || parsedMediaURL.Host == "" {
+	if err != nil || (parsedMediaURL.Scheme != "http" && parsedMediaURL.Scheme != "https") || parsedMediaURL.Host == "" || parsedMediaURL.User != nil || parsedMediaURL.RawQuery != "" || parsedMediaURL.Fragment != "" {
 		return Config{}, fmt.Errorf("RELAYRTC_MEDIA_INTERNAL_URL must be a valid HTTP URL")
+	}
+
+	nodeEnvironment := valueOrDefault(lookup, "NODE_ENV", "development")
+	if nodeEnvironment != "development" && nodeEnvironment != "test" && nodeEnvironment != "production" {
+		return Config{}, fmt.Errorf("NODE_ENV must be development, test, or production")
+	}
+	if err := validateCredentials(lookup, nodeEnvironment, secret, internalSecret, databaseURL); err != nil {
+		return Config{}, err
 	}
 
 	allowedOrigins := splitList(valueOrDefault(
@@ -167,4 +178,65 @@ func splitList(value string) []string {
 		}
 	}
 	return items
+}
+
+func placeholderCredential(value string) bool {
+	lower := strings.ToLower(value)
+	for _, prefix := range []string{"replace-with", "development-", "test-", "example-", "placeholder"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	if strings.Contains(lower, "change-me") || strings.Contains(lower, "changeme") {
+		return true
+	}
+	if value == "password" || value == "postgres" || value == "relaykit" || value == "0123456789abcdef0123456789abcdef" {
+		return true
+	}
+	if len(value) > 0 && strings.Trim(value, value[:1]) == "" {
+		return true
+	}
+	return false
+}
+
+func validateCredentials(lookup func(string) (string, bool), mode, participant, internal, databaseURL string) error {
+	credentials := map[string]string{"PARTICIPANT_TOKEN_SIGNING_SECRET": participant, "RELAYRTC_INTERNAL_SECRET": internal}
+	for _, name := range []string{"BETTER_AUTH_SECRET", "TURN_SHARED_SECRET"} {
+		if value, ok := lookup(name); ok {
+			credentials[name] = value
+		}
+	}
+	for name, value := range credentials {
+		if len(value) < 32 || value != strings.TrimSpace(value) {
+			return fmt.Errorf("%s must contain at least 32 characters without surrounding whitespace", name)
+		}
+		if mode == "production" && placeholderCredential(value) {
+			return fmt.Errorf("%s must not use a placeholder or development credential in production", name)
+		}
+		for other, otherValue := range credentials {
+			if name != other && value == otherValue {
+				return fmt.Errorf("%s and %s must use separate credentials", name, other)
+			}
+		}
+	}
+	parsed, err := url.Parse(databaseURL)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Host == "" {
+		return fmt.Errorf("DATABASE_URL must be a valid PostgreSQL URL")
+	}
+	if mode == "production" {
+		for _, name := range []string{"RELAYRTC_INTERNAL_SECRET", "RELAYRTC_MEDIA_INTERNAL_URL", "RELAYRTC_SIGNALING_ALLOWED_ORIGINS"} {
+			value, ok := lookup(name)
+			if !ok || strings.TrimSpace(value) == "" {
+				return fmt.Errorf("%s is required in production", name)
+			}
+		}
+		if parsed.User == nil {
+			return fmt.Errorf("DATABASE_URL must use a non-placeholder password in production")
+		}
+		password, ok := parsed.User.Password()
+		if !ok || password == "" || placeholderCredential(password) {
+			return fmt.Errorf("DATABASE_URL must use a non-placeholder password in production")
+		}
+	}
+	return nil
 }

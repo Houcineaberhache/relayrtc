@@ -1,3 +1,4 @@
+import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { z } from "zod";
 
 export type MediaEnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -7,7 +8,6 @@ const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"]
 const environmentSchema = z
   .object({
     DATABASE_URL: z
-      .string()
       .url()
       .default("postgresql://relaykit:relaykit@127.0.0.1:5432/relaykit")
       .refine((value) => {
@@ -27,7 +27,7 @@ const environmentSchema = z
     MEDIA_WORKERS: z.coerce.number().int().min(1).max(128).default(1),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     RELAYRTC_INTERNAL_SECRET: z.string().min(32).default("development-internal-secret-change-me"),
-    RELAYRTC_SIGNALING_INTERNAL_URL: z.string().url().default("http://signaling:8081/internal/v1"),
+    RELAYRTC_SIGNALING_INTERNAL_URL: z.url().default("http://signaling:8081/internal/v1"),
   })
   .strict()
   .refine((value) => value.MEDIA_RTC_PORT + value.MEDIA_WORKERS - 1 <= value.MEDIA_RTC_MAX_PORT, {
@@ -54,6 +54,12 @@ export interface MediaConfig {
 }
 
 export const readMediaEnvironment = (source: MediaEnvironmentSource): MediaConfig => {
+  enforceCredentialPolicy(source, [
+    "DATABASE_URL",
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+    "MEDIA_RTC_ANNOUNCED_ADDRESS",
+  ]);
   const parsed = environmentSchema.safeParse({
     DATABASE_URL: source.DATABASE_URL,
     MEDIA_HOST: source.MEDIA_HOST,
@@ -87,7 +93,7 @@ export const readMediaEnvironment = (source: MediaEnvironmentSource): MediaConfi
     maxTransportsPerRoom: parsed.data.MEDIA_MAX_TRANSPORTS_PER_ROOM,
     nodeEnvironment: parsed.data.NODE_ENV,
     nodeId: parsed.data.MEDIA_NODE_ID,
-    internalSecret: parsed.data.RELAYRTC_INTERNAL_SECRET,
+    internalSecret: readInternalSecret(source),
     port: parsed.data.MEDIA_PORT,
     rtcAnnouncedAddress: parsed.data.MEDIA_RTC_ANNOUNCED_ADDRESS,
     rtcListenIp: parsed.data.MEDIA_RTC_LISTEN_IP,
