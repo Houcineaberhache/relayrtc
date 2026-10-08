@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { OrgGeneral } from '@/components/settings/org-general'
+import { ProfileSettings } from '@/components/settings/profile-settings'
 import { TeamMembers } from '@/components/settings/team-members'
 import { getAuthRuntime } from '@/lib/auth-server'
 
@@ -62,10 +63,18 @@ export default async function OrgSettingsPage({
     redirect('/')
   }
 
-  const currentMembership =
-    await runtime.auth.api.getActiveMemberRole({
-      headers: requestHeaders,
-    })
+  if (query.tab === 'profile') {
+    return (
+      <ProfileSettings
+        user={{
+          id: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+          image: session.user.image,
+        }}
+      />
+    )
+  }
 
   const memberResult =
     await runtime.auth.api.listMembers({
@@ -75,8 +84,12 @@ export default async function OrgSettingsPage({
       },
     })
 
+  const currentRole = memberResult.members.find(
+    (member) => member.userId === session.user.id,
+  )?.role ?? ''
+
   const roles =
-    currentMembership.role
+    currentRole
       .split(',')
       .map((role) =>
         role.trim(),
@@ -124,7 +137,7 @@ export default async function OrgSettingsPage({
           session.user.id
         }
         currentRole={
-          currentMembership.role
+          currentRole
         }
         members={memberResult.members.map(
           (member) => ({
@@ -178,6 +191,17 @@ export default async function OrgSettingsPage({
         memberResult.members.length
       }
       canManage={canManage}
+      isOwner={roles.includes('owner')}
+      ownershipCandidates={memberResult.members
+        .filter((member) =>
+          member.userId !== session.user.id &&
+          !member.role.split(',').map((role) => role.trim()).includes('owner'),
+        )
+        .map((member) => ({
+          id: member.id,
+          name: member.user.name,
+          email: member.user.email,
+        }))}
     />
   )
 }

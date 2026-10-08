@@ -174,7 +174,7 @@ describe("createRelayKitAuth", () => {
     const handler = createRelayKitAuthHandler(auth);
     const response = await handler(
       new Request("http://localhost:3000/api/auth/organization/create", {
-        body: JSON.stringify({ name: "Acme", slug: "acme" }),
+        body: JSON.stringify({ name: "Acme" }),
         headers: {
           "content-type": "application/json",
           origin: "http://localhost:3000",

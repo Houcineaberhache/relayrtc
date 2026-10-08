@@ -1,6 +1,7 @@
 import { schema, type RelayKitDatabase } from "@relayrtc/database";
 import { APIError } from "better-auth/api";
 import { and, eq, inArray } from "drizzle-orm";
+import { generateResourceSlug } from "./resource-slug.js";
 
 import { authError, type AuthError, type AuthErrorCode } from "./errors.js";
 
@@ -13,6 +14,20 @@ const hasRole = (roles: string, role: string): boolean =>
   roles.split(",").some((value) => value.trim() === role);
 
 export const organizationOwnershipHooks = {
+  beforeCreateOrganization: async ({ organization }: { organization: { name?: string; slug?: string } }) => ({
+    data: {
+      ...organization,
+      slug: generateResourceSlug(organization.name ?? "", "organization"),
+    },
+  }),
+  beforeUpdateOrganization: async ({ organization }: { organization: { slug?: string } }) => {
+    if ("slug" in organization) {
+      throw APIError.from("BAD_REQUEST", {
+        code: "ORGANIZATION_SLUG_IMMUTABLE",
+        message: "Organization slugs cannot be changed",
+      });
+    }
+  },
   beforeRemoveMember: ({ member }: { member: { role: string } }) => {
     if (hasRole(member.role, "owner")) {
       return Promise.reject(APIError.from("FORBIDDEN", ownerRoleProtectedError));

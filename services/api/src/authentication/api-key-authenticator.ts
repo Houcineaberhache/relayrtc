@@ -36,6 +36,14 @@ export const authenticateApiKey = async (
     return null;
   }
 
+  const [project] = await database
+    .select({ status: schema.project.status })
+    .from(schema.project)
+    .where(eq(schema.project.id, apiKey.projectId));
+  if (!project || project.status === "deleting" || project.status === "deleted") {
+    return null;
+  }
+
   const [used] = await database
     .update(schema.apiKey)
     .set({ lastUsedAt: now })

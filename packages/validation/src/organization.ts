@@ -77,7 +77,6 @@ export type TransferOrganizationOwnershipInput = z.infer<
 export const createOrganizationInputSchema = z
   .object({
     name: nameSchema,
-    slug: slugSchema,
   })
   .strict();
 
@@ -88,6 +87,15 @@ export const updateOrganizationInputSchema = createOrganizationInputSchema.exten
 });
 
 export type UpdateOrganizationInput = z.infer<typeof updateOrganizationInputSchema>;
+
+export const deleteOrganizationInputSchema = z
+  .object({
+    organizationId: organizationIdSchema,
+    confirmationName: nameSchema,
+  })
+  .strict();
+
+export type DeleteOrganizationInput = z.infer<typeof deleteOrganizationInputSchema>;
 
 export const organizationSlugFromName = (name: string): string =>
   name

@@ -11,7 +11,7 @@ import { Button } from "@relayrtc/ui/components/button"
 import { Input } from "@relayrtc/ui/components/input"
 import { Label } from "@relayrtc/ui/components/label"
 import { updateOrganizationInputSchema } from "@relayrtc/validation"
-import { CircleCheck, LoaderCircle } from "lucide-react"
+import { CircleCheck, Copy, LoaderCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, type FormEvent } from "react"
 
@@ -30,10 +30,9 @@ export function OrganizationSettingsForm({
   const [error, setError] = useState<AuthError | null>(null)
   const [name, setName] = useState(organization.name)
   const [pending, setPending] = useState(false)
-  const [slug, setSlug] = useState(organization.slug)
   const [success, setSuccess] = useState(false)
 
-  const unchanged = name === organization.name && slug === organization.slug
+  const unchanged = name === organization.name
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -43,7 +42,6 @@ export function OrganizationSettingsForm({
     const validation = updateOrganizationInputSchema.safeParse({
       organizationId: organization.id,
       name,
-      slug,
     })
 
     if (!validation.success) {
@@ -61,7 +59,6 @@ export function OrganizationSettingsForm({
     const result = await authClient.organization.update({
       data: {
         name: validation.data.name,
-        slug: validation.data.slug,
       },
       organizationId: validation.data.organizationId,
     })
@@ -73,7 +70,6 @@ export function OrganizationSettingsForm({
     }
 
     setName(validation.data.name)
-    setSlug(validation.data.slug)
     setSuccess(true)
     setPending(false)
     router.refresh()
@@ -91,7 +87,7 @@ export function OrganizationSettingsForm({
           Organization settings updated
         </div>
       ) : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4">
         <div className="space-y-2">
           <Label htmlFor="organization-settings-name">Organization name</Label>
           <Input
@@ -103,23 +99,14 @@ export function OrganizationSettingsForm({
             required
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="organization-settings-slug">Slug</Label>
-          <Input
-            id="organization-settings-slug"
-            name="slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value.toLowerCase())}
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-            maxLength={80}
-            required
-          />
-          <p className="text-xs text-muted-foreground">
-            Changing the slug may affect future organization URLs.
-          </p>
-        </div>
       </div>
-      <Button type="submit" disabled={pending || unchanged}>
+      <div className="space-y-2 text-sm">
+        <p>Organization ID</p>
+        <div className="flex items-center gap-2"><code className="break-all">{organization.id}</code><Button type="button" variant="ghost" aria-label="Copy organization ID" onClick={() => void navigator.clipboard.writeText(organization.id)}><Copy className="size-4" /></Button></div>
+        <p>Slug</p>
+        <div className="flex items-center gap-2"><code className="break-all">{organization.slug}</code><Button type="button" variant="ghost" aria-label="Copy organization slug" onClick={() => void navigator.clipboard.writeText(organization.slug)}><Copy className="size-4" /></Button></div>
+      </div>
+      <Button type="submit" className="w-full" disabled={pending || unchanged}>
         {pending ? <LoaderCircle className="animate-spin" /> : null}
         Save changes
       </Button>

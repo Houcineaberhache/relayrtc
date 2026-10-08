@@ -6,10 +6,7 @@ import { projectError, type ProjectError } from "@/lib/projects/project-errors"
 import { Button } from "@relayrtc/ui/components/button"
 import { Input } from "@relayrtc/ui/components/input"
 import { Label } from "@relayrtc/ui/components/label"
-import {
-  createProjectInputSchema,
-  projectSlugFromName,
-} from "@relayrtc/validation"
+import { createProjectInputSchema } from "@relayrtc/validation"
 import { LoaderCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, type FormEvent } from "react"
@@ -23,8 +20,6 @@ export function CreateProjectForm({
   const [error, setError] = useState<ProjectError | null>(null)
   const [name, setName] = useState("")
   const [pending, setPending] = useState(false)
-  const [slug, setSlug] = useState("")
-  const [slugEdited, setSlugEdited] = useState(false)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -33,7 +28,6 @@ export function CreateProjectForm({
     const validation = createProjectInputSchema.safeParse({
       name,
       organizationId,
-      slug,
     })
 
     if (!validation.success) {
@@ -63,27 +57,10 @@ export function CreateProjectForm({
             id="project-name"
             value={name}
             onChange={(event) => {
-              const nextName = event.target.value
-              setName(nextName)
-              if (!slugEdited) setSlug(projectSlugFromName(nextName))
+              setName(event.target.value)
             }}
             placeholder="Video Classroom"
             maxLength={120}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="project-slug">Slug</Label>
-          <Input
-            id="project-slug"
-            value={slug}
-            onChange={(event) => {
-              setSlug(event.target.value.toLowerCase())
-              setSlugEdited(true)
-            }}
-            placeholder="video-classroom"
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-            maxLength={80}
             required
           />
         </div>
