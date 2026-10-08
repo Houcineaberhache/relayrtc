@@ -8,6 +8,13 @@ import type {
   UpdateEnvironmentInput,
   UpdateProjectInput,
 } from "@relayrtc/validation"
+import { generateResourceSlug } from "@relayrtc/auth"
+import {
+  getResourceDeletionImpact,
+  readRoomTerminationConfig,
+  terminateResourceRooms,
+  type ResourceDeletionImpact,
+} from "@relayrtc/auth"
 import { and, asc, desc, eq } from "drizzle-orm"
 
 import {
@@ -171,7 +178,7 @@ export const createProject = async (
           id: `project_${crypto.randomUUID()}`,
           name: input.name,
           organizationId: input.organizationId,
-          slug: input.slug,
+          slug: generateResourceSlug(input.name, "project"),
           status: "active",
           createdAt: now,
           updatedAt: now,
@@ -236,7 +243,7 @@ export const updateProject = async (
 
       const [updatedProject] = await transaction
         .update(schema.project)
-        .set({ name: input.name, slug: input.slug, updatedAt: new Date() })
+        .set({ name: input.name, updatedAt: new Date() })
         .where(eq(schema.project.id, project.id))
         .returning()
 
@@ -258,7 +265,8 @@ export const deleteProject = async (
   input: DeleteProjectInput
 ): Promise<ProjectResult<{ projectId: string }>> => {
   try {
-    return await database.transaction(async (transaction) => {
+    const config = readRoomTerminationConfig(process.env)
+    const authorization = await database.transaction(async (transaction) => {
       const project = await getLockedProject(transaction, input.projectId)
 
       if (!project) return failure("PROJECT_NOT_FOUND")
@@ -281,19 +289,32 @@ export const deleteProject = async (
         .update(schema.project)
         .set({ status: "deleting", updatedAt: new Date() })
         .where(eq(schema.project.id, project.id))
-      await transaction
-        .delete(schema.apiKey)
-        .where(eq(schema.apiKey.projectId, project.id))
-      await transaction
-        .delete(schema.environment)
-        .where(eq(schema.environment.projectId, project.id))
-      await transaction.delete(schema.project).where(eq(schema.project.id, project.id))
-
       return success({ projectId: project.id })
     })
+    if (authorization.error) return authorization
+
+    await terminateResourceRooms(database, [input.projectId], config)
+
+    await database.transaction(async (transaction) => {
+      const project = await getLockedProject(transaction, input.projectId)
+      if (!project) throw new Error("Project disappeared during deletion")
+      await transaction.delete(schema.project).where(eq(schema.project.id, project.id))
+    })
+
+    return success({ projectId: input.projectId })
   } catch {
     return failure("PROJECT_DELETION_FAILED")
   }
+}
+
+export const getProjectDeletionImpact = async (
+  context: ProjectServiceContext,
+  projectId: string,
+): Promise<ProjectResult<ResourceDeletionImpact>> => {
+  const details = await getProjectDetails(context, projectId)
+  if (details.error) return failure(details.error.code)
+  if (!details.data.canManage) return failure("PROJECT_MANAGEMENT_FORBIDDEN")
+  return success(await getResourceDeletionImpact(context.database, { projectId }))
 }
 
 export const updateEnvironment = async (

@@ -6,6 +6,7 @@ import {
   createProject,
   deleteEnvironment,
   deleteProject,
+  getProjectDeletionImpact,
   updateEnvironment,
   updateProject,
 } from "@/lib/projects/project-service"
@@ -17,6 +18,7 @@ import {
   deleteProjectInputSchema,
   updateEnvironmentInputSchema,
   updateProjectInputSchema,
+  projectIdSchema,
 } from "@relayrtc/validation"
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
@@ -75,6 +77,18 @@ export async function deleteProjectAction(input: unknown) {
   const result = await deleteProject(context, validation.data)
   if (result.data) revalidatePath("/")
   return result
+}
+
+export async function getProjectDeletionImpactAction(projectId: unknown) {
+  const validation = projectIdSchema.safeParse(projectId)
+  if (!validation.success) {
+    return { data: null, error: projectError("INVALID_PROJECT_INPUT") }
+  }
+
+  const context = await getContext()
+  if (!context) return sessionRequired<never>()
+
+  return getProjectDeletionImpact(context, validation.data)
 }
 
 export async function updateEnvironmentAction(input: unknown) {
