@@ -9,6 +9,10 @@
     "dist"
   ],
   "exports": {
+    "./media-control": {
+      "types": "./dist/media-control.d.ts",
+      "import": "./dist/media-control.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -30,5 +34,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
   }
 }
