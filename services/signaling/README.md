@@ -30,6 +30,7 @@ Unexpected connection loss places the durable participant session into `reconnec
 - `RELAYRTC_SIGNALING_RECOVERY_TIMEOUT` — session resume window, defaults to `30s`
 - `RELAYRTC_SIGNALING_WRITE_TIMEOUT` — control-frame deadline, defaults to `10s`
 - `RELAYRTC_SIGNALING_MAX_MESSAGE_BYTES` — maximum inbound message size, defaults to `65536`
+- `RELAYRTC_IPINFO_TOKEN` — optional IPinfo Lite API token used to resolve participant session countries
 - `PARTICIPANT_TOKEN_SIGNING_SECRET` — shared JWT secret of at least 32 characters
 - `PARTICIPANT_TOKEN_KEY_ID` — accepted JWT signing key identifier
 - `PARTICIPANT_TOKEN_ISSUER` — accepted JWT issuer

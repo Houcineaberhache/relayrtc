@@ -13,6 +13,7 @@ import (
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/config"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/connection"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/geolocation"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
@@ -39,6 +40,7 @@ func Run(ctx context.Context) error {
 	connections := connection.NewHandler(connection.Options{
 		AllowedOrigins:    cfg.AllowedOrigins,
 		HeartbeatInterval: cfg.HeartbeatInterval,
+		LocationLookup:    geolocation.New(cfg.IPInfoToken),
 		MaxMessageBytes:   cfg.MaxMessageBytes,
 		NodeID:            cfg.SignalingNodeID,
 		ParticipantMedia:  newParticipantMediaClient(cfg.MediaInternalURL, cfg.InternalSecret),
