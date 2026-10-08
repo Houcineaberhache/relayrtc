@@ -2,6 +2,7 @@ import type { RoomQualityMode } from "@relayrtc/types";
 import type { FastifyPluginCallback } from "fastify";
 
 import { MediaEngineError } from "../engine/errors.js";
+import { registerInternalAuthentication } from "../authentication/internal-auth.js";
 import type {
   MediaEngine,
   MediaKind,
@@ -12,6 +13,7 @@ import type { MediaPriority, SubscriberQualityMode } from "../engine/quality-con
 
 interface MediaRoutesOptions {
   engine: MediaEngine;
+  internalSecret: string;
 }
 
 interface RoomParameters {
@@ -101,6 +103,7 @@ const roomParametersSchema = {
 const rtcParametersSchema = { type: "object", additionalProperties: true } as const;
 
 export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, options, done) => {
+  registerInternalAuthentication(app, options.internalSecret);
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof MediaEngineError) {
       const statusCode =

@@ -6,6 +6,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY services/media/package.json services/media/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/types/package.json packages/types/package.json
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/validation/package.json packages/validation/package.json
 RUN pnpm install --frozen-lockfile --filter @relayrtc/media...
 
 FROM dependencies AS builder
@@ -14,7 +16,9 @@ COPY tsconfig.base.json eslint.config.mjs ./
 COPY services/media services/media
 COPY packages/database packages/database
 COPY packages/types packages/types
-RUN pnpm --filter @relayrtc/types build && pnpm --filter @relayrtc/database build && pnpm --filter @relayrtc/media build
+COPY packages/protocol packages/protocol
+COPY packages/validation packages/validation
+RUN pnpm --filter @relayrtc/types build && pnpm --filter @relayrtc/validation build && pnpm --filter @relayrtc/protocol build && pnpm --filter @relayrtc/database build && pnpm --filter @relayrtc/media build
 
 FROM node:24-bookworm-slim AS runner
 
@@ -32,6 +36,12 @@ COPY --from=builder --chown=node:node /workspace/packages/database/dist ./packag
 COPY --from=builder --chown=node:node /workspace/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder --chown=node:node /workspace/packages/types/package.json ./packages/types/package.json
 COPY --from=builder --chown=node:node /workspace/packages/types/dist ./packages/types/dist
+COPY --from=builder --chown=node:node /workspace/packages/protocol/package.json ./packages/protocol/package.json
+COPY --from=builder --chown=node:node /workspace/packages/protocol/dist ./packages/protocol/dist
+COPY --from=builder --chown=node:node /workspace/packages/protocol/node_modules ./packages/protocol/node_modules
+COPY --from=builder --chown=node:node /workspace/packages/validation/package.json ./packages/validation/package.json
+COPY --from=builder --chown=node:node /workspace/packages/validation/dist ./packages/validation/dist
+COPY --from=builder --chown=node:node /workspace/packages/validation/node_modules ./packages/validation/node_modules
 
 USER node
 EXPOSE 8082
