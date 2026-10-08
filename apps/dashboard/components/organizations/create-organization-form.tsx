@@ -1,15 +1,12 @@
 "use client"
 
+import { createOrganizationAction } from "@/actions/organization"
 import { AuthErrorMessage } from "@/components/auth/auth-error-message"
-import { authClient } from "@/lib/auth-client"
-import { authError, toAuthError, type AuthError } from "@relayrtc/auth"
+import { authError, type AuthError } from "@relayrtc/auth"
 import { Button } from "@relayrtc/ui/components/button"
 import { Input } from "@relayrtc/ui/components/input"
 import { Label } from "@relayrtc/ui/components/label"
-import {
-  createOrganizationInputSchema,
-  organizationSlugFromName,
-} from "@relayrtc/validation"
+import { createOrganizationInputSchema } from "@relayrtc/validation"
 import { CircleCheck, LoaderCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, type FormEvent } from "react"
@@ -19,8 +16,6 @@ export function CreateOrganizationForm() {
   const [error, setError] = useState<AuthError | null>(null)
   const [name, setName] = useState("")
   const [pending, setPending] = useState(false)
-  const [slug, setSlug] = useState("")
-  const [slugEdited, setSlugEdited] = useState(false)
   const [success, setSuccess] = useState(false)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -28,7 +23,7 @@ export function CreateOrganizationForm() {
     setError(null)
     setSuccess(false)
 
-    const validation = createOrganizationInputSchema.safeParse({ name, slug })
+    const validation = createOrganizationInputSchema.safeParse({ name })
 
     if (!validation.success) {
       setError(
@@ -42,17 +37,15 @@ export function CreateOrganizationForm() {
     }
 
     setPending(true)
-    const result = await authClient.organization.create(validation.data)
+    const result = await createOrganizationAction(validation.data)
 
     if (result.error) {
-      setError(toAuthError(result.error))
+      setError(result.error)
       setPending(false)
       return
     }
 
     setName("")
-    setSlug("")
-    setSlugEdited(false)
     setSuccess(true)
     setPending(false)
     router.refresh()
@@ -78,33 +71,12 @@ export function CreateOrganizationForm() {
             name="name"
             value={name}
             onChange={(event) => {
-              const nextName = event.target.value
-              setName(nextName)
-              if (!slugEdited) setSlug(organizationSlugFromName(nextName))
+              setName(event.target.value)
             }}
             placeholder="Acme Inc."
             maxLength={120}
             required
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="organization-slug">Slug</Label>
-          <Input
-            id="organization-slug"
-            name="slug"
-            value={slug}
-            onChange={(event) => {
-              setSlug(event.target.value.toLowerCase())
-              setSlugEdited(true)
-            }}
-            placeholder="acme-inc"
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-            maxLength={80}
-            required
-          />
-          <p className="text-xs text-muted-foreground">
-            Lowercase letters, numbers, and hyphens only.
-          </p>
         </div>
       </div>
       <Button type="submit" disabled={pending}>

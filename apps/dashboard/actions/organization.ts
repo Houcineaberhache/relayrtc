@@ -3,12 +3,31 @@
 import { getAuthRuntime } from "@/lib/auth-server"
 import {
   authError,
+  generateResourceSlug,
+  toAuthError,
   transferOrganizationOwnership,
   type TransferOrganizationOwnershipResult,
 } from "@relayrtc/auth"
-import { transferOrganizationOwnershipInputSchema } from "@relayrtc/validation"
+import { createOrganizationInputSchema, transferOrganizationOwnershipInputSchema } from "@relayrtc/validation"
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
+
+export async function createOrganizationAction(input: unknown) {
+  const validation = createOrganizationInputSchema.safeParse(input)
+  if (!validation.success) return { data: null, error: authError("INVALID_ORGANIZATION_NAME") }
+
+  try {
+    const runtime = getAuthRuntime()
+    const organization = await runtime.auth.api.createOrganization({
+      body: { name: validation.data.name, slug: generateResourceSlug(validation.data.name, "organization") },
+      headers: await headers(),
+    })
+    revalidatePath("/")
+    return { data: { id: organization.id }, error: null }
+  } catch (error) {
+    return { data: null, error: toAuthError(error) }
+  }
+}
 
 export async function transferOrganizationOwnershipAction(
   input: unknown
