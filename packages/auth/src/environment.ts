@@ -1,3 +1,5 @@
+import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
+
 export type AuthEnvironmentSource = Readonly<Record<string, string | undefined>>;
 
 export interface OAuthClientCredentials {
@@ -53,6 +55,13 @@ const parseHttpOrigin = (value: string, name: string): string => {
 };
 
 export const readAuthEnvironment = (source: AuthEnvironmentSource): AuthEnvironment => {
+  enforceCredentialPolicy(source, [
+    "DATABASE_URL",
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_MEDIA_INTERNAL_URL",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+  ]);
+  readInternalSecret(source);
   const secret = readRequired(source, "BETTER_AUTH_SECRET");
 
   if (secret.length < 32) {

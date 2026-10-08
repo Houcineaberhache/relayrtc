@@ -14,6 +14,10 @@ if (!existsSync(environmentPath)) {
       `postgresql://relaykit:${postgresPassword}@localhost:5433/relaykit`,
     )
     .replace(
+      "RELAYRTC_INTERNAL_SECRET=replace-with-at-least-32-random-characters",
+      `RELAYRTC_INTERNAL_SECRET=${randomBytes(32).toString("hex")}`,
+    )
+    .replace(
       "PARTICIPANT_TOKEN_SIGNING_SECRET=replace-with-at-least-32-random-characters",
       `PARTICIPANT_TOKEN_SIGNING_SECRET=${randomBytes(32).toString("hex")}`,
     )
@@ -29,6 +33,16 @@ if (!existsSync(environmentPath)) {
 
   writeFileSync(environmentPath, values, { encoding: "utf8", mode: 0o600 });
   process.stdout.write("Created .env with generated local secrets.\n");
+}
+
+const existingEnvironment = readFileSync(environmentPath, "utf8");
+if (!/^RELAYRTC_INTERNAL_SECRET=/m.test(existingEnvironment)) {
+  writeFileSync(
+    environmentPath,
+    `${existingEnvironment.trimEnd()}\nRELAYRTC_INTERNAL_SECRET=${randomBytes(32).toString("hex")}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  process.stdout.write("Generated a separate internal control credential in .env.\n");
 }
 
 const docker = spawn(

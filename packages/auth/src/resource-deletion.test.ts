@@ -2,7 +2,7 @@ import { verifyMediaControlToken } from "@relayrtc/protocol/media-control";
 import type { RelayKitDatabase } from "@relayrtc/database";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { terminateResourceRooms } from "./resource-deletion.js";
+import { readRoomTerminationConfig, terminateResourceRooms } from "./resource-deletion.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -53,4 +53,18 @@ describe("resource deletion media authorization", () => {
     );
     expect(updateWhere).toHaveBeenCalledOnce();
   });
+});
+
+it("uses a separate cleanup credential and rejects production fallback", () => {
+  const participantSecret = "independent-participant-signing-key";
+  expect(
+    readRoomTerminationConfig({ PARTICIPANT_TOKEN_SIGNING_SECRET: participantSecret })
+      .internalSecret,
+  ).not.toBe(participantSecret);
+  expect(() =>
+    readRoomTerminationConfig({
+      NODE_ENV: "production",
+      PARTICIPANT_TOKEN_SIGNING_SECRET: participantSecret,
+    }),
+  ).toThrow("RELAYRTC_INTERNAL_SECRET");
 });

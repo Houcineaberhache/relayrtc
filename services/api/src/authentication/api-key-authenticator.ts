@@ -40,7 +40,7 @@ export const authenticateApiKey = async (
     .select({ status: schema.project.status })
     .from(schema.project)
     .where(eq(schema.project.id, apiKey.projectId));
-  if (!project || project.status === "deleting" || project.status === "deleted") {
+  if (project?.status !== "active") {
     return null;
   }
 

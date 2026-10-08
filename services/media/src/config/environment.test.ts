@@ -26,7 +26,7 @@ describe("readMediaEnvironment", () => {
   it("reads configured service values", () => {
     expect(
       readMediaEnvironment({
-        DATABASE_URL: "postgresql://relayrtc:password@postgres:5432/relayrtc",
+        DATABASE_URL: "postgresql://relayrtc:sufficient-database-credential@postgres:5432/relayrtc",
         MEDIA_HOST: "127.0.0.1",
         MEDIA_LOG_LEVEL: "debug",
         MEDIA_MAX_ROOMS_PER_WORKER: "50",
@@ -43,7 +43,7 @@ describe("readMediaEnvironment", () => {
         RELAYRTC_SIGNALING_INTERNAL_URL: "http://signaling:9081/internal/v1",
       }),
     ).toEqual({
-      databaseUrl: "postgresql://relayrtc:password@postgres:5432/relayrtc",
+      databaseUrl: "postgresql://relayrtc:sufficient-database-credential@postgres:5432/relayrtc",
       host: "127.0.0.1",
       logLevel: "debug",
       maxRoomsPerWorker: 50,
@@ -75,5 +75,40 @@ describe("readMediaEnvironment", () => {
         MEDIA_WORKERS: "3",
       }),
     ).toThrow("RTC port range must provide one port per media worker");
+  });
+});
+
+const productionEnvironment = {
+  NODE_ENV: "production",
+  DATABASE_URL: "postgresql://relayrtc:independent-database-password@postgres:5432/relayrtc",
+  RELAYRTC_INTERNAL_SECRET: "independent-internal-control-key-456",
+  RELAYRTC_SIGNALING_INTERNAL_URL: "http://signaling:8081/internal/v1",
+  MEDIA_RTC_ANNOUNCED_ADDRESS: "203.0.113.10",
+};
+
+describe("production media configuration", () => {
+  it.each([
+    "DATABASE_URL",
+    "RELAYRTC_INTERNAL_SECRET",
+    "RELAYRTC_SIGNALING_INTERNAL_URL",
+    "MEDIA_RTC_ANNOUNCED_ADDRESS",
+  ])("requires explicit %s", (name) => {
+    expect(() => readMediaEnvironment({ ...productionEnvironment, [name]: undefined })).toThrow(
+      name,
+    );
+  });
+  it("rejects the development secret and database password", () => {
+    expect(() =>
+      readMediaEnvironment({
+        ...productionEnvironment,
+        RELAYRTC_INTERNAL_SECRET: "development-internal-secret-change-me",
+      }),
+    ).toThrow("RELAYRTC_INTERNAL_SECRET");
+    expect(() =>
+      readMediaEnvironment({
+        ...productionEnvironment,
+        DATABASE_URL: "postgresql://relaykit:relaykit@postgres/relaykit",
+      }),
+    ).toThrow("DATABASE_URL");
   });
 });
