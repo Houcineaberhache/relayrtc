@@ -54,6 +54,9 @@ export const participantSession = pgTable(
     mediaNodeId: text("media_node_id"),
     connectionState: text("connection_state").default("connected").notNull(),
     transportType: text("transport_type").default("tcp").notNull(),
+    clientIp: text("client_ip"),
+    countryCode: text("country_code"),
+    country: text("country"),
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
     disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
     reconnectedAt: timestamp("reconnected_at", { withTimezone: true }),
@@ -64,6 +67,7 @@ export const participantSession = pgTable(
   (table) => [
     index("participant_session_participant_id_idx").on(table.participantId),
     index("participant_session_node_state_idx").on(table.signalingNodeId, table.connectionState),
+    index("participant_session_country_idx").on(table.country),
     check(
       "participant_session_connection_state_check",
       sql`${table.connectionState} in ('connecting', 'connected', 'reconnecting', 'disconnected', 'failed')`,

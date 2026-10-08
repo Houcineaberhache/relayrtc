@@ -26,6 +26,7 @@ type Config struct {
 	DatabaseURL            string
 	HeartbeatInterval      time.Duration
 	InternalSecret         string
+	IPInfoToken            string
 	MaxMessageBytes        int64
 	MediaInternalURL       string
 	ParticipantTokenSecret string
@@ -118,6 +119,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		DatabaseURL:            databaseURL,
 		HeartbeatInterval:      heartbeatInterval,
 		InternalSecret:         internalSecret,
+		IPInfoToken:            strings.TrimSpace(valueOrDefault(lookup, "RELAYRTC_IPINFO_TOKEN", "")),
 		MaxMessageBytes:        maxMessageBytes,
 		MediaInternalURL:       strings.TrimRight(mediaInternalURL, "/"),
 		ParticipantTokenSecret: secret,

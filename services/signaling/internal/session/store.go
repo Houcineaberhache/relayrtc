@@ -89,6 +89,17 @@ func (store *Store) RecordUsage(ctx context.Context, sessionID string, messagesI
 	return nil
 }
 
+func (store *Store) SetLocation(ctx context.Context, sessionID, clientIP, countryCode, country string) error {
+	_, err := store.pool.Exec(ctx, `
+		UPDATE participant_session
+		SET client_ip = $2, country_code = NULLIF($3, ''), country = NULLIF($4, '')
+		WHERE id = $1`, sessionID, clientIP, countryCode, country)
+	if err != nil {
+		return fmt.Errorf("record participant location: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nodeID string) (JoinResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {

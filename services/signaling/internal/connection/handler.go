@@ -8,13 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/geolocation"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
@@ -29,6 +32,7 @@ type Options struct {
 	HeartbeatInterval time.Duration
 	MaxMessageBytes   int64
 	NodeID            string
+	LocationLookup    LocationLookup
 	ParticipantMedia  ParticipantMediaService
 	PongTimeout       time.Duration
 	RecoveryTimeout   time.Duration
@@ -41,6 +45,14 @@ type Options struct {
 
 type ParticipantMediaService interface {
 	RemoveParticipant(context.Context, string, string) error
+}
+
+type SessionLocationStore interface {
+	SetLocation(context.Context, string, string, string, string) error
+}
+
+type LocationLookup interface {
+	Lookup(context.Context, string) (geolocation.Location, error)
 }
 
 type SessionStore interface {
@@ -65,6 +77,7 @@ type Handler struct {
 	registry          *registry
 	rtcService        RTCSignalService
 	sessionStore      SessionStore
+	locationLookup    LocationLookup
 	shutdown          context.Context
 	upgrader          websocket.Upgrader
 	validator         *auth.Validator
@@ -90,6 +103,7 @@ func NewHandler(options Options) *Handler {
 		heartbeatInterval: options.HeartbeatInterval,
 		maxMessageBytes:   options.MaxMessageBytes,
 		nodeID:            options.NodeID,
+		locationLookup:    options.LocationLookup,
 		participantMedia:  options.ParticipantMedia,
 		pongTimeout:       options.PongTimeout,
 		recoveries:        make(map[string]chan struct{}),
@@ -144,7 +158,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	defer websocketConnection.Close()
 
 	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
-	joined := handler.serve(client, claims, rawToken)
+	joined := handler.serve(client, claims, rawToken, requestClientIP(request))
 	if joined != nil {
 		handler.disconnect(client, joined, claims)
 		handler.flushClientUsage(client, joined.session.ID)
@@ -181,7 +195,7 @@ func (handler *Handler) Wait(ctx context.Context) error {
 	}
 }
 
-func (handler *Handler) serve(client *client, claims auth.Claims, rawToken string) *joinedSession {
+func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clientIP string) *joinedSession {
 	client.connection.SetReadLimit(handler.maxMessageBytes)
 	_ = client.connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
 	client.connection.SetPongHandler(func(string) error {
@@ -213,7 +227,7 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken strin
 				return joined
 			}
 			client.recordMessageReceived()
-			leave, next := handler.handleMessage(client, claims, rawToken, joined, message.data)
+			leave, next := handler.handleMessage(client, claims, rawToken, joined, clientIP, message.data)
 			if next != nil {
 				joined = next
 			}
@@ -254,7 +268,58 @@ func (handler *Handler) flushClientUsage(client *client, sessionID string) {
 	}
 }
 
-func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawToken string, joined *joinedSession, data []byte) (bool, *joinedSession) {
+func (handler *Handler) recordSessionLocation(sessionID, clientIP string) {
+	recorder, ok := handler.sessionStore.(SessionLocationStore)
+	if !ok || clientIP == "" {
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		location := geolocation.Location{}
+		if handler.locationLookup != nil {
+			resolved, err := handler.locationLookup.Lookup(ctx, clientIP)
+			if err != nil {
+				slog.Warn("participant location lookup failed", "error", err)
+			} else {
+				location = resolved
+			}
+		}
+
+		if err := recorder.SetLocation(ctx, sessionID, clientIP, location.CountryCode, location.Country); err != nil {
+			slog.Warn("participant location persistence failed", "error", err, "session_id", sessionID)
+		}
+	}()
+}
+
+func requestClientIP(request *http.Request) string {
+	for _, value := range []string{
+		strings.Split(request.Header.Get("X-Forwarded-For"), ",")[0],
+		request.Header.Get("X-Real-IP"),
+		request.RemoteAddr,
+	} {
+		if ip := parseIP(value); ip != "" {
+			return ip
+		}
+	}
+	return ""
+}
+
+func parseIP(value string) string {
+	value = strings.TrimSpace(value)
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.Trim(value, "[]")
+	if net.ParseIP(value) == nil {
+		return ""
+	}
+	return value
+}
+
+func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawToken string, joined *joinedSession, clientIP string, data []byte) (bool, *joinedSession) {
 	request := requestEnvelope{}
 	if err := json.Unmarshal(data, &request); err != nil || request.Version != 1 || request.ID == "" {
 		client.protocolError(request.ID, "invalid_message", "The protocol message is invalid")
@@ -287,6 +352,7 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 			client.protocolError(request.ID, sessionErrorCode(err), sessionErrorMessage(err))
 			return false, nil
 		}
+		handler.recordSessionLocation(result.Session.ID, clientIP)
 		next := &joinedSession{participant: result.Participant, session: result.Session}
 		if !handler.registry.claimSession(result.Session.ID, client) {
 			client.protocolError(request.ID, "conflict", "The participant session is already connected")
