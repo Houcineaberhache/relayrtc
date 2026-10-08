@@ -16,6 +16,7 @@ import {
 } from "./invitation-email.js";
 import { organizationRoles } from "./organization.js";
 import { organizationOwnershipHooks } from "./ownership.js";
+import { generateResourceSlug } from "./resource-slug.js";
 import { relayKitSessionPolicy, sessionCookieAttributes } from "./session.js";
 
 export interface RelayKitAuthOptions {
@@ -62,6 +63,7 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions) => {
     plugins: [
       organization({
         creatorRole: "owner",
+        disableOrganizationDeletion: true,
         organizationHooks: organizationOwnershipHooks,
         roles: organizationRoles,
         ...(options.sendInvitationEmail
@@ -115,7 +117,19 @@ export type RelayKitAuth = ReturnType<typeof createRelayKitAuth>;
 export const createRelayKitAuthHandler =
   (auth: RelayKitAuth) =>
   async (request: Request): Promise<Response> => {
-    const response = await auth.handler(request);
+    let authRequest = request;
+    if (request.method === "POST" && new URL(request.url).pathname.endsWith("/organization/create")) {
+      const body: unknown = await request.clone().json().catch(() => null);
+      if (typeof body === "object" && body !== null && "name" in body && typeof body.name === "string") {
+        const headers = new Headers(request.headers);
+        headers.delete("content-length");
+        authRequest = new Request(request, {
+          body: JSON.stringify({ ...body, slug: generateResourceSlug(body.name, "organization") }),
+          headers,
+        });
+      }
+    }
+    const response = await auth.handler(authRequest);
 
     if (response.ok || !response.headers.get("content-type")?.includes("application/json")) {
       return response;
