@@ -7,7 +7,7 @@ import { Button } from "@relayrtc/ui/components/button"
 import { Input } from "@relayrtc/ui/components/input"
 import { Label } from "@relayrtc/ui/components/label"
 import { updateProjectInputSchema } from "@relayrtc/validation"
-import { CircleCheck, LoaderCircle } from "lucide-react"
+import { CircleCheck, Copy, LoaderCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, type FormEvent } from "react"
 
@@ -20,9 +20,8 @@ export function ProjectSettingsForm({
   const [error, setError] = useState<ProjectError | null>(null)
   const [name, setName] = useState(project.name)
   const [pending, setPending] = useState(false)
-  const [slug, setSlug] = useState(project.slug)
   const [success, setSuccess] = useState(false)
-  const unchanged = name === project.name && slug === project.slug
+  const unchanged = name === project.name
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -31,7 +30,6 @@ export function ProjectSettingsForm({
     const validation = updateProjectInputSchema.safeParse({
       name,
       projectId: project.id,
-      slug,
     })
 
     if (!validation.success) {
@@ -49,7 +47,6 @@ export function ProjectSettingsForm({
     }
 
     setName(result.data.name)
-    setSlug(result.data.slug)
     setSuccess(true)
     setPending(false)
     router.refresh()
@@ -64,7 +61,7 @@ export function ProjectSettingsForm({
           Project settings updated
         </div>
       ) : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4">
         <div className="space-y-2">
           <Label htmlFor="project-settings-name">Project name</Label>
           <Input
@@ -75,19 +72,14 @@ export function ProjectSettingsForm({
             required
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="project-settings-slug">Slug</Label>
-          <Input
-            id="project-settings-slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value.toLowerCase())}
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-            maxLength={80}
-            required
-          />
-        </div>
       </div>
-      <Button type="submit" disabled={pending || unchanged}>
+      <div className="space-y-2 text-sm">
+        <p>Project ID</p>
+        <div className="flex items-center gap-2"><code className="break-all">{project.id}</code><Button type="button" variant="ghost" aria-label="Copy project ID" onClick={() => void navigator.clipboard.writeText(project.id)}><Copy className="size-4" /></Button></div>
+        <p>Slug</p>
+        <div className="flex items-center gap-2"><code className="break-all">{project.slug}</code><Button type="button" variant="ghost" aria-label="Copy project slug" onClick={() => void navigator.clipboard.writeText(project.slug)}><Copy className="size-4" /></Button></div>
+      </div>
+      <Button type="submit" className="w-full" disabled={pending || unchanged}>
         {pending ? <LoaderCircle className="animate-spin" /> : null}
         Save project
       </Button>
