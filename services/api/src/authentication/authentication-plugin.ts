@@ -20,7 +20,7 @@ const bearerToken = (authorization: string | undefined): string | null => {
 const singleHeader = (value: string | string[] | undefined): string | null =>
   typeof value === "string" ? value : null;
 
-const assertClaimedScope = (request: FastifyRequest, principal: ApiKeyPrincipal): void => {
+export const assertClaimedScope = (request: FastifyRequest, principal: ApiKeyPrincipal): void => {
   const claimedProjectId = singleHeader(request.headers["x-relayrtc-project-id"]);
   const claimedEnvironmentId = singleHeader(request.headers["x-relayrtc-environment-id"]);
 
