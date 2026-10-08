@@ -339,6 +339,12 @@ export const authenticateApiKey = async (
       return null
     }
 
+    const [project] = await transaction
+      .select({ status: schema.project.status })
+      .from(schema.project)
+      .where(eq(schema.project.id, apiKey.projectId))
+    if (project?.status !== "active") return null
+
     const [used] = await transaction
       .update(schema.apiKey)
       .set({ lastUsedAt: now })

@@ -40,6 +40,7 @@ describe("participant token service", () => {
     };
     const ids = ["participant-id", "token-id"];
     const service = createParticipantTokenService({
+      isProjectActive: () => Promise.resolve(true),
       clock: () => new Date("2026-10-02T12:00:00.000Z"),
       createId: () => ids.shift() ?? "missing-id",
       roomRepository: repository(room()),
@@ -69,6 +70,7 @@ describe("participant token service", () => {
 
   it("does not issue tokens for rooms outside the key scope", async () => {
     const service = createParticipantTokenService({
+      isProjectActive: () => Promise.resolve(true),
       roomRepository: repository(null),
       signer: { sign: vi.fn<ParticipantTokenSigner["sign"]>() },
     });
@@ -87,6 +89,7 @@ describe("participant token service", () => {
     "does not issue tokens for %s rooms",
     async (status) => {
       const service = createParticipantTokenService({
+        isProjectActive: () => Promise.resolve(true),
         roomRepository: repository(room({ status })),
         signer: { sign: vi.fn<ParticipantTokenSigner["sign"]>() },
       });
@@ -101,4 +104,24 @@ describe("participant token service", () => {
       ).rejects.toMatchObject({ code: "ROOM_NOT_JOINABLE", statusCode: 409 });
     },
   );
+});
+
+it("rechecks project admission before signing even after API key authentication", async () => {
+  const sign = vi.fn<ParticipantTokenSigner["sign"]>();
+  const isProjectActive = vi.fn<(scope: RoomScope) => Promise<boolean>>().mockResolvedValue(false);
+  const service = createParticipantTokenService({
+    isProjectActive,
+    roomRepository: repository(room()),
+    signer: { sign },
+  });
+  await expect(
+    service.create(scope, "room_123", {
+      metadata: {},
+      participantName: "Ada",
+      permissions: ["room:join"],
+      ttlSeconds: 600,
+    }),
+  ).rejects.toMatchObject({ code: "PROJECT_NOT_ACTIVE", statusCode: 409 });
+  expect(isProjectActive).toHaveBeenCalledWith(scope);
+  expect(sign).not.toHaveBeenCalled();
 });

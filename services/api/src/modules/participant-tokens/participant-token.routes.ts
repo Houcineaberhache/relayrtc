@@ -1,4 +1,5 @@
-import type { RelayKitDatabase } from "@relayrtc/database";
+import { schema, type RelayKitDatabase } from "@relayrtc/database";
+import { eq } from "drizzle-orm";
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 
 import { requireApiKeyScope } from "../../authentication/authentication-plugin.js";
@@ -33,6 +34,13 @@ export const participantTokenRoutes: FastifyPluginCallback<ParticipantTokenRoute
   done,
 ) => {
   const service = createParticipantTokenService({
+    isProjectActive: async ({ projectId }) => {
+      const [project] = await options.database
+        .select({ status: schema.project.status })
+        .from(schema.project)
+        .where(eq(schema.project.id, projectId));
+      return project?.status === "active";
+    },
     roomRepository: createRoomRepository(options.database),
     signer: options.signer,
   });

@@ -15,6 +15,7 @@ interface ParticipantTokenResponse {
 interface ParticipantTokenServiceOptions {
   clock?: () => Date;
   createId?: () => string;
+  isProjectActive: (scope: RoomScope) => Promise<boolean>;
   roomRepository: RoomRepository;
   signer: ParticipantTokenSigner;
 }
@@ -29,6 +30,10 @@ export const createParticipantTokenService = (options: ParticipantTokenServiceOp
     if (!room) throw new ApiError(404, "ROOM_NOT_FOUND", "The room does not exist");
     if (room.status === "ending" || room.status === "ended" || room.status === "failed") {
       throw new ApiError(409, "ROOM_NOT_JOINABLE", "The room is not accepting participants");
+    }
+
+    if (!(await options.isProjectActive(scope))) {
+      throw new ApiError(409, "PROJECT_NOT_ACTIVE", "The project is not accepting participants");
     }
 
     const createId = options.createId ?? (() => randomUUID().replaceAll("-", ""));
