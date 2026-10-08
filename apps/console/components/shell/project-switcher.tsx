@@ -14,7 +14,6 @@ import { Label } from '@/components/ui/label'
 import type { ProjectError } from '@/lib/projects/project-errors'
 import type { ConsoleProject } from '@/lib/console-types'
 import { routes } from '@/lib/routes'
-import { projectSlugFromName } from '@relayrtc/validation'
 
 export function ProjectSwitcher({ orgId, projects, currentProjectId, canManage, onNavigate }: {
   orgId: string
@@ -29,14 +28,13 @@ export function ProjectSwitcher({ orgId, projects, currentProjectId, canManage, 
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<ProjectError | null>(null)
   const current = projects.find((project) => project.id === currentProjectId)
-  const slug = projectSlugFromName(name)
 
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault()
-    if (!slug) return
+    if (!name.trim()) return
     setError(null)
     setPending(true)
-    const result = await createProjectAction({ organizationId: orgId, name, slug })
+    const result = await createProjectAction({ organizationId: orgId, name })
     if (result.error || !result.data) {
       setError(result.error)
       setPending(false)
@@ -88,11 +86,10 @@ export function ProjectSwitcher({ orgId, projects, currentProjectId, canManage, 
             <div className="grid gap-2">
               <Label htmlFor="new-project-name">Project name</Label>
               <Input id="new-project-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="My realtime app" autoComplete="off" className="h-10 rounded-xl" maxLength={120} required />
-              {slug ? <p className="font-mono text-xs text-muted-foreground">{slug}</p> : null}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={!slug || pending}>{pending ? <LoaderCircle className="animate-spin" /> : null}Create project</Button>
+              <Button type="submit" disabled={!name.trim() || pending}>{pending ? <LoaderCircle className="animate-spin" /> : null}Create project</Button>
             </DialogFooter>
           </form>
         </DialogContent>
