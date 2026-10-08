@@ -48,7 +48,11 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     ...(options.engine ? { engine: options.engine } : {}),
   });
   if (options.engine) {
-    void app.register(mediaRoutes, { engine: options.engine, prefix: "/internal/v1" });
+    void app.register(mediaRoutes, {
+      engine: options.engine,
+      internalSecret: options.config.internalSecret,
+      prefix: "/internal/v1",
+    });
   }
 
   return app;
