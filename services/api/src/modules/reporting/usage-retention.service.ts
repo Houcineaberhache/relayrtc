@@ -18,31 +18,37 @@ export async function expireUsageHistory(
   readUsageRetentionDays({ USAGE_RETENTION_DAYS: String(retentionDays) });
   if (!Number.isFinite(now.getTime())) throw new Error("A valid retention time is required");
   const cutoff = new Date(now.getTime() - retentionDays * 86400_000).toISOString();
+  const sourceCutoff = new Date(cutoff);
+  sourceCutoff.setUTCMinutes(0, 0, 0);
+  const sourceBoundary = sourceCutoff.toISOString();
   return database.transaction(async (transaction) => {
     const [lock] = await transaction.execute(
       sql`select pg_try_advisory_xact_lock(hashtextextended('relayrtc:usage-retention', 0)) as acquired`,
     );
     if (lock?.acquired !== true) return { status: "busy" as const, cutoff };
     await transaction.execute(
-      sql`delete from usage_event where occurred_at < ${cutoff}::timestamptz`,
+      sql`delete from usage_aggregation_dirty where hour_started_at + interval '1 hour' < ${cutoff}::timestamptz`,
     );
     await transaction.execute(
-      sql`delete from media_usage_sample where occurred_at < ${cutoff}::timestamptz`,
+      sql`delete from usage_event where occurred_at < ${sourceBoundary}::timestamptz`,
     );
     await transaction.execute(
-      sql`delete from usage_lifecycle_event where occurred_at < ${cutoff}::timestamptz`,
+      sql`delete from media_usage_sample where occurred_at < ${sourceBoundary}::timestamptz`,
     );
     await transaction.execute(
-      sql`delete from usage_aggregate where window_ended_at < ${cutoff}::timestamptz`,
+      sql`delete from usage_lifecycle_event where occurred_at < ${sourceBoundary}::timestamptz`,
     );
     await transaction.execute(
-      sql`delete from usage_history_interval where ended_at < ${cutoff}::timestamptz`,
+      sql`delete from usage_aggregate where (date_trunc('month', window_started_at at time zone 'UTC') + interval '1 month') at time zone 'UTC' < ${cutoff}::timestamptz`,
+    );
+    await transaction.execute(
+      sql`delete from usage_history_interval where ended_at < ${sourceBoundary}::timestamptz`,
     );
     await transaction.execute(sql`
       with expired as (
         select s.id from usage_history_session s left join usage_history_room r on r.id = s.room_id
         where least(s.left_at, r.ended_at, s.deleted_at,
-          case when s.connection_state in ('disconnected', 'failed') then s.disconnected_at end) < ${cutoff}::timestamptz
+          case when s.connection_state in ('disconnected', 'failed') then s.disconnected_at end) < ${sourceBoundary}::timestamptz
       ), removed_intervals as (
         delete from usage_history_interval where session_id in (select id from expired) returning id
       )
@@ -64,6 +70,11 @@ export async function expireUsageHistory(
       and not exists (select 1 from usage_history_project p where p.organization_id = o.id)
       and not exists (select 1 from usage_event e where e.organization_id = o.id)
       and not exists (select 1 from usage_aggregate a where a.organization_id = o.id)`);
+    await transaction.execute(
+      sql`delete from usage_aggregation_dirty d where not exists (select 1 from usage_history_organization o where o.id = d.organization_id)`,
+    );
+    await transaction.execute(sql`delete from usage_aggregation_checkpoint c where not exists (select 1 from usage_history_organization o where o.id = c.organization_id)
+      and not exists (select 1 from usage_aggregation_dirty d where d.organization_id = c.organization_id)`);
     return { status: "expired" as const, cutoff };
   });
 }
