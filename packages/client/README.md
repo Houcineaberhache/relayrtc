@@ -1,5 +1,30 @@
 # @relayrtc/client
 
+## Join and leave a room
+
+```ts
+import { RelayClient, RoomError } from "@relayrtc/client";
+
+const relay = new RelayClient({
+  signalingUrl: "wss://rtc.example.com/v1/connect",
+  requestTimeoutMs: 10_000,
+});
+
+relay.on("connectionStateChanged", (state) => renderConnectionState(state));
+relay.on("error", (error) => showError(error.code));
+
+const controller = new AbortController();
+try {
+  const token = await getParticipantTokenFromYourServer();
+  const room = await relay.join(token, { signal: controller.signal });
+  console.log(room.id, room.localParticipant, room.session);
+  await room.leave();
+} catch (error) {
+  if (error instanceof RoomError) showError(error.code);
+  else throw error;
+}
+```
+
 ## Usage Media
 
 ```ts
