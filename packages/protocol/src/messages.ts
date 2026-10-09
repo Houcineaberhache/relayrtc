@@ -50,6 +50,8 @@ import type { ConnectionDegradedEvent, ConnectionRecoveredEvent } from "./qualit
 import { connectionDegradedEventSchema, connectionRecoveredEventSchema } from "./quality.js";
 import type {
   RtcCapabilitiesGetRequest,
+  RtcSubscriptionResumeRequest,
+  RtcSubscriptionResumedResponse,
   RtcCapabilitiesResponse,
   RtcIceRestartedResponse,
   RtcIceRestartRequest,
@@ -74,6 +76,8 @@ import {
   rtcTrackPublishedResponseSchema,
   rtcTrackPublishRequestSchema,
   rtcTrackSubscribedResponseSchema,
+  rtcSubscriptionResumeRequestSchema,
+  rtcSubscriptionResumedResponseSchema,
   rtcTrackSubscribeRequestSchema,
   rtcTransportConnectedResponseSchema,
   rtcTransportConnectRequestSchema,
@@ -153,6 +157,7 @@ export type ProtocolRequestMessage =
   | ParticipantLeaveRequest
   | ParticipantMetadataUpdateRequest
   | RtcCapabilitiesGetRequest
+  | RtcSubscriptionResumeRequest
   | RtcTransportCreateRequest
   | RtcTransportConnectRequest
   | RtcIceRestartRequest
@@ -175,6 +180,7 @@ export type ProtocolResponseMessage =
   | RtcTrackPublishedResponse
   | RtcTrackControlledResponse
   | RtcTrackSubscribedResponse
+  | RtcSubscriptionResumedResponse
   | SessionResumeAcceptedResponse;
 
 export type ProtocolEventMessage =
@@ -239,6 +245,8 @@ export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminated
   rtcTrackControlledResponseSchema,
   rtcTrackSubscribeRequestSchema,
   rtcTrackSubscribedResponseSchema,
+  rtcSubscriptionResumeRequestSchema,
+  rtcSubscriptionResumedResponseSchema,
   sessionResumeRequestSchema,
   sessionResumeAcceptedResponseSchema,
   roomEndedEventSchema,
