@@ -25,7 +25,14 @@ func (store *PostgresStore) ReconciliationRooms(ctx context.Context, nodeID stri
  WHERE m.state->>'MediaNodeID' = $1 AND (
  ((r.status NOT IN ('created', 'active') OR coalesce((m.state->>'Closing')::boolean, false)) AND coalesce(m.state->>'Generation', '') <> '')
  OR coalesce((m.state->>'Allocating')::boolean, false)
- OR EXISTS (SELECT 1 FROM jsonb_each(m.state->'Sessions') s WHERE (s.value->>'Pending')::boolean))
+ OR EXISTS (SELECT 1 FROM jsonb_object_keys(m.state->'Sessions') k(id)
+ LEFT JOIN participant_session ps ON ps.id = k.id LEFT JOIN participant p ON p.id = ps.participant_id
+ WHERE ps.id IS NULL OR ps.connection_state = 'disconnected' OR p.left_at IS NOT NULL)
+ OR EXISTS (SELECT 1 FROM jsonb_each(m.state->'Sessions') s WHERE s.value->'Tracks' <> '{}'::jsonb)
+ OR EXISTS (SELECT 1 FROM jsonb_each(m.state->'Sessions') s WHERE (s.value->>'Pending')::boolean
+ OR EXISTS (SELECT 1 FROM jsonb_each(s.value->'Subscriptions') c
+ WHERE NOT coalesce((c.value->>'Resumed')::boolean, false)
+ AND coalesce((c.value->>'CreatedAt')::timestamptz, '-infinity'::timestamptz) < now() - interval '1 minute')))
  ORDER BY m.updated_at LIMIT 50`, nodeID)
 	if err != nil {
 		return nil, err
@@ -46,6 +53,26 @@ func (room *postgresRoom) Ended(ctx context.Context) (bool, error) {
 	var ended bool
 	err := room.connection.QueryRow(ctx, `SELECT status NOT IN ('created', 'active') OR ended_at IS NOT NULL FROM room WHERE id = $1`, room.roomID).Scan(&ended)
 	return ended, err
+}
+
+func (room *postgresRoom) InactiveSessions(ctx context.Context) ([]string, error) {
+	rows, err := room.connection.Query(ctx, `SELECT k.id FROM rtc_runtime m,
+ LATERAL jsonb_object_keys(m.state->'Sessions') k(id)
+ LEFT JOIN participant_session s ON s.id = k.id LEFT JOIN participant p ON p.id = s.participant_id
+ WHERE m.room_id = $1 AND (s.id IS NULL OR s.connection_state = 'disconnected' OR p.left_at IS NOT NULL)`, room.roomID)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, ErrUnavailable
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 type postgresRoom struct {
@@ -127,4 +154,25 @@ func (room *postgresRoom) Assign(ctx context.Context, sessionID, nodeID string) 
 		return ErrUnavailable
 	}
 	return nil
+}
+
+func (store *PostgresStore) ReadEvents(ctx context.Context, roomID string, after uint64) ([]RuntimeEvent, uint64, error) {
+	var sequence uint64
+	var encoded []byte
+	err := store.pool.QueryRow(ctx, `SELECT coalesce((state->>'Sequence')::bigint, 0),
+ coalesce((SELECT jsonb_agg(e.value ORDER BY (e.value->>'Sequence')::bigint)
+ FROM jsonb_array_elements(coalesce(state->'Events', '[]'::jsonb)) e
+ WHERE (e.value->>'Sequence')::bigint > $2), '[]'::jsonb)
+ FROM rtc_runtime WHERE room_id = $1`, roomID, after).Scan(&sequence, &encoded)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, ErrUnavailable
+	}
+	var events []RuntimeEvent
+	if json.Unmarshal(encoded, &events) != nil {
+		return nil, 0, ErrUnavailable
+	}
+	return events, sequence, nil
 }
