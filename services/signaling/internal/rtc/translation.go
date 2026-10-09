@@ -149,6 +149,17 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 	}
 	if request.Type == "rtc.subscription.resume" || request.Type == "rtc.subscription.close" {
 		subscription := resources.Subscription
+		if subscription == nil && request.Type == "rtc.subscription.close" {
+			subscriptionID := valueString(payload, "subscriptionId")
+			if !identifier(subscriptionID, 128) {
+				return Command{}, ErrInvalidRequest
+			}
+			// Closing an already retired subscription is safe within this session.
+			command.ResponseType = "rtc.subscription.close.accepted"
+			command.Request.Operation = "subscription.already-removed"
+			command.Metadata["subscriptionId"] = subscriptionID
+			return command, nil
+		}
 		if subscription == nil || subscription.ID != valueString(payload, "subscriptionId") || subscription.RoomID != scope.RoomID || subscription.SessionID != scope.SessionID || subscription.MediaNodeID != scope.MediaNodeID || subscription.Generation != scope.Generation || !identifier(subscription.MediaID, 256) {
 			return Command{}, ErrForbidden
 		}
