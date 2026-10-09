@@ -26,6 +26,7 @@ export const participant = pgTable(
     role: text("role").default("participant").notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
     leftAt: timestamp("left_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
   },
   (table) => [
     index("participant_room_joined_at_idx").on(table.roomId, table.joinedAt),
@@ -52,6 +53,7 @@ export const participantSession = pgTable(
       .notNull()
       .references(() => participant.id, { onDelete: "cascade" }),
     signalingNodeId: text("signaling_node_id").notNull(),
+    signalingInstanceId: text("signaling_instance_id"),
     mediaNodeId: text("media_node_id"),
     connectionState: text("connection_state").default("connected").notNull(),
     transportType: text("transport_type").default("tcp").notNull(),

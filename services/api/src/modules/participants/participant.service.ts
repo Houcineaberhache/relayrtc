@@ -8,6 +8,7 @@ import type {
   ParticipantRepository,
 } from "./participant.repository.js";
 import type { ListParticipantsQuery } from "./participant.schema.js";
+import type { RuntimeOperationView } from "@relayrtc/auth";
 
 interface ParticipantResponse {
   externalId: string | null;
@@ -32,6 +33,7 @@ interface ParticipantServiceOptions {
   clock?: () => Date;
   participantRepository: ParticipantRepository;
   roomRepository: RoomRepository;
+  removeRuntime?: (participant: ParticipantRecord) => Promise<RuntimeOperationView>;
 }
 
 const toResponse = (participant: ParticipantRecord): ParticipantResponse => ({
@@ -108,14 +110,17 @@ export const createParticipantService = (options: ParticipantServiceOptions) => 
       return {
         nodes: nodes.map(toResponse),
         pageInfo: {
-          endCursor:
-            hasNextPage && lastParticipant ? encodeCursor(lastParticipant) : null,
+          endCursor: hasNextPage && lastParticipant ? encodeCursor(lastParticipant) : null,
           hasNextPage,
         },
       };
     },
 
-    async remove(scope: RoomScope, roomId: string, participantId: string): Promise<void> {
+    async remove(
+      scope: RoomScope,
+      roomId: string,
+      participantId: string,
+    ): Promise<RuntimeOperationView | undefined> {
       await requireRoom(scope, roomId);
       const removed = await options.participantRepository.remove(
         roomId,
@@ -125,6 +130,7 @@ export const createParticipantService = (options: ParticipantServiceOptions) => 
       if (!removed) {
         throw new ApiError(404, "PARTICIPANT_NOT_FOUND", "The participant does not exist");
       }
+      return options.removeRuntime?.(removed);
     },
   };
 };

@@ -1,7 +1,7 @@
 import type { RelayKitDatabase } from "@relayrtc/database";
 import { schema } from "@relayrtc/database";
 import type { Metadata } from "@relayrtc/types";
-import { and, desc, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 export interface ParticipantRecord {
   externalId: string | null;
@@ -39,16 +39,12 @@ const toRecord = (participant: DatabaseParticipant): ParticipantRecord => ({
   metadata: participant.metadata as Metadata,
 });
 
-export const createParticipantRepository = (
-  database: RelayKitDatabase,
-): ParticipantRepository => {
+export const createParticipantRepository = (database: RelayKitDatabase): ParticipantRepository => {
   const find = async (roomId: string, participantId: string): Promise<ParticipantRecord | null> => {
     const [found] = await database
       .select()
       .from(schema.participant)
-      .where(
-        and(eq(schema.participant.id, participantId), eq(schema.participant.roomId, roomId)),
-      )
+      .where(and(eq(schema.participant.id, participantId), eq(schema.participant.roomId, roomId)))
       .limit(1);
 
     return found ? toRecord(found) : null;
@@ -85,12 +81,15 @@ export const createParticipantRepository = (
     async remove(roomId, participantId, leftAt) {
       const [removed] = await database
         .update(schema.participant)
-        .set({ leftAt })
+        .set({
+          leftAt: sql`coalesce(${schema.participant.leftAt}, ${leftAt.toISOString()}::timestamptz)`,
+          removedAt: leftAt,
+        })
         .where(
           and(
             eq(schema.participant.id, participantId),
             eq(schema.participant.roomId, roomId),
-            isNull(schema.participant.leftAt),
+            isNull(schema.participant.removedAt),
           ),
         )
         .returning();

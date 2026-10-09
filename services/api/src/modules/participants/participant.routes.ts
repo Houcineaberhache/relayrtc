@@ -1,4 +1,9 @@
 import type { RelayKitDatabase } from "@relayrtc/database";
+import {
+  getRuntimeOperation,
+  processRuntimeOperation,
+  type RoomTerminationConfig,
+} from "@relayrtc/auth";
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 
 import { requireApiKeyScope } from "../../authentication/authentication-plugin.js";
@@ -12,6 +17,7 @@ import { createParticipantService } from "./participant.service.js";
 
 interface ParticipantRoutesOptions {
   database: RelayKitDatabase;
+  runtimeConfig: RoomTerminationConfig;
 }
 
 const requestScope = (request: FastifyRequest) => {
@@ -34,6 +40,15 @@ export const participantRoutes: FastifyPluginCallback<ParticipantRoutesOptions> 
   const service = createParticipantService({
     participantRepository: createParticipantRepository(options.database),
     roomRepository: createRoomRepository(options.database),
+    async removeRuntime(participant) {
+      const operation = await processRuntimeOperation(
+        options.database,
+        options.runtimeConfig,
+        `participant.remove:${participant.id}`,
+      );
+      if (!operation) throw new Error("Participant removal was not persisted");
+      return operation;
+    },
   });
 
   app.get(
@@ -60,8 +75,35 @@ export const participantRoutes: FastifyPluginCallback<ParticipantRoutesOptions> 
     { preHandler: requireApiKeyScope("participants:remove") },
     async (request, reply) => {
       const params = validate(participantParamsSchema, request.params);
-      await service.remove(requestScope(request), params.roomId, params.participantId);
+      const operation = await service.remove(
+        requestScope(request),
+        params.roomId,
+        params.participantId,
+      );
+      if (operation && operation.status !== "completed") return reply.status(202).send(operation);
       return reply.status(204).send();
+    },
+  );
+
+  app.get(
+    "/rooms/:roomId/participants/:participantId/runtime-operation",
+    {
+      preHandler: requireApiKeyScope("participants:read"),
+    },
+    async (request) => {
+      const params = validate(participantParamsSchema, request.params);
+      await service.get(requestScope(request), params.roomId, params.participantId);
+      const operation = await getRuntimeOperation(
+        options.database,
+        `participant.remove:${params.participantId}`,
+      );
+      if (!operation)
+        throw new ApiError(
+          404,
+          "OPERATION_NOT_FOUND",
+          "No removal operation exists for this participant",
+        );
+      return operation;
     },
   );
 
