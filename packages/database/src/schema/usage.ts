@@ -25,6 +25,7 @@ export const usageEvent = pgTable(
     roomId: text("room_id"),
     region: text("region"),
     metric: text("metric").notNull(),
+    source: text("source").notNull().default("legacy"),
     value: doublePrecision("value").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
   },

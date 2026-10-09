@@ -176,6 +176,13 @@
       "when": 1791583200011,
       "tag": "0024_incremental_usage_aggregation",
       "breakpoints": false
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791583200012,
+      "tag": "0025_turn_allocation_accounting",
+      "breakpoints": false
     }
   ]
 }
