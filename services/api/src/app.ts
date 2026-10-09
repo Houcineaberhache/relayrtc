@@ -15,6 +15,7 @@ import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
 import { registerRuntimeOperationWorker } from "./runtime/runtime-operation-worker.js";
 import { registerUsageRetention } from "./modules/reporting/usage-retention-worker.js";
+import { registerUsageAggregation } from "./modules/reporting/usage-aggregation-worker.js";
 
 interface BuildAppOptions {
   closeDatabase?: () => Promise<void>;
@@ -91,8 +92,13 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     options.database,
     runtimeConfig,
   );
+  const stopUsageAggregation =
+    options.usageRetentionDays === undefined
+      ? undefined
+      : registerUsageAggregation(app, options.database, options.usageRetentionDays);
   app.addHook("onClose", async () => {
     await stopRuntimeOperations();
+    await stopUsageAggregation?.();
     await stopUsageRetention?.();
     await options.closeDatabase?.();
   });
