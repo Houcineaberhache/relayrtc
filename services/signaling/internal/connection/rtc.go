@@ -39,6 +39,11 @@ type RTCSignalService interface {
 	Handle(context.Context, auth.Claims, RTCSignalRequest) (RTCSignalResponse, error)
 }
 
+type RTCSessionLifecycle interface {
+	RemoveSession(context.Context, string, string, string) error
+	CloseRoom(context.Context, string) error
+}
+
 type rtcSessionScope struct {
 	RoomID    string `json:"roomId"`
 	SessionID string `json:"sessionId"`

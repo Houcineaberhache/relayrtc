@@ -17,6 +17,7 @@ import (
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/geolocation"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/rtc"
 	"github.com/relayrtc/relayrtc/services/signaling/internal/session"
 )
 
@@ -180,13 +181,17 @@ func (handler *Handler) EndRoom(ctx context.Context, room session.Room) error {
 	if err := handler.sessionStore.EndRoom(ctx, room.ID, *room.EndedAt); err != nil {
 		return err
 	}
+	var cleanupError error
+	if runtime, ok := handler.rtcService.(RTCSessionLifecycle); ok {
+		cleanupError = runtime.CloseRoom(ctx, room.ID)
+	}
 	clients := handler.registry.roomClients(room.ID)
 	message := event("room.ended", map[string]any{"room": room})
 	for _, client := range clients {
 		_ = client.write(message)
 		client.close(closeRoomEnded, "room ended")
 	}
-	return nil
+	return cleanupError
 }
 
 func (handler *Handler) Wait(ctx context.Context) error {
@@ -471,13 +476,11 @@ func (handler *Handler) handleRTCMessage(client *client, claims auth.Claims, joi
 	})
 	cancel()
 	if err != nil {
-		code := "internal_error"
-		message := "The RTC request could not be completed"
+		failure := rtc.FailureFor(err)
 		if errors.Is(err, ErrRTCNotAvailable) {
-			code = "temporarily_unavailable"
-			message = "The RTC media service is not available"
+			failure = rtc.FailureFor(rtc.ErrUnavailable)
 		}
-		client.protocolError(request.ID, code, message)
+		client.protocolError(request.ID, failure.Code, failure.Message)
 		return
 	}
 	if response.Type != rtcResponseTypes[request.Type] || response.Payload == nil {
@@ -535,8 +538,8 @@ func (handler *Handler) scheduleRecovery(roomID string, joined *joinedSession) {
 		defer cancel()
 		leftAt, err := handler.sessionStore.Expire(ctx, roomID, joined.participant.ID, joined.session.ID)
 		if err == nil {
-			if handler.participantMedia != nil {
-				if cleanupErr := handler.participantMedia.RemoveParticipant(ctx, roomID, joined.participant.ID); cleanupErr != nil {
+			if handler.participantMedia != nil || handler.rtcService != nil {
+				if cleanupErr := handler.removeSessionMedia(ctx, roomID, joined.participant.ID, joined.session.ID); cleanupErr != nil {
 					slog.Warn("participant media cleanup failed", "error", cleanupErr, "participantId", joined.participant.ID, "roomId", roomID)
 				}
 			}
@@ -558,11 +561,21 @@ func (handler *Handler) cancelRecovery(sessionID string) {
 	}
 }
 
+func (handler *Handler) removeSessionMedia(ctx context.Context, roomID, participantID, sessionID string) error {
+	if runtime, ok := handler.rtcService.(RTCSessionLifecycle); ok {
+		return runtime.RemoveSession(ctx, roomID, participantID, sessionID)
+	}
+	if handler.participantMedia != nil {
+		return handler.participantMedia.RemoveParticipant(ctx, roomID, participantID)
+	}
+	return nil
+}
+
 func (handler *Handler) finalizeSession(ctx context.Context, roomID string, joined *joinedSession) {
 	leftAt, err := handler.sessionStore.Leave(ctx, roomID, joined.participant.ID, joined.session.ID)
 	if err == nil {
-		if handler.participantMedia != nil {
-			if cleanupErr := handler.participantMedia.RemoveParticipant(ctx, roomID, joined.participant.ID); cleanupErr != nil {
+		if handler.participantMedia != nil || handler.rtcService != nil {
+			if cleanupErr := handler.removeSessionMedia(ctx, roomID, joined.participant.ID, joined.session.ID); cleanupErr != nil {
 				slog.Warn("participant media cleanup failed", "error", cleanupErr, "participantId", joined.participant.ID, "roomId", roomID)
 			}
 		}
