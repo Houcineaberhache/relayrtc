@@ -78,13 +78,16 @@ export default async function OrganizationUsagePage({
               {data.projects.map((project) => (
                 <tr key={project.projectId} className="border-b last:border-0">
                   <td className="py-3">
-                    <Link
+                    {projects.some((item) => item.id === project.projectId && item.status === "active") ? <Link
                       className="transition-colors hover:text-primary"
                       href={routes.projectPage(orgId, project.projectId, "usage")}
                     >
                       {projects.find((item) => item.id === project.projectId)?.name ??
                         project.projectId}
-                    </Link>
+                    </Link> : <div className="flex flex-col gap-0.5">
+                      <span>{projects.find((item) => item.id === project.projectId)?.name ?? "Deleted project"}</span>
+                      <span className="text-xs text-muted-foreground">{project.projectId}</span>
+                    </div>}
                   </td>
                   <td className="py-3 pl-4 text-right tabular-nums">
                     {new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(
