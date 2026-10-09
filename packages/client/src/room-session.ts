@@ -1,4 +1,5 @@
 import type { ParticipantJoinAcceptedPayload, ServerProtocolMessage } from "@relayrtc/protocol";
+import type { Participant } from "@relayrtc/types";
 import { RoomError } from "./room-errors.js";
 import { RoomEventEmitter } from "./room-events.js";
 import { RoomRtc } from "./room-rtc.js";
@@ -7,17 +8,28 @@ import { RemoteRoomRegistry } from "./room-participants.js";
 import type { RoomLocalParticipant } from "./room-media.js";
 import type { JoinOptions, RelayClientOptions, Room, RoomConnectionState } from "./room.js";
 import { SignalingClient } from "./signaling-client.js";
+import { RoomMessaging } from "./room-messaging.js";
+import { LocalParticipantView } from "./room-local-participant.js";
+import type { RoomPresenceSnapshot } from "./room-messaging-types.js";
 
 export class RoomSession extends RoomEventEmitter implements Room {
   #state: RoomConnectionState = "connecting";
   #joined: ParticipantJoinAcceptedPayload | undefined;
   #ended = false;
+  #exiting = false;
+  #presence: RoomPresenceSnapshot = Object.freeze({
+    localParticipant: null,
+    participants: Object.freeze([]),
+  });
+  #presenceKey = JSON.stringify(this.#presence);
   #leaving: Promise<void> | undefined;
   #stopSetup: ((error: RoomError) => void) | undefined;
   readonly #rtc = new RoomRtc();
   readonly #signaling: SignalingClient;
   readonly #localMedia: LocalRoomMedia;
   readonly #remote: RemoteRoomRegistry;
+  readonly #messaging: RoomMessaging;
+  readonly #localParticipant: RoomLocalParticipant;
 
   constructor(
     readonly options: RelayClientOptions,
@@ -29,12 +41,18 @@ export class RoomSession extends RoomEventEmitter implements Room {
       this.#rtc,
       {
         emit: (event, value) => {
+          if (
+            event === "participantJoined" ||
+            event === "participantLeft" ||
+            event === "participantUpdated"
+          )
+            this.#refreshPresence();
           this.emit(event, value);
           this.clientEvents.emit(event, value);
         },
       },
       () => {
-        if (this.#ended || this.#leaving || this.#state !== "connected")
+        if (this.#ended || this.#exiting || this.#state !== "connected")
           throw new RoomError("NOT_CONNECTED", "Join the room before subscribing to remote media");
       },
       options.autoSubscribe ?? true,
@@ -42,7 +60,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
     this.#localMedia = new LocalRoomMedia(
       this.#rtc,
       () => {
-        if (this.#ended || this.#leaving || this.#state !== "connected")
+        if (this.#ended || this.#exiting || this.#state !== "connected")
           throw new RoomError("NOT_CONNECTED", "Join the room before using local media controls");
       },
       (error) => {
@@ -60,6 +78,32 @@ export class RoomSession extends RoomEventEmitter implements Room {
         this.#fail(error);
       },
     );
+    this.#messaging = new RoomMessaging(
+      this.#signaling,
+      () => {
+        if (this.#ended || this.#exiting || this.#state !== "connected")
+          throw new RoomError(
+            "NOT_CONNECTED",
+            "Join the room before sending messages or updating metadata",
+          );
+        return this.#requireJoined();
+      },
+      {
+        on: (event, listener) => this.on(event, listener),
+        emit: (event, value) => {
+          this.emit(event, value);
+          this.clientEvents.emit(event, value);
+        },
+      },
+      (participant) => {
+        this.#updateLocalParticipant(participant);
+      },
+    );
+    this.#localParticipant = new LocalParticipantView(
+      () => this.#requireJoined().localParticipant,
+      this.#localMedia,
+      (metadata) => this.#messaging.updateMetadata(metadata),
+    );
   }
 
   get connectionState(): RoomConnectionState {
@@ -71,6 +115,15 @@ export class RoomSession extends RoomEventEmitter implements Room {
   get remoteTracks(): Room["remoteTracks"] {
     return this.#remote.tracks;
   }
+  get messages(): Room["messages"] {
+    return this.#messaging.messages;
+  }
+  get events(): Room["events"] {
+    return this.#messaging.customEvents;
+  }
+  get presence(): RoomPresenceSnapshot {
+    return this.#presence;
+  }
   get id(): string {
     return this.info.id;
   }
@@ -78,14 +131,8 @@ export class RoomSession extends RoomEventEmitter implements Room {
     return this.#requireJoined().room;
   }
   get localParticipant(): RoomLocalParticipant {
-    return {
-      ...this.#requireJoined().localParticipant,
-      microphone: this.microphone,
-      camera: this.camera,
-      screen: this.screen,
-      devices: this.devices,
-      permissions: this.permissions,
-    };
+    this.#requireJoined();
+    return this.#localParticipant;
   }
   get microphone(): Room["microphone"] {
     return this.#localMedia.microphone;
@@ -148,6 +195,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
         participantId: joined.localParticipant.id,
         sessionId: joined.session.id,
       });
+      this.#refreshPresence();
       await this.#initializeRtc({
         roomId: joined.room.id,
         sessionId: joined.session.id,
@@ -176,9 +224,12 @@ export class RoomSession extends RoomEventEmitter implements Room {
 
   leave(): Promise<void> {
     if (this.#leaving) return this.#leaving;
-    if (this.#ended) return Promise.resolve();
+    if (this.#ended || this.#exiting) return Promise.resolve();
+    this.#exiting = true;
+    this.#messaging.dispose();
     this.#localMedia.dispose();
     this.#remote.dispose();
+    this.#refreshPresence();
     if (this.#state === "connecting") {
       const error = new RoomError("JOIN_CANCELLED", "Joining the room was cancelled");
       this.#rtc.close();
@@ -250,15 +301,17 @@ export class RoomSession extends RoomEventEmitter implements Room {
   }
 
   #fail(error: RoomError): void {
-    if (this.#ended || this.#leaving) return;
+    if (this.#ended || this.#exiting) return;
     this.#finish("failed", error, true);
   }
 
   #finish(state: RoomConnectionState, error?: RoomError, reportError = false): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#messaging.dispose();
     this.#localMedia.dispose();
     this.#remote.dispose();
+    this.#refreshPresence();
     this.#stopSetup?.(error ?? new RoomError("JOIN_CANCELLED", "Room setup was cancelled"));
     this.#rtc.close();
     this.#signaling.close(error);
@@ -279,7 +332,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   }
 
   #assertOpen(): void {
-    if (this.#ended || this.#leaving)
+    if (this.#ended || this.#exiting)
       throw new RoomError("JOIN_CANCELLED", "Joining the room was cancelled");
   }
 
@@ -288,8 +341,41 @@ export class RoomSession extends RoomEventEmitter implements Room {
     return this.#joined;
   }
 
+  #updateLocalParticipant(participant: Participant): void {
+    const joined = this.#joined;
+    if (!joined || this.#ended || this.#exiting) return;
+    if (participant.id !== joined.localParticipant.id || participant.roomId !== joined.room.id)
+      throw new RoomError(
+        "PROTOCOL_ERROR",
+        "The local participant update belongs to another session",
+      );
+    if (JSON.stringify(joined.localParticipant) === JSON.stringify(participant)) return;
+    this.#joined = { ...joined, localParticipant: participant };
+    this.#refreshPresence();
+    this.emit("localParticipantUpdated", this.#localParticipant);
+    this.clientEvents.emit("localParticipantUpdated", this.#localParticipant);
+  }
+
+  #refreshPresence(): void {
+    const active = !this.#ended && !this.#exiting;
+    const snapshot: RoomPresenceSnapshot = {
+      localParticipant: active ? (this.#joined?.localParticipant ?? null) : null,
+      participants: active ? this.#remote.snapshotParticipants() : [],
+    };
+    const key = JSON.stringify(snapshot);
+    if (key === this.#presenceKey) return;
+    const copy = structuredClone(snapshot);
+    this.#presence = Object.freeze({
+      localParticipant: copy.localParticipant,
+      participants: Object.freeze(copy.participants),
+    });
+    this.#presenceKey = key;
+    this.emit("presenceChanged", this.#presence);
+    this.clientEvents.emit("presenceChanged", this.#presence);
+  }
+
   readonly #onMessage = (message: ServerProtocolMessage): void => {
-    if (this.#ended || this.#leaving) return;
+    if (this.#ended || this.#exiting) return;
     try {
       if (message.type === "room.ended" && message.payload.room.id === this.#joined?.room.id) {
         this.#fail(new RoomError("ROOM_ENDED", "The room has ended"));
@@ -322,8 +408,25 @@ export class RoomSession extends RoomEventEmitter implements Room {
           participantId: payload.session.participantId,
           sessionId: payload.session.id,
         });
+        const local = payload.participants.find(
+          (participant) => participant.id === payload.session.participantId,
+        );
+        if (local?.roomId !== payload.roomId || local.leftAt !== null)
+          throw new RoomError(
+            "PROTOCOL_ERROR",
+            "The resumed presence snapshot is missing the local participant",
+          );
+        this.#updateLocalParticipant(local);
+        this.#refreshPresence();
       }
+      if (
+        message.type === "participant.metadata.updated" &&
+        message.payload.participant.id === this.#joined?.localParticipant.id &&
+        message.payload.participant.roomId === this.#joined.room.id
+      )
+        this.#updateLocalParticipant(message.payload.participant);
       this.#remote.handle(message);
+      if (this.#joined) this.#messaging.handle(message, this.#joined.room.id);
     } catch (error) {
       this.#fail(
         error instanceof RoomError

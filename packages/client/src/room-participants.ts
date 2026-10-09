@@ -112,6 +112,10 @@ export class RemoteRoomRegistry {
     for (const track of this.#tracks.values()) this.#subscribe(track);
   }
 
+  snapshotParticipants(): readonly Participant[] {
+    return [...this.#participants.values()].map((participant) => participant.info);
+  }
+
   handle(message: ServerProtocolMessage): void {
     const scope = this.#scope;
     if (!scope || this.#closed || this.#events.has(message.id)) return;
@@ -138,6 +142,8 @@ export class RemoteRoomRegistry {
       case "participant.metadata.updated": {
         const info = message.payload.participant;
         if (info.roomId !== scope.roomId) return;
+        if (message.type === "participant.metadata.updated" && !this.#participants.has(info.id))
+          return;
         this.#upsertParticipant(info);
         break;
       }
