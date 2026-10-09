@@ -36,6 +36,8 @@ export const createMediaUsageMetricsStore = (
     occurredAt: Date,
   ) => {
     validateUsageSample(roomId, sampleId, metrics, occurredAt);
+    if (metrics.turnIngressBytes !== undefined || metrics.turnEgressBytes !== undefined)
+      throw new Error("Authoritative TURN usage requires trusted coturn allocation observations");
     const values = Object.entries(metrics).sort(([a], [b]) => a.localeCompare(b));
     const payload = Object.fromEntries(values);
     await database.transaction(async (transaction) => {
