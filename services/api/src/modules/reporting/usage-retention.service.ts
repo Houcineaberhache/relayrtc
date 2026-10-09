@@ -30,6 +30,9 @@ export async function expireUsageHistory(
       sql`delete from media_usage_sample where occurred_at < ${cutoff}::timestamptz`,
     );
     await transaction.execute(
+      sql`delete from usage_lifecycle_event where occurred_at < ${cutoff}::timestamptz`,
+    );
+    await transaction.execute(
       sql`delete from usage_aggregate where window_ended_at < ${cutoff}::timestamptz`,
     );
     await transaction.execute(
