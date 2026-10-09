@@ -79,18 +79,19 @@ const projectScope = {
   projectId: projectIdSchema,
   environmentId: environmentIdSchema.nullable(),
 };
+export const usageDataQualitySchema = z
+  .object({
+    sessionHistory: z.enum(["complete", "partial"]),
+    messageHistory: z.enum(["complete", "partial"]),
+  })
+  .strict();
 export const projectUsageResponseSchema = z
   .object({
     scope: z.object(projectScope).strict(),
     window: reportingWindowSchema,
     summary: reportingUsageMetricsSchema,
     buckets: z.array(usageBucketSchema),
-    dataQuality: z
-      .object({
-        sessionHistory: z.enum(["complete", "partial"]),
-        messageHistory: z.enum(["complete", "partial"]),
-      })
-      .strict(),
+    dataQuality: usageDataQualitySchema,
   })
   .strict();
 export const organizationUsageResponseSchema = z
@@ -99,9 +100,16 @@ export const organizationUsageResponseSchema = z
     window: reportingWindowSchema,
     summary: reportingUsageMetricsSchema,
     projects: z.array(
-      z.object({ projectId: projectIdSchema, summary: reportingUsageMetricsSchema }).strict(),
+      z
+        .object({
+          projectId: projectIdSchema,
+          summary: reportingUsageMetricsSchema,
+          dataQuality: usageDataQualitySchema,
+        })
+        .strict(),
     ),
     pagination: z.object({ limit: count, offset: count, total: count }).strict(),
+    dataQuality: usageDataQualitySchema,
   })
   .strict();
 export const organizationQuotaResponseSchema = z
@@ -134,15 +142,27 @@ export const projectAnalyticsResponseSchema = z
       })
       .strict(),
     network,
-    traffic: z.array(z.object({ ...seriesPoint, participants: count, sessions: count }).strict()),
+    dataQuality: usageDataQualitySchema,
+    qualityGranularitySeconds: z.literal(60),
+    traffic: z.array(
+      z
+        .object({
+          ...seriesPoint,
+          participants: count,
+          sessions: count,
+          participantSeconds: quantity,
+        })
+        .strict(),
+    ),
     networkSeries: z.array(z.object({ ...seriesPoint, ...network.shape }).strict()),
     quality: z.array(
       z
         .object({
           ...seriesPoint,
-          roundTripTimeMs: quantity,
-          jitterMs: quantity,
-          packetLossPercent: percentage,
+          roundTripTimeMs: quantity.nullable(),
+          jitterMs: quantity.nullable(),
+          packetLossPercent: percentage.nullable(),
+          sampleCount: count,
         })
         .strict(),
     ),
