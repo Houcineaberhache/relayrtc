@@ -80,6 +80,7 @@ type Handler struct {
 	recoveryTimeout    time.Duration
 	registry           *registry
 	rtcService         RTCSignalService
+	rtcEventsOnce      sync.Once
 	sessionStore       SessionStore
 	locationLookup     LocationLookup
 	shutdown           context.Context
@@ -95,6 +96,9 @@ type joinedSession struct {
 }
 
 func NewHandler(options Options) *Handler {
+	if options.Shutdown == nil {
+		options.Shutdown = context.Background()
+	}
 	allowedOrigins := make(map[string]struct{}, len(options.AllowedOrigins))
 	for _, origin := range options.AllowedOrigins {
 		allowedOrigins[origin] = struct{}{}
@@ -364,10 +368,16 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 			return false, nil
 		}
 		handler.registry.join(claims.RoomID, client)
-		client.response(request.ID, "participant.join.accepted", map[string]any{
+		client.rtcSessionID = result.Session.ID
+		if err := handler.acceptWithTracks(client, claims, result.Session.ID, request.ID, "participant.join.accepted", map[string]any{
 			"room": result.Room, "localParticipant": result.Participant, "session": result.Session,
-			"participants": result.Participants, "tracks": []any{},
-		})
+			"participants": result.Participants,
+		}); err != nil {
+			handler.disconnect(client, next, claims)
+			client.protocolError(request.ID, "temporarily_unavailable", "The room tracks could not be loaded")
+			client.close(websocket.CloseGoingAway, "join could not complete")
+			return true, nil
+		}
 		handler.registry.broadcast(claims.RoomID, client, event("participant.joined", map[string]any{"participant": result.Participant}))
 		return false, next
 	case "session.resume":
@@ -398,10 +408,16 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 		handler.cancelRecovery(result.Session.ID)
 		handler.registry.join(claims.RoomID, client)
 		next := &joinedSession{participant: result.Participant, session: result.Session}
-		client.response(request.ID, "session.resume.accepted", map[string]any{
+		client.rtcSessionID = result.Session.ID
+		if err := handler.acceptWithTracks(client, claims, result.Session.ID, request.ID, "session.resume.accepted", map[string]any{
 			"roomId": claims.RoomID, "session": result.Session,
-			"participants": result.Participants, "tracks": []any{},
-		})
+			"participants": result.Participants,
+		}); err != nil {
+			handler.disconnect(client, next, claims)
+			client.protocolError(request.ID, "temporarily_unavailable", "The room tracks could not be loaded")
+			client.close(websocket.CloseGoingAway, "resume could not complete")
+			return true, nil
+		}
 		handler.registry.broadcast(claims.RoomID, client, event("participant.reconnected", map[string]any{
 			"participantId": claims.ParticipantID, "session": result.Session,
 		}))
@@ -421,6 +437,11 @@ func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawTok
 			client.protocolError(request.ID, "internal_error", "The participant could not leave")
 			return false, nil
 		}
+		cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 5*time.Second)
+		if cleanupErr := handler.removeSessionMedia(cleanupContext, claims.RoomID, claims.ParticipantID, joined.session.ID); cleanupErr != nil {
+			slog.Warn("participant media cleanup failed", "error", cleanupErr, "roomId", claims.RoomID)
+		}
+		cancelCleanup()
 		leavePayload := map[string]any{"roomId": claims.RoomID, "participantId": claims.ParticipantID, "sessionId": joined.session.ID, "leftAt": leftAt}
 		client.response(request.ID, "participant.leave.accepted", leavePayload)
 		handler.registry.broadcast(claims.RoomID, client, event("participant.left", leavePayload))
@@ -640,6 +661,9 @@ type usageSample struct {
 }
 
 type client struct {
+	rtcSessionID string
+	rtcCursor    uint64
+	rtcReady     bool
 	usageMu      sync.Mutex
 	pendingUsage *usageSample
 	connection   *websocket.Conn
@@ -654,6 +678,10 @@ type client struct {
 func (client *client) write(value any) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
+	return client.writeLocked(value)
+}
+
+func (client *client) writeLocked(value any) error {
 	_ = client.connection.SetWriteDeadline(time.Now().Add(client.writeTimeout))
 	err := client.connection.WriteJSON(value)
 	if err == nil {
