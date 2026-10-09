@@ -1,5 +1,6 @@
-import type { Participant, ParticipantSession, Room as RoomInfo } from "@relayrtc/types";
+import type { ParticipantSession, Room as RoomInfo } from "@relayrtc/types";
 import type { RoomError } from "./room-errors.js";
+import type { RoomLocalMedia, RoomLocalParticipant } from "./room-media.js";
 
 export type RoomConnectionState = "connecting" | "connected" | "disconnected" | "failed";
 
@@ -8,10 +9,10 @@ export interface RoomEvents {
   readonly error: RoomError;
 }
 
-export interface Room {
+export interface Room extends RoomLocalMedia {
   readonly id: string;
   readonly info: RoomInfo;
-  readonly localParticipant: Participant;
+  readonly localParticipant: RoomLocalParticipant;
   readonly session: ParticipantSession;
   readonly connectionState: RoomConnectionState;
   on<Event extends keyof RoomEvents>(

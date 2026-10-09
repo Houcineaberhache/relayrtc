@@ -1,4 +1,11 @@
+import type { MediaErrorCode } from "./errors.js";
+
 export type RoomErrorCode =
+  | MediaErrorCode
+  | "MEDIA_OPERATION_PENDING"
+  | "MEDIA_OPERATION_CANCELLED"
+  | "MEDIA_NOT_ENABLED"
+  | "MEDIA_PUBLISH_FAILED"
   | "INVALID_CONFIGURATION"
   | "INVALID_TOKEN"
   | "ALREADY_JOINED"
