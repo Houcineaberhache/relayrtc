@@ -150,9 +150,15 @@ func TranslateResponse(command Command, result map[string]any, state *SessionSta
 			return Response{}, ErrUnavailable
 		}
 		publicID := "subscription_" + newID()
-		state.Subscriptions[publicID] = SubscriptionBinding{ID: publicID, MediaID: id, RoomID: scope.RoomID, SessionID: scope.SessionID, MediaNodeID: scope.MediaNodeID, Generation: scope.Generation}
+		state.Subscriptions[publicID] = SubscriptionBinding{ID: publicID, MediaID: id, RoomID: scope.RoomID, SessionID: scope.SessionID, MediaNodeID: scope.MediaNodeID, Generation: scope.Generation, TrackID: resources.Track.ID, TransportID: resources.Transport.ID, CreatedAt: time.Now().UTC()}
 		payload["subscriptionId"], payload["trackId"], payload["trackType"], payload["rtpParameters"] = publicID, resources.Track.ID, resources.Track.Type, rtp
 	case "subscription.resume":
+		binding := *resources.Subscription
+		binding.Resumed = true
+		state.Subscriptions[binding.ID] = binding
+		payload["subscriptionId"] = binding.ID
+	case "subscription.remove":
+		delete(state.Subscriptions, resources.Subscription.ID)
 		payload["subscriptionId"] = resources.Subscription.ID
 	default:
 		return Response{}, ErrUnsupported
