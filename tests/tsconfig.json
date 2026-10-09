@@ -9,5 +9,5 @@
     "types": ["node"],
     "typeRoots": ["../services/api/node_modules/@types"]
   },
-  "include": ["reporting-flow.integration.test.ts"]
+  "include": ["reporting-flow.integration.test.ts", "rtc-runtime-smoke.mts"]
 }

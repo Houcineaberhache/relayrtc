@@ -167,6 +167,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      MEDIA_NODE_ID: ${MEDIA_NODE_ID:-media-local}
       DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
       RELAYRTC_MEDIA_INTERNAL_URL: http://media:8082/internal/v1
       RELAYRTC_SIGNALING_ADDRESS: :8081

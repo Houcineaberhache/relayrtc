@@ -5,5 +5,6 @@ export * from "./participant.js";
 export * from "./project.js";
 export * from "./quality.js";
 export * from "./room.js";
+export * from "./rtc-runtime.js";
 export * from "./usage.js";
 export * from "./usage-history.js";
