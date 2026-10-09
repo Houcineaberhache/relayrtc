@@ -85,11 +85,18 @@ func NewStore(pool *pgxpool.Pool, locationRetention time.Duration) *Store {
 	return &Store{pool: pool, locationRetention: locationRetention}
 }
 
-func (store *Store) RecordUsage(ctx context.Context, sessionID string, messagesIn, messagesOut int64) error {
+func (store *Store) RecordUsageSample(ctx context.Context, sessionID, sampleID string, messagesIn, messagesOut int64) error {
+	if sampleID == "" || messagesIn < 0 || messagesOut < 0 {
+		return errors.New("invalid signaling usage sample")
+	}
 	_, err := store.pool.Exec(ctx, `
-		UPDATE participant_session
-		SET messages_in = messages_in + $2, messages_out = messages_out + $3
-		WHERE id = $1`, sessionID, messagesIn, messagesOut)
+        WITH accepted AS (
+            INSERT INTO signaling_usage_sample (id, session_id) VALUES ($2, $1)
+            ON CONFLICT (id) DO NOTHING RETURNING session_id
+        )
+        UPDATE participant_session s
+        SET messages_in = s.messages_in + $3, messages_out = s.messages_out + $4
+        FROM accepted WHERE s.id = accepted.session_id`, sessionID, sampleID, messagesIn, messagesOut)
 	if err != nil {
 		return fmt.Errorf("record signaling usage: %w", err)
 	}

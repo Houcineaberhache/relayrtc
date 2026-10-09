@@ -256,20 +256,30 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 
 func (handler *Handler) flushClientUsage(client *client, sessionID string) {
 	recorder, ok := handler.sessionStore.(interface {
-		RecordUsage(context.Context, string, int64, int64) error
+		RecordUsageSample(context.Context, string, string, int64, int64) error
 	})
 	if !ok {
 		return
 	}
-	messagesIn, messagesOut := client.drainUsage()
-	if messagesIn == 0 && messagesOut == 0 {
-		return
-	}
-	usageContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := recorder.RecordUsage(usageContext, sessionID, messagesIn, messagesOut); err != nil {
-		client.restoreUsage(messagesIn, messagesOut)
-		slog.Warn("signaling usage persistence failed", "error", err, "session_id", sessionID)
+	client.usageMu.Lock()
+	defer client.usageMu.Unlock()
+	for attempt := 0; attempt < 2; attempt++ {
+		if client.pendingUsage == nil {
+			incoming, outgoing := client.drainUsage()
+			if incoming == 0 && outgoing == 0 {
+				return
+			}
+			client.pendingUsage = &usageSample{id: newID("usage"), incoming: incoming, outgoing: outgoing}
+		}
+		pending := client.pendingUsage
+		usageContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := recorder.RecordUsageSample(usageContext, sessionID, pending.id, pending.incoming, pending.outgoing)
+		cancel()
+		if err != nil {
+			slog.Warn("signaling usage persistence failed", "error", err, "session_id", sessionID)
+			return
+		}
+		client.pendingUsage = nil
 	}
 }
 
@@ -609,7 +619,15 @@ type heartbeatPayload struct {
 	Nonce string `json:"nonce"`
 }
 
+type usageSample struct {
+	id       string
+	incoming int64
+	outgoing int64
+}
+
 type client struct {
+	usageMu      sync.Mutex
+	pendingUsage *usageSample
 	connection   *websocket.Conn
 	writeTimeout time.Duration
 	mu           sync.Mutex
@@ -642,12 +660,6 @@ func (client *client) drainUsage() (int64, int64) {
 	client.recordedIn = client.messagesIn
 	client.recordedOut = client.messagesOut
 	return messagesIn, messagesOut
-}
-func (client *client) restoreUsage(messagesIn, messagesOut int64) {
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	client.recordedIn -= messagesIn
-	client.recordedOut -= messagesOut
 }
 func (client *client) control(kind int, data []byte) error {
 	client.mu.Lock()

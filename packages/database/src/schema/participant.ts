@@ -113,3 +113,15 @@ export const participantConnectionInterval = pgTable(
     ),
   ],
 );
+
+export const signalingUsageSample = pgTable(
+  "signaling_usage_sample",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => participantSession.id, { onDelete: "cascade" }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("signaling_usage_sample_session_idx").on(table.sessionId)],
+);
