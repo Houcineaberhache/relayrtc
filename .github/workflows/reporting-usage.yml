@@ -38,6 +38,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r --filter @relayrtc/api... build
+      - run: pnpm -r --filter @relayrtc/api... --filter @relayrtc/media... build
+      - run: pnpm exec tsc -p tests/tsconfig.json
       - run: pnpm --filter @relayrtc/database db:check
-      - run: pnpm exec vitest run services/api/src/modules/reporting --configLoader native --maxWorkers 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/signaling/go.mod
+          cache-dependency-path: services/signaling/go.sum
+      - run: pnpm exec vitest run services/api/src/modules/reporting services/media/src/usage services/media/src/engine/worker-pool.test.ts apps/console/lib/reporting tests/reporting-flow.integration.test.ts --configLoader native --maxWorkers 2 --no-file-parallelism
+      - run: go test ./internal/connection ./internal/session
+        working-directory: services/signaling
