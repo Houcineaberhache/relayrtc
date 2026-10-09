@@ -150,3 +150,28 @@ func TestProductionConfigurationMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyAndLocationPrivacyConfiguration(t *testing.T) {
+	cfg, err := load(testEnvironment(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TrustedProxyCIDRs) != 0 || cfg.StoreParticipantIP || cfg.IPInfoToken != "" || cfg.LocationRetention != 168*time.Hour {
+		t.Fatal("unsafe privacy defaults")
+	}
+	cfg, err = load(testEnvironment(map[string]string{"RELAYRTC_TRUSTED_PROXY_CIDRS": "10.0.0.2/8,2001:db8:10::/48", "RELAYRTC_STORE_PARTICIPANT_IP": "true", "RELAYRTC_LOCATION_RETENTION": "24h"}))
+	if err != nil || len(cfg.TrustedProxyCIDRs) != 2 || !cfg.StoreParticipantIP || cfg.LocationRetention != 24*time.Hour {
+		t.Fatalf("explicit privacy configuration failed: %v", err)
+	}
+	for name, values := range map[string][]string{
+		"RELAYRTC_TRUSTED_PROXY_CIDRS":  {"hostname", "0.0.0.0/0", "::/0", "10.0.0.1/33", "::ffff:10.0.0.1/120"},
+		"RELAYRTC_STORE_PARTICIPANT_IP": {"yes"},
+		"RELAYRTC_LOCATION_RETENTION":   {"0s", "30m", "721h", "invalid"},
+	} {
+		for _, value := range values {
+			if _, err := load(testEnvironment(map[string]string{name: value})); err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("unsafe %s accepted", name)
+			}
+		}
+	}
+}

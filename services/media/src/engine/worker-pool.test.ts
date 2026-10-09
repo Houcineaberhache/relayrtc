@@ -210,10 +210,14 @@ describe("MediasoupWorkerPool", () => {
       transportId: receive.id,
     });
 
+    const producer = producers[0];
+    const consumer = consumers[0];
+    if (!producer || !consumer) throw new Error("Missing test tracks");
+    const closeProducer = vi.spyOn(producer, "close");
+    const closeConsumer = vi.spyOn(consumer, "close");
     await pool.removeParticipant({ participantId: "participant-1", roomId: "room-1" });
-
-    expect(vi.mocked(producers[0]!.close)).toHaveBeenCalledOnce();
-    expect(vi.mocked(consumers[0]!.close)).toHaveBeenCalledOnce();
+    expect(closeProducer).toHaveBeenCalledOnce();
+    expect(closeConsumer).toHaveBeenCalledOnce();
     await expect(pool.listPublishedTracks({ roomId: "room-1" })).resolves.toEqual([]);
     await pool.close();
   });
@@ -378,4 +382,96 @@ describe("MediasoupWorkerPool", () => {
     await expect(pool.listPublishedTracks({ roomId: "room-1" })).resolves.toEqual([track]);
     await pool.close();
   });
+});
+
+describe("media usage sample persistence", () => {
+  it("retries byte samples with stable identities and serializes flush with track removal", async () => {
+    const { producers, factory } = createMediasoupTestHarness();
+    const persisted = new Map<string, number>();
+    let fail = true;
+    const recordBatch = vi.fn((_room: string, id: string, metrics: Record<string, number>) => {
+      if (metrics.sfuIngressBytes !== undefined) {
+        persisted.set(id, metrics.sfuIngressBytes);
+        if (fail) {
+          fail = false;
+          return Promise.reject(new Error("Commit acknowledgement lost"));
+        }
+      }
+      return Promise.resolve();
+    });
+    const pool = new MediasoupWorkerPool(config, factory, {
+      usageMetricsStore: { record: vi.fn(), recordBatch },
+    });
+    await pool.start();
+    await pool.createRoom({ roomId: "room-usage" });
+    const transport = await pool.createParticipantTransport({
+      direction: "send",
+      participantId: "publisher",
+      roomId: "room-usage",
+    });
+    const track = await pool.publishTrack({
+      kind: "video",
+      participantId: "publisher",
+      roomId: "room-usage",
+      trackType: "screen_video",
+      transportId: transport.id,
+      rtpParameters: { codecs: [] },
+    });
+    let bytes = 100;
+    const getStats = vi.fn(() => Promise.resolve([{ byteCount: bytes }]));
+    const producer = producers[0];
+    if (!producer) throw new Error("Missing test producer");
+    Object.assign(producer, { getStats });
+    await pool.flushUsage();
+    await pool.flushUsage();
+    const samples = recordBatch.mock.calls.filter((call) => call[2].sfuIngressBytes !== undefined);
+    expect(samples[0]).toEqual(samples[1]);
+    expect([...persisted.values()].reduce((sum, value) => sum + value, 0)).toBe(100);
+    bytes = 150;
+    await Promise.all([
+      pool.flushUsage(),
+      pool.removeTrack({ roomId: "room-usage", participantId: "publisher", trackId: track.id }),
+    ]);
+    expect([...persisted.values()].reduce((sum, value) => sum + value, 0)).toBe(150);
+    await pool.close();
+  });
+});
+
+it("retains a failed TURN sample when newer subscriber counters arrive", async () => {
+  const { factory } = createMediasoupTestHarness();
+  const persisted = new Map<string, number>();
+  let fail = true;
+  const recordBatch = vi.fn((_room: string, id: string, metrics: Record<string, number>) => {
+    persisted.set(id, metrics.turnIngressBytes ?? 0);
+    if (fail) {
+      fail = false;
+      return Promise.reject(new Error("Commit acknowledgement lost"));
+    }
+    return Promise.resolve();
+  });
+  const pool = new MediasoupWorkerPool(config, factory, {
+    usageMetricsStore: { record: vi.fn(), recordBatch },
+  });
+  await pool.start();
+  await pool.createRoom({ roomId: "turn-room" });
+  const ingest = (bytes: number) =>
+    pool.ingestSubscriberStats({
+      roomId: "turn-room",
+      participantId: "subscriber",
+      stats: {
+        availableIncomingBitrate: 1_000_000,
+        jitter: 0.01,
+        packetsLost: 0,
+        packetsReceived: 100,
+        roundTripTime: 0.1,
+        timestamp: bytes,
+        turnBytesSent: bytes,
+      },
+    });
+  await ingest(100);
+  await expect(ingest(200)).rejects.toThrow();
+  await ingest(300);
+  expect(recordBatch.mock.calls[0]).toEqual(recordBatch.mock.calls[1]);
+  expect([...persisted.values()].reduce((sum, value) => sum + value, 0)).toBe(200);
+  await pool.close();
 });

@@ -74,3 +74,28 @@ describe("RelayRTC API", () => {
     expect(response.json()).toMatchObject({ code: "ROUTE_NOT_FOUND" });
   });
 });
+
+it.each([
+  { peer: "198.51.100.9", forwarded: "203.0.113.1", expected: "198.51.100.9" },
+  { peer: "10.0.0.2", forwarded: "198.51.100.9, 10.0.0.1", expected: "198.51.100.9" },
+  { peer: "10.0.0.2", forwarded: "203.0.113.1, 198.51.100.9, 10.0.0.1", expected: "198.51.100.9" },
+  {
+    peer: "2001:db8:10::2",
+    forwarded: "2001:db8:20::9, 2001:db8:10::1",
+    expected: "2001:db8:20::9",
+  },
+])("honors API proxy CIDRs for $peer", async ({ peer, forwarded, expected }) => {
+  const app = buildApp({
+    config: { ...config, trustProxy: ["10.0.0.0/8", "2001:db8:10::/48"] },
+    database,
+  });
+  apps.add(app);
+  app.get("/proxy-test", (request) => ({ ip: request.ip }));
+  const response = await app.inject({
+    method: "GET",
+    url: "/proxy-test",
+    remoteAddress: peer,
+    headers: { "x-forwarded-for": forwarded },
+  });
+  expect(response.json()).toEqual({ ip: expected });
+});

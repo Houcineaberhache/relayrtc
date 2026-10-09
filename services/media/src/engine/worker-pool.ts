@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { MediaDurationMeter } from "../usage/media-duration-meter.js";
 import type {
   Consumer,
   Producer,
@@ -39,7 +41,7 @@ import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
 import type { QualityEventPublisher } from "../quality/quality-event-publisher.js";
 import { qualityEvent } from "../quality/quality-event-publisher.js";
 import type { QualityMetricsStore } from "../quality/quality-metrics-store.js";
-import type { MediaUsageMetricsStore } from "../usage/usage-metrics-store.js";
+import type { MediaUsageMetric, MediaUsageMetricsStore } from "../usage/usage-metrics-store.js";
 import {
   classifyConnectionQuality,
   intervalNetworkStats,
@@ -76,7 +78,20 @@ interface WorkerSlot {
   worker: Worker;
 }
 
+interface TurnUsageState {
+  stats: SubscriberNetworkStats;
+  recording?: Promise<void> | undefined;
+  pending?: {
+    id: string;
+    stats: SubscriberNetworkStats;
+    metrics: Partial<Record<MediaUsageMetric, number>>;
+    occurredAt: Date;
+  };
+}
+
 interface RoomState {
+  turnUsage: Map<string, TurnUsageState>;
+  durationMeter: MediaDurationMeter | undefined;
   consumers: Map<string, ConsumerState>;
   consumerUsage: Map<string, UsageSampleState>;
   participantPriorities: Map<string, MediaPriority>;
@@ -94,6 +109,7 @@ export interface MediaQualityOptions {
   eventPublisher?: QualityEventPublisher;
   metricsStore?: QualityMetricsStore;
   usageMetricsStore?: MediaUsageMetricsStore;
+  onUsageError?: (error: unknown) => void;
 }
 
 interface ConsumerState {
@@ -110,6 +126,13 @@ interface TransportState {
 }
 
 interface UsageSampleState {
+  pending?: {
+    id: string;
+    bytes: number;
+    sampledAt: number;
+    metrics: Partial<Record<MediaUsageMetric, number>>;
+  };
+  recording?: Promise<void> | undefined;
   bytes: number;
   sampledAt: number;
 }
@@ -172,6 +195,9 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   async close(): Promise<void> {
     if (this.#closed) return;
+    if (this.#usageFlush) await this.#usageFlush;
+    for (const room of this.#rooms.values())
+      for (const producer of room.producers.values()) room.durationMeter?.stop(producer.id);
     await this.flushUsage();
     this.#closed = true;
     await Promise.allSettled(this.#pendingRooms.values());
@@ -213,10 +239,14 @@ export class MediasoupWorkerPool implements MediaEngine {
     const state: RoomState = {
       consumers: new Map(),
       consumerUsage: new Map(),
+      durationMeter: this.#quality.usageMetricsStore
+        ? new MediaDurationMeter(this.#quality.usageMetricsStore)
+        : undefined,
       participantPriorities: new Map(),
       participantQualities: new Map(),
       participantQualityPreferences: new Map(),
       participantStats: new Map(),
+      turnUsage: new Map(),
       producers: new Map(),
       producerUsage: new Map(),
       router,
@@ -246,6 +276,9 @@ export class MediasoupWorkerPool implements MediaEngine {
         this.#recordProducerUsage(request.roomId, producer, room.producerUsage.get(producer.id)),
       ),
     ]);
+    for (const producer of room.producers.values()) room.durationMeter?.stop(producer.id);
+    await this.#flushTurnUsage(request.roomId, room);
+    await this.#flushDurations(request.roomId, room);
     room.router.close();
   }
 
@@ -374,8 +407,10 @@ export class MediasoupWorkerPool implements MediaEngine {
       rtpParameters: request.rtpParameters as RtpParameters,
     });
     room.producers.set(producer.id, producer);
+    room.durationMeter?.start(producer.id, request.participantId, request.trackType);
     room.producerUsage.set(producer.id, { bytes: 0, sampledAt: Date.now() });
     producer.observer.once("close", () => {
+      room.durationMeter?.stop(producer.id);
       room.producers.delete(producer.id);
       room.producerUsage.delete(producer.id);
     });
@@ -472,28 +507,9 @@ export class MediasoupWorkerPool implements MediaEngine {
   async ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void> {
     const room = this.#getRoom(request.roomId);
     const previousStats = room.participantStats.get(request.participantId);
-    const stats = intervalNetworkStats(
-      request.stats,
-      previousStats,
-    );
+    const stats = intervalNetworkStats(request.stats, previousStats);
+    await this.#recordTurnUsage(room, request);
     room.participantStats.set(request.participantId, request.stats);
-    if (previousStats && this.#quality.usageMetricsStore) {
-      await Promise.all([
-        this.#quality.usageMetricsStore.record(
-          request.roomId,
-          "turnIngressBytes",
-          Math.max(0, (request.stats.turnBytesSent ?? 0) - (previousStats.turnBytesSent ?? 0)),
-        ),
-        this.#quality.usageMetricsStore.record(
-          request.roomId,
-          "turnEgressBytes",
-          Math.max(
-            0,
-            (request.stats.turnBytesReceived ?? 0) - (previousStats.turnBytesReceived ?? 0),
-          ),
-        ),
-      ]);
-    }
     const quality = classifyConnectionQuality(stats);
     await this.#quality.metricsStore?.record({
       participantId: request.participantId,
@@ -624,6 +640,8 @@ export class MediasoupWorkerPool implements MediaEngine {
         room.consumers.delete(consumerId);
       }
     }
+    room.durationMeter?.stop(producer.id);
+    await this.#flushDurations(request.roomId, room);
     producer.close();
     room.producers.delete(producer.id);
   }
@@ -658,6 +676,8 @@ export class MediasoupWorkerPool implements MediaEngine {
           producer,
           room.producerUsage.get(producerId),
         );
+        room.durationMeter?.stop(producerId);
+        await this.#flushDurations(request.roomId, room);
         producer.close();
       }
       room.producers.delete(producerId);
@@ -672,6 +692,101 @@ export class MediasoupWorkerPool implements MediaEngine {
     room.participantQualities.delete(request.participantId);
     room.participantQualityPreferences.delete(request.participantId);
     room.participantStats.delete(request.participantId);
+    await this.#flushTurnUsage(request.roomId, room);
+    room.turnUsage.delete(request.participantId);
+  }
+
+  async #recordTurnUsage(room: RoomState, request: IngestSubscriberStatsRequest): Promise<void> {
+    const store = this.#quality.usageMetricsStore;
+    if (!store) return;
+    const state = room.turnUsage.get(request.participantId);
+    if (!state) {
+      room.turnUsage.set(request.participantId, { stats: request.stats });
+      return;
+    }
+    const operation = (state.recording ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const delta = (next = 0, previous = 0) => (next >= previous ? next - previous : next);
+          state.pending ??= {
+            id: randomUUID(),
+            stats: request.stats,
+            occurredAt: new Date(),
+            metrics: {
+              turnIngressBytes: delta(request.stats.turnBytesSent, state.stats.turnBytesSent),
+              turnEgressBytes: delta(
+                request.stats.turnBytesReceived,
+                state.stats.turnBytesReceived,
+              ),
+            },
+          };
+          const pending = state.pending;
+          if (store.recordBatch)
+            await store.recordBatch(
+              request.roomId,
+              pending.id,
+              pending.metrics,
+              pending.occurredAt,
+            );
+          else {
+            await store.record(
+              request.roomId,
+              "turnIngressBytes",
+              pending.metrics.turnIngressBytes ?? 0,
+            );
+            await store.record(
+              request.roomId,
+              "turnEgressBytes",
+              pending.metrics.turnEgressBytes ?? 0,
+            );
+          }
+          state.stats = pending.stats;
+          delete state.pending;
+          if (pending.stats === request.stats) return;
+        }
+      });
+    state.recording = operation;
+    try {
+      await operation;
+    } finally {
+      if (state.recording === operation) state.recording = undefined;
+    }
+  }
+
+  async #recordSample(
+    roomId: string,
+    sample: UsageSampleState | undefined,
+    collect: () => Promise<{
+      bytes: number;
+      sampledAt: number;
+      metrics: Partial<Record<MediaUsageMetric, number>>;
+    }>,
+  ): Promise<void> {
+    const store = this.#quality.usageMetricsStore;
+    if (!store || !sample) return;
+    if (sample.recording) return sample.recording;
+    sample.recording = (async () => {
+      try {
+        sample.pending ??= { id: randomUUID(), ...(await collect()) };
+        const pending = sample.pending;
+        if (store.recordBatch) {
+          await store.recordBatch(roomId, pending.id, pending.metrics, new Date(pending.sampledAt));
+        } else {
+          for (const [metric, value] of Object.entries(pending.metrics)) {
+            await store.record(roomId, metric as MediaUsageMetric, value);
+          }
+        }
+        sample.bytes = pending.bytes;
+        sample.sampledAt = pending.sampledAt;
+        delete sample.pending;
+      } catch (error) {
+        this.#quality.onUsageError?.(error);
+      }
+    })().finally(() => {
+      sample.recording = undefined;
+    });
+    return sample.recording;
   }
 
   async #recordProducerUsage(
@@ -679,36 +794,24 @@ export class MediasoupWorkerPool implements MediaEngine {
     producer: Producer,
     sample?: UsageSampleState,
   ): Promise<void> {
-    const store = this.#quality.usageMetricsStore;
-    if (!store) return;
-    try {
+    await this.#recordSample(roomId, sample, async () => {
       const stats = await producer.getStats();
       const bytes = stats.reduce(
         (total, entry) => total + ("byteCount" in entry ? entry.byteCount : 0),
         0,
       );
-      const delta = Math.max(0, bytes - (sample?.bytes ?? 0));
-      await store.record(roomId, "sfuIngressBytes", delta);
+      const sampledAt = Date.now();
+      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : bytes;
       const trackType = String(producer.appData.trackType);
-      if (trackType === "screen_video")
-        await store.record(roomId, "screenShareIngressBytes", delta);
-      if (sample) {
-        const now = Date.now();
-        const seconds = Math.max(0, Math.floor((now - sample.sampledAt) / 1_000));
-        await store.record(
-          roomId,
-          trackType === "audio" || trackType === "screen_audio"
-            ? "audioParticipantSeconds"
-            : "videoParticipantSeconds",
-          seconds,
-        );
-        if (trackType === "screen_video") await store.record(roomId, "screenShareSeconds", seconds);
-        sample.bytes = bytes;
-        sample.sampledAt = now;
-      }
-    } catch {
-      return;
-    }
+      return {
+        bytes,
+        sampledAt,
+        metrics: {
+          sfuIngressBytes: delta,
+          ...(trackType === "screen_video" ? { screenShareIngressBytes: delta } : {}),
+        },
+      };
+    });
   }
 
   async #recordConsumerUsage(
@@ -716,27 +819,25 @@ export class MediasoupWorkerPool implements MediaEngine {
     consumer: Consumer,
     sample?: UsageSampleState,
   ): Promise<void> {
-    const store = this.#quality.usageMetricsStore;
-    if (!store) return;
-    try {
+    await this.#recordSample(roomId, sample, async () => {
       const stats = await consumer.getStats();
       const bytes = stats.reduce(
         (total, entry) => total + ("byteCount" in entry ? entry.byteCount : 0),
         0,
       );
-      const delta = Math.max(0, bytes - (sample?.bytes ?? 0));
-      await store.record(roomId, "sfuEgressBytes", delta);
+      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : bytes;
       const producer = this.#rooms.get(roomId)?.producers.get(consumer.producerId);
-      if (producer?.appData.trackType === "screen_video") {
-        await store.record(roomId, "screenShareEgressBytes", delta);
-      }
-      if (sample) {
-        sample.bytes = bytes;
-        sample.sampledAt = Date.now();
-      }
-    } catch {
-      return;
-    }
+      return {
+        bytes,
+        sampledAt: Date.now(),
+        metrics: {
+          sfuEgressBytes: delta,
+          ...(producer?.appData.trackType === "screen_video"
+            ? { screenShareEgressBytes: delta }
+            : {}),
+        },
+      };
+    });
   }
 
   async flushUsage(): Promise<void> {
@@ -747,9 +848,32 @@ export class MediasoupWorkerPool implements MediaEngine {
     return this.#usageFlush;
   }
 
+  async #flushTurnUsage(roomId: string, room: RoomState): Promise<void> {
+    await Promise.all(
+      [...room.turnUsage.entries()].map(async ([participantId, state]) => {
+        if (!state.pending) return;
+        try {
+          await this.#recordTurnUsage(room, { roomId, participantId, stats: state.pending.stats });
+        } catch (error) {
+          this.#quality.onUsageError?.(error);
+        }
+      }),
+    );
+  }
+
+  async #flushDurations(roomId: string, room: RoomState): Promise<void> {
+    try {
+      await room.durationMeter?.flush(roomId);
+    } catch (error) {
+      this.#quality.onUsageError?.(error);
+    }
+  }
+
   async #flushUsage(): Promise<void> {
     await Promise.all(
       [...this.#rooms.entries()].flatMap(([roomId, room]) => [
+        this.#flushDurations(roomId, room),
+        this.#flushTurnUsage(roomId, room),
         ...[...room.producers.values()].map((producer) =>
           this.#recordProducerUsage(roomId, producer, room.producerUsage.get(producer.id)),
         ),

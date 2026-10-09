@@ -37,19 +37,35 @@ func Run(ctx context.Context) error {
 	if err := pool.Ping(ctx); err != nil {
 		return err
 	}
+	store := session.NewStore(pool, cfg.LocationRetention)
+	cleanupContext, cleanupCancel := context.WithTimeout(ctx, 10*time.Second)
+	err = store.PurgeLocations(cleanupContext, time.Now().Add(-cfg.LocationRetention), !cfg.StoreParticipantIP)
+	cleanupCancel()
+	if err != nil {
+		return err
+	}
+	retentionContext, cancelRetention := context.WithCancel(ctx)
+	retentionDone := runLocationRetention(retentionContext, store, cfg.LocationRetention, !cfg.StoreParticipantIP, time.Hour)
+	defer func() { cancelRetention(); <-retentionDone }()
+	var locationLookup connection.LocationLookup
+	if cfg.IPInfoToken != "" {
+		locationLookup = geolocation.New(cfg.IPInfoToken)
+	}
 	connections := connection.NewHandler(connection.Options{
-		AllowedOrigins:    cfg.AllowedOrigins,
-		HeartbeatInterval: cfg.HeartbeatInterval,
-		LocationLookup:    geolocation.New(cfg.IPInfoToken),
-		MaxMessageBytes:   cfg.MaxMessageBytes,
-		NodeID:            cfg.SignalingNodeID,
-		ParticipantMedia:  newParticipantMediaClient(cfg.MediaInternalURL, cfg.InternalSecret),
-		PongTimeout:       cfg.PongTimeout,
-		RecoveryTimeout:   cfg.RecoveryTimeout,
-		SessionStore:      session.NewStore(pool),
-		Shutdown:          ctx,
-		Validator:         validator,
-		WriteTimeout:      cfg.WriteTimeout,
+		AllowedOrigins:     cfg.AllowedOrigins,
+		HeartbeatInterval:  cfg.HeartbeatInterval,
+		LocationLookup:     locationLookup,
+		TrustedProxyCIDRs:  cfg.TrustedProxyCIDRs,
+		StoreParticipantIP: cfg.StoreParticipantIP,
+		MaxMessageBytes:    cfg.MaxMessageBytes,
+		NodeID:             cfg.SignalingNodeID,
+		ParticipantMedia:   newParticipantMediaClient(cfg.MediaInternalURL, cfg.InternalSecret),
+		PongTimeout:        cfg.PongTimeout,
+		RecoveryTimeout:    cfg.RecoveryTimeout,
+		SessionStore:       store,
+		Shutdown:           ctx,
+		Validator:          validator,
+		WriteTimeout:       cfg.WriteTimeout,
 	})
 
 	mux := http.NewServeMux()

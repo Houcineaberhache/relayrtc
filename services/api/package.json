@@ -9,11 +9,13 @@
     "build": "tsc --project tsconfig.build.json",
     "clean": "rimraf dist coverage",
     "lint": "eslint .",
+    "usage:aggregate": "node --env-file-if-exists=../../.env dist/modules/reporting/refresh-usage.js",
     "start": "node --enable-source-maps dist/server.js",
     "test": "vitest run --pool=threads --exclude dist/**",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@relayrtc/auth": "workspace:*",
     "@relayrtc/protocol": "workspace:*",
     "@relayrtc/database": "workspace:*",
     "@relayrtc/types": "workspace:*",

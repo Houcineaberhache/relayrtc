@@ -2,6 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import { readApiEnvironment } from "./environment.js";
 
+describe("console session configuration", () => {
+  const base = {
+    DATABASE_URL: "postgresql://localhost/relayrtc",
+    PARTICIPANT_TOKEN_SIGNING_SECRET: "independent-participant-signing-key",
+    TURN_SHARED_SECRET: "independent-turn-authentication-key",
+  };
+  it("uses the existing console origin and secret", () => {
+    const consoleAuth = {
+      baseUrl: "http://localhost:3002",
+      secret: "independent-console-session-secret",
+    };
+    expect(
+      readApiEnvironment({
+        ...base,
+        BETTER_AUTH_URL: consoleAuth.baseUrl,
+        BETTER_AUTH_SECRET: consoleAuth.secret,
+      }).consoleAuth,
+    ).toEqual(consoleAuth);
+  });
+  it.each([
+    { BETTER_AUTH_URL: "http://localhost:3002" },
+    { BETTER_AUTH_SECRET: "independent-console-session-secret" },
+  ])("rejects incomplete session configuration: %j", (auth) => {
+    expect(() => readApiEnvironment({ ...base, ...auth })).toThrow("configured together");
+  });
+  it.each([
+    "ftp://localhost",
+    "http://user:password@localhost",
+    "http://localhost/path",
+    "http://localhost?query=1",
+  ])("rejects invalid auth origins: %s", (url) => {
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        BETTER_AUTH_URL: url,
+        BETTER_AUTH_SECRET: "independent-console-session-secret",
+      }),
+    ).toThrow("HTTP origin");
+  });
+});
+
 describe("readApiEnvironment", () => {
   it("applies safe service defaults", () => {
     expect(
@@ -126,5 +167,38 @@ describe("production API configuration", () => {
         DATABASE_URL: "postgresql://relaykit:relaykit@postgres/relaykit",
       }),
     ).toThrow("DATABASE_URL");
+  });
+});
+
+describe("trusted proxy configuration", () => {
+  const base = {
+    DATABASE_URL: "postgresql://localhost/relayrtc",
+    PARTICIPANT_TOKEN_SIGNING_SECRET: "independent-participant-signing-key",
+    TURN_SHARED_SECRET: "independent-turn-authentication-key",
+  };
+  it("requires explicit CIDRs when proxy trust is enabled", () => {
+    expect(() => readApiEnvironment({ ...base, API_TRUST_PROXY: "true" })).toThrow(
+      "API_TRUSTED_PROXY_CIDRS",
+    );
+    expect(
+      readApiEnvironment({
+        ...base,
+        API_TRUST_PROXY: "true",
+        API_TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8:10::/48",
+      }).trustProxy,
+    ).toEqual(["10.0.0.0/8", "2001:db8:10::/48"]);
+  });
+  it.each([
+    "true",
+    "0.0.0.0/0",
+    "::/0",
+    "hostname/24",
+    "10.0.0.1/33",
+    "2001:db8::/129",
+    "10.0.0.1/24/extra",
+  ])("rejects invalid or unrestricted proxy CIDRs", (cidrs) => {
+    expect(() =>
+      readApiEnvironment({ ...base, API_TRUST_PROXY: "true", API_TRUSTED_PROXY_CIDRS: cidrs }),
+    ).toThrow("API_TRUSTED_PROXY_CIDRS");
   });
 });

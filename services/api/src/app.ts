@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { createRelayKitSessionVerifier } from "@relayrtc/auth/server";
 import type { RelayKitDatabase } from "@relayrtc/database";
 import Fastify, { type FastifyInstance } from "fastify";
 
@@ -9,6 +10,7 @@ import { createParticipantTokenSigner } from "./modules/participant-tokens/parti
 import { createRoomRuntimeService } from "./modules/rooms/room-runtime.service.js";
 import { createTurnCredentialService } from "./modules/turn-credentials/turn-credential.service.js";
 import { healthRoutes } from "./routes/health.js";
+import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
 
 interface BuildAppOptions {
@@ -74,6 +76,18 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   }
 
   void app.register(healthRoutes, { database: options.database });
+  void app.register(reportingRoutes, {
+    database: options.database,
+    ...(options.config.consoleAuth
+      ? {
+          verifyConsoleSession: createRelayKitSessionVerifier({
+            database: options.database,
+            ...options.config.consoleAuth,
+          }),
+        }
+      : {}),
+    prefix: "/v1",
+  });
   void app.register(v1Routes, {
     database: options.database,
     participantTokenSigner,

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -21,6 +22,9 @@ const (
 )
 
 type Config struct {
+	TrustedProxyCIDRs      []netip.Prefix
+	StoreParticipantIP     bool
+	LocationRetention      time.Duration
 	Address                string
 	AllowedOrigins         []string
 	DatabaseURL            string
@@ -124,7 +128,30 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		}
 	}
 
+	trustedProxyCIDRs := make([]netip.Prefix, 0)
+	for _, value := range splitList(valueOrDefault(lookup, "RELAYRTC_TRUSTED_PROXY_CIDRS", "")) {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
+			return Config{}, fmt.Errorf("RELAYRTC_TRUSTED_PROXY_CIDRS must contain explicit IPv4 or IPv6 CIDRs")
+		}
+		trustedProxyCIDRs = append(trustedProxyCIDRs, prefix.Masked())
+	}
+	storeParticipantIP := valueOrDefault(lookup, "RELAYRTC_STORE_PARTICIPANT_IP", "false")
+	if storeParticipantIP != "true" && storeParticipantIP != "false" {
+		return Config{}, fmt.Errorf("RELAYRTC_STORE_PARTICIPANT_IP must be true or false")
+	}
+	locationRetention, err := duration(lookup, "RELAYRTC_LOCATION_RETENTION", 7*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	if locationRetention < time.Hour || locationRetention > 30*24*time.Hour {
+		return Config{}, fmt.Errorf("RELAYRTC_LOCATION_RETENTION must be between 1h and 720h")
+	}
+
 	return Config{
+		TrustedProxyCIDRs:      trustedProxyCIDRs,
+		StoreParticipantIP:     storeParticipantIP == "true",
+		LocationRetention:      locationRetention,
 		Address:                address,
 		AllowedOrigins:         allowedOrigins,
 		DatabaseURL:            databaseURL,

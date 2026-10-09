@@ -8,9 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
-	"strings"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -28,19 +27,21 @@ const (
 )
 
 type Options struct {
-	AllowedOrigins    []string
-	HeartbeatInterval time.Duration
-	MaxMessageBytes   int64
-	NodeID            string
-	LocationLookup    LocationLookup
-	ParticipantMedia  ParticipantMediaService
-	PongTimeout       time.Duration
-	RecoveryTimeout   time.Duration
-	RTCService        RTCSignalService
-	SessionStore      SessionStore
-	Shutdown          context.Context
-	Validator         *auth.Validator
-	WriteTimeout      time.Duration
+	TrustedProxyCIDRs  []netip.Prefix
+	StoreParticipantIP bool
+	AllowedOrigins     []string
+	HeartbeatInterval  time.Duration
+	MaxMessageBytes    int64
+	NodeID             string
+	LocationLookup     LocationLookup
+	ParticipantMedia   ParticipantMediaService
+	PongTimeout        time.Duration
+	RecoveryTimeout    time.Duration
+	RTCService         RTCSignalService
+	SessionStore       SessionStore
+	Shutdown           context.Context
+	Validator          *auth.Validator
+	WriteTimeout       time.Duration
 }
 
 type ParticipantMediaService interface {
@@ -66,23 +67,25 @@ type SessionStore interface {
 }
 
 type Handler struct {
-	heartbeatInterval time.Duration
-	maxMessageBytes   int64
-	nodeID            string
-	participantMedia  ParticipantMediaService
-	pongTimeout       time.Duration
-	recoveries        map[string]chan struct{}
-	recoveryMu        sync.Mutex
-	recoveryTimeout   time.Duration
-	registry          *registry
-	rtcService        RTCSignalService
-	sessionStore      SessionStore
-	locationLookup    LocationLookup
-	shutdown          context.Context
-	upgrader          websocket.Upgrader
-	validator         *auth.Validator
-	writeTimeout      time.Duration
-	wg                sync.WaitGroup
+	trustedProxyCIDRs  []netip.Prefix
+	storeParticipantIP bool
+	heartbeatInterval  time.Duration
+	maxMessageBytes    int64
+	nodeID             string
+	participantMedia   ParticipantMediaService
+	pongTimeout        time.Duration
+	recoveries         map[string]chan struct{}
+	recoveryMu         sync.Mutex
+	recoveryTimeout    time.Duration
+	registry           *registry
+	rtcService         RTCSignalService
+	sessionStore       SessionStore
+	locationLookup     LocationLookup
+	shutdown           context.Context
+	upgrader           websocket.Upgrader
+	validator          *auth.Validator
+	writeTimeout       time.Duration
+	wg                 sync.WaitGroup
 }
 
 type joinedSession struct {
@@ -100,18 +103,20 @@ func NewHandler(options Options) *Handler {
 		recoveryTimeout = 30 * time.Second
 	}
 	return &Handler{
-		heartbeatInterval: options.HeartbeatInterval,
-		maxMessageBytes:   options.MaxMessageBytes,
-		nodeID:            options.NodeID,
-		locationLookup:    options.LocationLookup,
-		participantMedia:  options.ParticipantMedia,
-		pongTimeout:       options.PongTimeout,
-		recoveries:        make(map[string]chan struct{}),
-		recoveryTimeout:   recoveryTimeout,
-		registry:          newRegistry(),
-		rtcService:        options.RTCService,
-		sessionStore:      options.SessionStore,
-		shutdown:          options.Shutdown,
+		trustedProxyCIDRs:  append([]netip.Prefix(nil), options.TrustedProxyCIDRs...),
+		storeParticipantIP: options.StoreParticipantIP,
+		heartbeatInterval:  options.HeartbeatInterval,
+		maxMessageBytes:    options.MaxMessageBytes,
+		nodeID:             options.NodeID,
+		locationLookup:     options.LocationLookup,
+		participantMedia:   options.ParticipantMedia,
+		pongTimeout:        options.PongTimeout,
+		recoveries:         make(map[string]chan struct{}),
+		recoveryTimeout:    recoveryTimeout,
+		registry:           newRegistry(),
+		rtcService:         options.RTCService,
+		sessionStore:       options.SessionStore,
+		shutdown:           options.Shutdown,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(request *http.Request) bool {
 				origin := request.Header.Get("Origin")
@@ -158,7 +163,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	defer websocketConnection.Close()
 
 	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
-	joined := handler.serve(client, claims, rawToken, requestClientIP(request))
+	joined := handler.serve(client, claims, rawToken, requestClientIP(request, handler.trustedProxyCIDRs))
 	if joined != nil {
 		handler.disconnect(client, joined, claims)
 		handler.flushClientUsage(client, joined.session.ID)
@@ -251,72 +256,67 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 
 func (handler *Handler) flushClientUsage(client *client, sessionID string) {
 	recorder, ok := handler.sessionStore.(interface {
-		RecordUsage(context.Context, string, int64, int64) error
+		RecordUsageSample(context.Context, string, string, int64, int64) error
 	})
 	if !ok {
 		return
 	}
-	messagesIn, messagesOut := client.drainUsage()
-	if messagesIn == 0 && messagesOut == 0 {
-		return
-	}
-	usageContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := recorder.RecordUsage(usageContext, sessionID, messagesIn, messagesOut); err != nil {
-		client.restoreUsage(messagesIn, messagesOut)
-		slog.Warn("signaling usage persistence failed", "error", err, "session_id", sessionID)
+	client.usageMu.Lock()
+	defer client.usageMu.Unlock()
+	for attempt := 0; attempt < 2; attempt++ {
+		if client.pendingUsage == nil {
+			incoming, outgoing := client.drainUsage()
+			if incoming == 0 && outgoing == 0 {
+				return
+			}
+			client.pendingUsage = &usageSample{id: newID("usage"), incoming: incoming, outgoing: outgoing}
+		}
+		pending := client.pendingUsage
+		usageContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := recorder.RecordUsageSample(usageContext, sessionID, pending.id, pending.incoming, pending.outgoing)
+		cancel()
+		if err != nil {
+			slog.Warn("signaling usage persistence failed", "error", err, "session_id", sessionID)
+			return
+		}
+		client.pendingUsage = nil
 	}
 }
 
 func (handler *Handler) recordSessionLocation(sessionID, clientIP string) {
 	recorder, ok := handler.sessionStore.(SessionLocationStore)
-	if !ok || clientIP == "" {
+	if !ok || clientIP == "" || (!handler.storeParticipantIP && handler.locationLookup == nil) {
 		return
 	}
 
+	handler.wg.Add(1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer handler.wg.Done()
+		parent := handler.shutdown
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 		defer cancel()
 
 		location := geolocation.Location{}
 		if handler.locationLookup != nil {
 			resolved, err := handler.locationLookup.Lookup(ctx, clientIP)
 			if err != nil {
-				slog.Warn("participant location lookup failed", "error", err)
+				slog.Warn("participant location lookup failed")
 			} else {
 				location = resolved
 			}
 		}
 
-		if err := recorder.SetLocation(ctx, sessionID, clientIP, location.CountryCode, location.Country); err != nil {
-			slog.Warn("participant location persistence failed", "error", err, "session_id", sessionID)
+		storedIP := ""
+		if handler.storeParticipantIP {
+			storedIP = clientIP
+		}
+		if err := recorder.SetLocation(ctx, sessionID, storedIP, location.CountryCode, location.Country); err != nil {
+			slog.Warn("participant location persistence failed", "session_id", sessionID)
 		}
 	}()
-}
-
-func requestClientIP(request *http.Request) string {
-	for _, value := range []string{
-		strings.Split(request.Header.Get("X-Forwarded-For"), ",")[0],
-		request.Header.Get("X-Real-IP"),
-		request.RemoteAddr,
-	} {
-		if ip := parseIP(value); ip != "" {
-			return ip
-		}
-	}
-	return ""
-}
-
-func parseIP(value string) string {
-	value = strings.TrimSpace(value)
-	if host, _, err := net.SplitHostPort(value); err == nil {
-		value = host
-	}
-	value = strings.Trim(value, "[]")
-	if net.ParseIP(value) == nil {
-		return ""
-	}
-	return value
 }
 
 func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawToken string, joined *joinedSession, clientIP string, data []byte) (bool, *joinedSession) {
@@ -619,7 +619,15 @@ type heartbeatPayload struct {
 	Nonce string `json:"nonce"`
 }
 
+type usageSample struct {
+	id       string
+	incoming int64
+	outgoing int64
+}
+
 type client struct {
+	usageMu      sync.Mutex
+	pendingUsage *usageSample
 	connection   *websocket.Conn
 	writeTimeout time.Duration
 	mu           sync.Mutex
@@ -652,12 +660,6 @@ func (client *client) drainUsage() (int64, int64) {
 	client.recordedIn = client.messagesIn
 	client.recordedOut = client.messagesOut
 	return messagesIn, messagesOut
-}
-func (client *client) restoreUsage(messagesIn, messagesOut int64) {
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	client.recordedIn -= messagesIn
-	client.recordedOut -= messagesOut
 }
 func (client *client) control(kind int, data []byte) error {
 	client.mu.Lock()

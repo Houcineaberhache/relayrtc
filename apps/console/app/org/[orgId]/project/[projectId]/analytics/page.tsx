@@ -4,8 +4,8 @@ import { PageHeader } from '@/components/page/page-header'
 import {
   type AnalyticsRange,
   getProjectAnalytics,
-} from '@/lib/analytics/project-analytics-service'
-import { getAuthRuntime } from '@/lib/auth-server'
+} from '@/lib/reporting/client'
+import { analyticsView } from '@/lib/reporting/analytics-view'
 import { requireProject } from '@/lib/console-data'
 
 export const metadata: Metadata = {
@@ -64,12 +64,11 @@ export default async function AnalyticsPage({
 
   const analytics =
     await getProjectAnalytics(
-      getAuthRuntime().database,
       projectId,
       range,
       selectedEnvironment ===
         'all'
-        ? null
+        ? undefined
         : selectedEnvironment,
     )
 
@@ -88,7 +87,7 @@ export default async function AnalyticsPage({
         environments={
           projectData.environments
         }
-        data={analytics}
+        data={analyticsView(analytics)}
       />
     </div>
   )

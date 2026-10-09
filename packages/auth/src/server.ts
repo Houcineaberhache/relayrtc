@@ -114,6 +114,25 @@ export const createRelayKitAuth = (options: RelayKitAuthOptions) => {
 
 export type RelayKitAuth = ReturnType<typeof createRelayKitAuth>;
 
+export const createRelayKitSessionVerifier = (
+  options: Pick<RelayKitAuthOptions, "baseUrl" | "database" | "secret">,
+) => {
+  const auth = betterAuth({
+    baseURL: options.baseUrl,
+    secret: options.secret,
+    advanced: { defaultCookieAttributes: sessionCookieAttributes(options.baseUrl) },
+    database: drizzleAdapter(options.database, { provider: "pg", schema }),
+    session: relayKitSessionPolicy,
+  });
+  return async (headers: Headers): Promise<{ userId: string } | null> => {
+    const session = await auth.api.getSession({
+      headers,
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+    return session ? { userId: session.user.id } : null;
+  };
+};
+
 export const createRelayKitAuthHandler =
   (auth: RelayKitAuth) =>
   async (request: Request): Promise<Response> => {

@@ -6,16 +6,11 @@ import { Panel } from '@/components/page/panel'
 import { MiniBars, StatCard } from '@/components/page/stat-card'
 import { QuickstartTabs } from '@/components/project/quickstart-tabs'
 import { buttonVariants } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { formatNumber } from '@/lib/format'
 import { requireProject } from '@/lib/console-data'
 import { routes } from '@/lib/routes'
 import { cn } from '@/lib/utils'
-import {
-  MONTHLY_FREE_MINUTES,
-  getMonthToDateMinutes,
-  getUsage,
-} from '@/lib/usage-data'
+import { getProjectAnalytics, getOrganizationQuota } from '@/lib/reporting/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,19 +35,7 @@ export default async function ProjectOverviewPage({
   const { orgId, projectId } = await params
   const data = await requireProject(orgId, projectId)
 
-  const usage = getUsage({
-    offset: 0,
-    granularity: 'day',
-    groupBy: 'media',
-    environment: 'all',
-  })
-
-  const usedMinutes = getMonthToDateMinutes()
-
-  const usedPercent = Math.min(
-    Math.round((usedMinutes / MONTHLY_FREE_MINUTES) * 100),
-    100,
-  )
+  const [analytics, quota] = await Promise.all([getProjectAnalytics(projectId, '7d'), getOrganizationQuota(orgId)])
 
   const firstName =
     data.session.user.name?.trim().split(/\s+/)[0] || 'there'
@@ -76,82 +59,23 @@ export default async function ProjectOverviewPage({
         }
       />
 
-      <Panel className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-medium">Community plan</h2>
-
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {formatNumber(usedMinutes)} of{' '}
-            {formatNumber(MONTHLY_FREE_MINUTES)} free participant minutes used
-            this month.
-          </p>
-
-          <Progress
-            value={usedPercent}
-            aria-label="Free participant minutes used"
-            className="mt-3 max-w-md"
-          />
-        </div>
-
-        <Link
-          href={routes.orgSettings(orgId, 'billing')}
-          className={cn(
-            buttonVariants({ size: 'default' }),
-            'w-full rounded-full sm:w-auto',
-          )}
-        >
-          Upgrade plan
-        </Link>
+      <Panel>
+        <h2 className="text-base font-medium">Organization quota</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{quota.status === 'unconfigured' ? 'No usage limits configured.' : 'Quota unavailable.'}</p>
+        <Link href={`/org/${orgId}/usage`} className="mt-3 inline-block text-sm underline">Organization usage</Link>
       </Panel>
-
+      {(analytics.dataQuality.sessionHistory === 'partial' || analytics.dataQuality.messageHistory === 'partial') && <p role="status" className="text-sm text-muted-foreground">Some historical activity is unavailable. These totals may be incomplete.</p>}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Live participants"
-          value="128"
-          hint="now"
-          delta={4.2}
-        >
-          <MiniBars
-            label="Live participants over the last hour"
-            values={[40, 52, 61, 58, 72, 80, 95, 88, 102, 110, 121, 128]}
-          />
+        <StatCard label="Peak participants" value={formatNumber(analytics.summary.peakConcurrent)} hint="7d">
+          {analytics.summary.peakConcurrent > 0 && <MiniBars label="Peak participants by UTC day" values={analytics.traffic.map(bucket => bucket.participants)} />}
         </StatCard>
-
-        <StatCard
-          label="Participant minutes"
-          value={formatNumber(usage.totals.minutes)}
-          hint="7d"
-          delta={8.1}
-        >
-          <MiniBars
-            label="Participant minutes per day"
-            values={usage.minutesByBucket.map((bucket) => bucket.value)}
-          />
+        <StatCard label="Participant minutes" value={formatNumber(analytics.summary.participantSeconds / 60)} hint="7d">
+          {analytics.summary.participantSeconds > 0 && <MiniBars label="Participant minutes by UTC day" values={analytics.traffic.map(bucket => bucket.participantSeconds / 60)} />}
         </StatCard>
-
-        <StatCard
-          label="Sessions"
-          value={formatNumber(usage.totals.sessions)}
-          hint="7d"
-          delta={5.6}
-        >
-          <MiniBars
-            label="Sessions per day"
-            values={usage.sessionsByBucket.map((bucket) => bucket.value)}
-          />
+        <StatCard label="Sessions" value={formatNumber(analytics.summary.totalSessions)} hint="7d">
+          {analytics.summary.totalSessions > 0 && <MiniBars label="Sessions overlapping each UTC day" values={analytics.traffic.map(bucket => bucket.sessions)} />}
         </StatCard>
-
-        <StatCard
-          label="Connection success"
-          value="99.2%"
-          hint="7d"
-          delta={0.2}
-        >
-          <MiniBars
-            label="Connection success per day"
-            values={[97, 98, 99, 98, 99, 99, 99]}
-          />
-        </StatCard>
+        <StatCard label="Connection success" value={analytics.summary.totalSessions === 0 ? 'No sessions' : `${analytics.summary.connectionSuccessRate.toFixed(1)}%`} hint="7d" />
       </div>
 
       <Panel className="flex flex-col gap-4">

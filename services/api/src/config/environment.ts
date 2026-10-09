@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { z } from "zod";
 
@@ -26,6 +27,9 @@ const environmentSchema = z
     API_HOST: z.string().trim().min(1).default("0.0.0.0"),
     API_LOG_LEVEL: z.enum(logLevels).default("info"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+    BETTER_AUTH_SECRET: z.string().trim().min(32).optional(),
+    BETTER_AUTH_URL: z.url().trim().optional(),
+    API_TRUSTED_PROXY_CIDRS: z.string().default(""),
     API_TRUST_PROXY: z
       .enum(["true", "false"])
       .default("false")
@@ -62,6 +66,7 @@ const environmentSchema = z
   .strict();
 
 export interface ApiConfig {
+  consoleAuth?: { baseUrl: string; secret: string };
   databaseUrl: string;
   host: string;
   logLevel: (typeof logLevels)[number];
@@ -74,7 +79,7 @@ export interface ApiConfig {
   mediaInternalUrl: string;
   port: number;
   signalingInternalUrl: string;
-  trustProxy: boolean;
+  trustProxy: false | string[];
   turnCredentialTtlSeconds: number;
   turnSharedSecret: string;
   turnStunUrls: readonly string[];
@@ -94,7 +99,10 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     API_HOST: source.API_HOST,
     API_LOG_LEVEL: source.API_LOG_LEVEL,
     API_PORT: source.API_PORT,
+    BETTER_AUTH_SECRET: source.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: source.BETTER_AUTH_URL,
     API_TRUST_PROXY: source.API_TRUST_PROXY,
+    API_TRUSTED_PROXY_CIDRS: source.API_TRUSTED_PROXY_CIDRS,
     DATABASE_URL: source.DATABASE_URL,
     NODE_ENV: source.NODE_ENV,
     PARTICIPANT_TOKEN_AUDIENCE: source.PARTICIPANT_TOKEN_AUDIENCE,
@@ -117,7 +125,48 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     throw new Error(`Invalid API configuration: ${description}`);
   }
 
+  const authSecret = parsed.data.BETTER_AUTH_SECRET;
+  const authUrl = parsed.data.BETTER_AUTH_URL;
+  if ((authSecret === undefined) !== (authUrl === undefined)) {
+    throw new Error("BETTER_AUTH_SECRET and BETTER_AUTH_URL must be configured together");
+  }
+  if (authUrl) {
+    const url = new URL(authUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error("BETTER_AUTH_URL must be an HTTP origin without credentials or a path");
+    }
+  }
+
+  const trustedProxyCIDRs = parsed.data.API_TRUSTED_PROXY_CIDRS.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  for (const cidr of trustedProxyCIDRs) {
+    const [address, bits, extra] = cidr.split("/");
+    const family = address ? isIP(address) : 0;
+    if (
+      !family ||
+      !bits ||
+      !/^\d+$/u.test(bits) ||
+      extra !== undefined ||
+      Number(bits) < 1 ||
+      Number(bits) > (family === 4 ? 32 : 128) ||
+      address?.includes("%")
+    ) {
+      throw new Error("API_TRUSTED_PROXY_CIDRS must contain explicit IPv4 or IPv6 CIDRs");
+    }
+  }
+  if (parsed.data.API_TRUST_PROXY && trustedProxyCIDRs.length === 0) {
+    throw new Error("API_TRUSTED_PROXY_CIDRS is required when API_TRUST_PROXY is true");
+  }
   return {
+    ...(authSecret && authUrl ? { consoleAuth: { baseUrl: authUrl, secret: authSecret } } : {}),
     databaseUrl: parsed.data.DATABASE_URL,
     host: parsed.data.API_HOST,
     logLevel: parsed.data.API_LOG_LEVEL,
@@ -130,7 +179,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     mediaInternalUrl: parsed.data.RELAYRTC_MEDIA_INTERNAL_URL,
     port: parsed.data.API_PORT,
     signalingInternalUrl: parsed.data.RELAYRTC_SIGNALING_INTERNAL_URL,
-    trustProxy: parsed.data.API_TRUST_PROXY,
+    trustProxy: parsed.data.API_TRUST_PROXY ? trustedProxyCIDRs : false,
     turnCredentialTtlSeconds: parsed.data.TURN_CREDENTIAL_TTL_SECONDS,
     turnSharedSecret: parsed.data.TURN_SHARED_SECRET,
     turnStunUrls: parsed.data.TURN_STUN_URLS,

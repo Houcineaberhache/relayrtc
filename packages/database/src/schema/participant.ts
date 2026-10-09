@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  uniqueIndex,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -63,6 +64,9 @@ export const participantSession = pgTable(
     messagesIn: integer("messages_in").default(0).notNull(),
     messagesOut: integer("messages_out").default(0).notNull(),
     connectionSeconds: doublePrecision("connection_seconds").default(0).notNull(),
+    meteringStartedAt: timestamp("metering_started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("participant_session_participant_id_idx").on(table.participantId),
@@ -85,3 +89,39 @@ export const participantSessionRelations = relations(participantSession, ({ one 
     references: [participant.id],
   }),
 }));
+
+export const participantConnectionInterval = pgTable(
+  "participant_connection_interval",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => participantSession.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("participant_connection_interval_session_time_idx").on(table.sessionId, table.startedAt),
+    uniqueIndex("participant_connection_interval_open_idx")
+      .on(table.sessionId)
+      .where(sql`${table.endedAt} is null`),
+    check(
+      "participant_connection_interval_time_check",
+      sql`${table.endedAt} is null or ${table.endedAt} >= ${table.startedAt}`,
+    ),
+  ],
+);
+
+export const signalingUsageSample = pgTable(
+  "signaling_usage_sample",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => participantSession.id, { onDelete: "cascade" }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("signaling_usage_sample_session_idx").on(table.sessionId)],
+);

@@ -7,4 +7,5 @@ export * from "./quality.js";
 export * from "./room.js";
 export * from "./track.js";
 export * from "./usage.js";
+export * from "./reporting.js";
 export * from "./webhook.js";

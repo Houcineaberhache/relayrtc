@@ -77,18 +77,26 @@ type storePool interface {
 }
 
 type Store struct {
-	pool storePool
+	pool              storePool
+	locationRetention time.Duration
 }
 
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+func NewStore(pool *pgxpool.Pool, locationRetention time.Duration) *Store {
+	return &Store{pool: pool, locationRetention: locationRetention}
 }
 
-func (store *Store) RecordUsage(ctx context.Context, sessionID string, messagesIn, messagesOut int64) error {
+func (store *Store) RecordUsageSample(ctx context.Context, sessionID, sampleID string, messagesIn, messagesOut int64) error {
+	if sampleID == "" || messagesIn < 0 || messagesOut < 0 {
+		return errors.New("invalid signaling usage sample")
+	}
 	_, err := store.pool.Exec(ctx, `
-		UPDATE participant_session
-		SET messages_in = messages_in + $2, messages_out = messages_out + $3
-		WHERE id = $1`, sessionID, messagesIn, messagesOut)
+        WITH accepted AS (
+            INSERT INTO signaling_usage_sample (id, session_id) VALUES ($2, $1)
+            ON CONFLICT (id) DO NOTHING RETURNING session_id
+        )
+        UPDATE participant_session s
+        SET messages_in = s.messages_in + $3, messages_out = s.messages_out + $4
+        FROM accepted WHERE s.id = accepted.session_id`, sessionID, sampleID, messagesIn, messagesOut)
 	if err != nil {
 		return fmt.Errorf("record signaling usage: %w", err)
 	}
@@ -98,8 +106,8 @@ func (store *Store) RecordUsage(ctx context.Context, sessionID string, messagesI
 func (store *Store) SetLocation(ctx context.Context, sessionID, clientIP, countryCode, country string) error {
 	_, err := store.pool.Exec(ctx, `
 		UPDATE participant_session
-		SET client_ip = $2, country_code = NULLIF($3, ''), country = NULLIF($4, '')
-		WHERE id = $1`, sessionID, clientIP, countryCode, country)
+		SET client_ip = NULLIF($2, ''), country_code = NULLIF($3, ''), country = NULLIF($4, '')
+		WHERE id = $1 AND joined_at >= $5`, sessionID, clientIP, countryCode, country, time.Now().Add(-store.locationRetention))
 	if err != nil {
 		return fmt.Errorf("record participant location: %w", err)
 	}
@@ -433,6 +441,20 @@ func requireActiveProject(ctx context.Context, tx pgx.Tx, projectID string) erro
 	}
 	if status != "active" {
 		return ErrRoomNotJoinable
+	}
+	return nil
+}
+
+func (store *Store) PurgeLocations(ctx context.Context, cutoff time.Time, clearIP bool) error {
+	_, err := store.pool.Exec(ctx, `
+  UPDATE participant_session
+  SET client_ip = CASE WHEN joined_at < $1 OR $2 THEN NULL ELSE client_ip END,
+      country_code = CASE WHEN joined_at < $1 THEN NULL ELSE country_code END,
+      country = CASE WHEN joined_at < $1 THEN NULL ELSE country END
+  WHERE (joined_at < $1 AND (client_ip IS NOT NULL OR country_code IS NOT NULL OR country IS NOT NULL))
+     OR ($2 AND client_ip IS NOT NULL)`, cutoff, clearIP)
+	if err != nil {
+		return fmt.Errorf("purge participant location: %w", err)
 	}
 	return nil
 }

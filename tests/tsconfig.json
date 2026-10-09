@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "typeRoots": ["../services/api/node_modules/@types"]
+  },
+  "include": ["reporting-flow.integration.test.ts"]
+}

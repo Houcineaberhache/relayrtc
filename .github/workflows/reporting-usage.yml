@@ -1,0 +1,50 @@
+name: Reporting usage
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-usage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: relayrtc_usage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d relayrtc_usage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-only@localhost:5432/relayrtc_usage_test
+      RELAYRTC_TEST_DATABASE_URL: postgresql://postgres:ci-only@localhost:5432/relayrtc_usage_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter @relayrtc/api... --filter @relayrtc/media... build
+      - run: pnpm exec tsc -p tests/tsconfig.json
+      - run: pnpm --filter @relayrtc/database db:check
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/signaling/go.mod
+          cache-dependency-path: services/signaling/go.sum
+      - run: pnpm exec vitest run services/api/src/modules/reporting services/media/src/usage services/media/src/engine/worker-pool.test.ts apps/console/lib/reporting tests/reporting-flow.integration.test.ts --configLoader native --maxWorkers 2 --no-file-parallelism
+      - run: go test ./internal/connection ./internal/session
+        working-directory: services/signaling

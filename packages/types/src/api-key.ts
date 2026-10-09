@@ -14,6 +14,8 @@ export const apiKeyScopes = [
   "recordings:create",
   "recordings:read",
   "webhooks:read",
+  "usage:read",
+  "analytics:read",
 ] as const;
 
 export type ApiKeyScope = (typeof apiKeyScopes)[number];

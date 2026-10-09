@@ -85,6 +85,20 @@
       "when": 1791066000000,
       "tag": "0011_participant_session_location",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791496800000,
+      "tag": "0012_session_usage_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791583200000,
+      "tag": "0013_signaling_usage_samples",
+      "breakpoints": false
     }
   ]
 }
