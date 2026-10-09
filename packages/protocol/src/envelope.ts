@@ -26,6 +26,13 @@ export interface ProtocolResponse<Type extends string, Payload> extends Protocol
 
 export type ProtocolEvent<Type extends string, Payload> = ProtocolEnvelope<Type, Payload>;
 
+export interface CorrelatedProtocolEvent<Type extends string, Payload> extends ProtocolEvent<
+  Type,
+  Payload
+> {
+  readonly requestId?: ProtocolMessageId | undefined;
+}
+
 export const protocolMessageIdSchema = z
   .string()
   .min(1)
@@ -71,4 +78,13 @@ export function protocolEventSchema<Type extends string, PayloadSchema extends z
   payload: PayloadSchema,
 ) {
   return protocolRequestSchema(type, payload);
+}
+
+export function correlatedProtocolEventSchema<Type extends string, PayloadSchema extends z.ZodType>(
+  type: Type,
+  payload: PayloadSchema,
+) {
+  return protocolEventSchema(type, payload).extend({
+    requestId: protocolMessageIdSchema.optional(),
+  });
 }
