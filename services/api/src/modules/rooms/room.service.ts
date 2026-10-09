@@ -5,6 +5,7 @@ import type { Metadata, RoomStatus } from "@relayrtc/types";
 import { ApiError } from "../../http/errors/api-error.js";
 import type { CreateRoomBody, ListRoomsQuery } from "./room.schema.js";
 import type { RoomCursor, RoomRecord, RoomRepository, RoomScope } from "./room.repository.js";
+import type { RuntimeOperationView } from "@relayrtc/auth";
 import type { RoomRuntimeService } from "./room-runtime.service.js";
 
 interface RoomResponse {
@@ -76,10 +77,10 @@ export const createRoomService = (repository: RoomRepository, runtime?: RoomRunt
     return toResponse(created);
   },
 
-  async end(scope: RoomScope, id: string): Promise<void> {
+  async end(scope: RoomScope, id: string): Promise<RuntimeOperationView | undefined> {
     const ended = await repository.end(scope, id, new Date());
     if (!ended) throw new ApiError(404, "ROOM_NOT_FOUND", "The room does not exist");
-    await runtime?.end(ended);
+    return runtime?.end(ended);
   },
 
   async get(scope: RoomScope, id: string): Promise<RoomResponse> {
