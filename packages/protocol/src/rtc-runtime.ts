@@ -29,6 +29,7 @@ export const rtcRuntimeBodySchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("room.create"), body: z.null() }).strict(),
   z.object({ operation: z.literal("room.close"), body: z.null() }).strict(),
   z.object({ operation: z.literal("capabilities.get"), body: z.null() }).strict(),
+  z.object({ operation: z.literal("tracks.list"), body: z.null() }).strict(),
   z.object({ operation: z.literal("participant.remove"), body: z.null() }).strict(),
   z.object({ operation: z.literal("transport.create"), body: z.object({ ...owner, direction: z.enum(["send", "receive"]) }).strict() }).strict(),
   z.object({ operation: z.literal("transport.connect"), body: z.object({ ...owner, dtlsParameters: dtlsParametersSchema }).strict() }).strict(),
@@ -37,6 +38,7 @@ export const rtcRuntimeBodySchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("track.subscribe"), body: z.object({ ...owner, transportId: resourceId, trackId: resourceId, rtpCapabilities: parameters }).strict() }).strict(),
   z.object({ operation: z.literal("track.remove"), body: z.null() }).strict(),
   z.object({ operation: z.literal("subscription.resume"), body: z.object(owner).strict() }).strict(),
+  z.object({ operation: z.literal("subscription.remove"), body: z.object(owner).strict() }).strict(),
 ]);
 
 export const rtcRuntimeCommandSchema = z.object({
@@ -50,7 +52,7 @@ export const rtcRuntimeCommandSchema = z.object({
 }).strict().superRefine((command, context) => {
   const body = command.request.body;
   const participantId = "mediaParticipantId" in command.scope ? command.scope.mediaParticipantId : undefined;
-  if (command.request.operation !== "room.create" && command.request.operation !== "room.close" && participantId === undefined)
+  if (command.request.operation !== "room.create" && command.request.operation !== "room.close" && command.request.operation !== "tracks.list" && participantId === undefined)
     context.addIssue({ code: "custom", message: "Participant operations require a joined session binding" });
   if (body && body.participantId !== participantId)
     context.addIssue({ code: "custom", message: "Media participant must match the trusted session binding" });
@@ -68,6 +70,7 @@ export const rtcRuntimeCommandSchema = z.object({
     "room.create": ["POST", rest.length === 0, ""],
     "room.close": ["DELETE", rest.length === 0, ""],
     "capabilities.get": ["GET", rest.length === 1 && rest[0] === "capabilities", "rtc.capabilities"],
+    "tracks.list": ["GET", rest.length === 1 && rest[0] === "tracks", ""],
     "transport.create": ["POST", rest.length === 1 && rest[0] === "transports", "rtc.transport.created"],
     "transport.connect": ["PATCH", rest.length === 2 && rest[0] === "transports" && idAt(1), "rtc.transport.connected"],
     "ice.restart": ["POST", rest.length === 3 && rest[0] === "transports" && idAt(1) && rest[2] === "restart-ice", "rtc.ice.restarted"],
@@ -76,6 +79,7 @@ export const rtcRuntimeCommandSchema = z.object({
     "track.remove": ["DELETE", rest.length === 4 && rest[0] === "participants" && rest[1] === participantId && rest[2] === "tracks" && idAt(3), "rtc.track.control.accepted"],
     "participant.remove": ["DELETE", rest.length === 2 && rest[0] === "participants" && rest[1] === participantId, ""],
     "subscription.resume": ["PATCH", rest.length === 3 && rest[0] === "subscriptions" && idAt(1) && rest[2] === "resume", "rtc.subscription.resumed"],
+    "subscription.remove": ["DELETE", rest.length === 2 && rest[0] === "subscriptions" && idAt(1), "rtc.subscription.close.accepted"],
   } as const;
   const route = routes[command.request.operation];
   if (command.path.includes("?") || command.path.includes("#") || parts[4] !== command.scope.roomId || command.method !== route[0] || !route[1] || command.responseType !== route[2])
@@ -87,7 +91,7 @@ export type RtcRuntimeCommand = z.infer<typeof rtcRuntimeCommandSchema>;
 
 export function rtcRuntimeAuthority(command: RtcRuntimeCommand): MediaControlAuthority {
   const { roomId } = command.scope;
-  if (command.request.operation === "room.create" || command.request.operation === "room.close") return { kind: "room", roomId };
+  if (command.request.operation === "room.create" || command.request.operation === "room.close" || command.request.operation === "tracks.list") return { kind: "room", roomId };
   if (!("mediaParticipantId" in command.scope)) throw new Error("A joined session binding is required");
   const { mediaParticipantId: participantId, sessionId } = command.scope;
   switch (command.request.operation) {
@@ -118,6 +122,10 @@ export const rtcRuntimePolicy = {
   placementFailure: "release-allocation-claim-and-return-temporarily_unavailable",
   nodeFailure: "invalidate-generation-and-renegotiate-never-reuse-transports",
   subscriptionStart: "paused-until-client-consumer-is-ready",
+  subscriptionNegotiationTimeoutMs: 60_000,
+  subscriptionFailure: "close-consumer-and-invalidate-binding",
+  trackDiscovery: "room-scoped-snapshot-on-join-and-resume",
+  eventDelivery: "ordered-room-journal-with-session-scoped-consumer-events",
   responseTranslation: "media-id-to-public-id-with-server-owned-track-metadata-and-timestamps",
   responseFields: { transportId: "transport.id", subscriptionId: "subscription.id", trackId: "public-track-binding.id", trackMetadata: "signaling-track-binding.metadata", producerId: "internal-only" },
   failureCodes: { forbidden: "forbidden", invalid: "invalid_message", unsupported: "invalid_message", unavailable: "temporarily_unavailable", requestConflict: "conflict" } satisfies Record<string, ProtocolErrorCode>,

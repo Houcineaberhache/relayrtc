@@ -51,6 +51,9 @@ import { connectionDegradedEventSchema, connectionRecoveredEventSchema } from ".
 import type {
   RtcCapabilitiesGetRequest,
   RtcSubscriptionResumeRequest,
+  RtcSubscriptionCloseRequest,
+  RtcSubscriptionCloseAcceptedResponse,
+  RtcSubscriptionClosedEvent,
   RtcSubscriptionResumedResponse,
   RtcCapabilitiesResponse,
   RtcIceRestartedResponse,
@@ -77,6 +80,9 @@ import {
   rtcTrackPublishRequestSchema,
   rtcTrackSubscribedResponseSchema,
   rtcSubscriptionResumeRequestSchema,
+  rtcSubscriptionCloseRequestSchema,
+  rtcSubscriptionCloseAcceptedResponseSchema,
+  rtcSubscriptionClosedEventSchema,
   rtcSubscriptionResumedResponseSchema,
   rtcTrackSubscribeRequestSchema,
   rtcTransportConnectedResponseSchema,
@@ -113,6 +119,8 @@ export const protocolRequestTypes = [
   "rtc.track.publish",
   "rtc.track.control",
   "rtc.track.subscribe",
+  "rtc.subscription.resume",
+  "rtc.subscription.close",
   "session.resume",
 ] as const;
 
@@ -130,6 +138,8 @@ export const protocolResponseTypes = [
   "rtc.track.publish.accepted",
   "rtc.track.control.accepted",
   "rtc.track.subscribe.accepted",
+  "rtc.subscription.resumed",
+  "rtc.subscription.close.accepted",
   "session.resume.accepted",
 ] as const;
 
@@ -145,6 +155,7 @@ export const protocolEventTypes = [
   "track.paused",
   "track.resumed",
   "track.unpublished",
+  "rtc.subscription.closed",
   "connection.degraded",
   "connection.recovered",
 ] as const;
@@ -158,6 +169,7 @@ export type ProtocolRequestMessage =
   | ParticipantMetadataUpdateRequest
   | RtcCapabilitiesGetRequest
   | RtcSubscriptionResumeRequest
+  | RtcSubscriptionCloseRequest
   | RtcTransportCreateRequest
   | RtcTransportConnectRequest
   | RtcIceRestartRequest
@@ -181,6 +193,7 @@ export type ProtocolResponseMessage =
   | RtcTrackControlledResponse
   | RtcTrackSubscribedResponse
   | RtcSubscriptionResumedResponse
+  | RtcSubscriptionCloseAcceptedResponse
   | SessionResumeAcceptedResponse;
 
 export type ProtocolEventMessage =
@@ -195,6 +208,7 @@ export type ProtocolEventMessage =
   | TrackPausedEvent
   | TrackResumedEvent
   | TrackUnpublishedEvent
+  | RtcSubscriptionClosedEvent
   | ConnectionDegradedEvent
   | ConnectionRecoveredEvent;
 
@@ -246,6 +260,9 @@ export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminated
   rtcTrackSubscribeRequestSchema,
   rtcTrackSubscribedResponseSchema,
   rtcSubscriptionResumeRequestSchema,
+  rtcSubscriptionCloseRequestSchema,
+  rtcSubscriptionCloseAcceptedResponseSchema,
+  rtcSubscriptionClosedEventSchema,
   rtcSubscriptionResumedResponseSchema,
   sessionResumeRequestSchema,
   sessionResumeAcceptedResponseSchema,
