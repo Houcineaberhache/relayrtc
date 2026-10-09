@@ -10,6 +10,8 @@ import { registerErrorHandling } from "./http/errors/error-handler.js";
 import { createParticipantTokenSigner } from "./modules/participant-tokens/participant-token.signer.js";
 import { createRoomRuntimeService } from "./modules/rooms/room-runtime.service.js";
 import { createTurnCredentialService } from "./modules/turn-credentials/turn-credential.service.js";
+import { createRetainedTurnCredentialIssuer } from "./modules/turn-credentials/turn-credential.repository.js";
+import { registerTurnAllocationCollector } from "./modules/turn-credentials/turn-allocation-worker.js";
 import { healthRoutes } from "./routes/health.js";
 import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
@@ -58,12 +60,15 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     keyId: options.config.participantTokenKeyId,
     secret: options.config.participantTokenSigningSecret,
   });
-  const turnCredentialIssuer = createTurnCredentialService({
-    secret: options.config.turnSharedSecret,
-    stunUrls: options.config.turnStunUrls,
-    ttlSeconds: options.config.turnCredentialTtlSeconds,
-    turnUrls: options.config.turnUrls,
-  });
+  const turnCredentialIssuer = createRetainedTurnCredentialIssuer(
+    options.database,
+    createTurnCredentialService({
+      secret: options.config.turnSharedSecret,
+      stunUrls: options.config.turnStunUrls,
+      ttlSeconds: options.config.turnCredentialTtlSeconds,
+      turnUrls: options.config.turnUrls,
+    }),
+  );
   const runtimeConfig = {
     internalSecret: options.config.internalSecret,
     mediaUrl: options.config.mediaInternalUrl,
@@ -96,7 +101,16 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     options.usageRetentionDays === undefined
       ? undefined
       : registerUsageAggregation(app, options.database, options.usageRetentionDays);
+  const stopTurnAccounting = options.config.turnAccountingLogDirectory
+    ? registerTurnAllocationCollector(
+        app,
+        options.database,
+        options.config.turnAccountingLogDirectory,
+        options.config.turnAccountingMetricsUrl,
+      )
+    : undefined;
   app.addHook("onClose", async () => {
+    await stopTurnAccounting?.();
     await stopRuntimeOperations();
     await stopUsageAggregation?.();
     await stopUsageRetention?.();
