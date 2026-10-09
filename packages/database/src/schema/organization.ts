@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm";
-import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { user } from "./auth.js";
 
@@ -8,6 +8,7 @@ export const organization = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    status: text("status").default("active").notNull(),
     slug: text("slug").notNull().unique(),
     logo: text("logo"),
     metadata: text("metadata"),
@@ -17,7 +18,10 @@ export const organization = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("organization_slug_idx").on(table.slug)],
+  (table) => [
+    index("organization_slug_idx").on(table.slug),
+    check("organization_status_check", sql`${table.status} in ('active', 'deleting')`),
+  ],
 );
 
 export const member = pgTable(
