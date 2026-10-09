@@ -1,3 +1,4 @@
+import { registerRequestLimits, readRequestLimits } from "./resource-limits.js";
 import { randomUUID } from "node:crypto";
 
 import { createRelayKitSessionVerifier } from "@relayrtc/auth/server";
@@ -75,6 +76,7 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   });
 
   registerErrorHandling(app);
+  registerRequestLimits(app, options.config.requestLimits ?? readRequestLimits({}));
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
@@ -112,6 +114,7 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     database: options.database,
     participantTokenSigner,
     roomRuntime,
+    runtimeConfig,
     turnCredentialIssuer,
     prefix: "/v1",
   });

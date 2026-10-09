@@ -10,6 +10,8 @@ type ProtocolFailure struct {
 
 func FailureFor(err error) ProtocolFailure {
 	switch {
+	case errors.Is(err, ErrCapacityExceeded):
+		return ProtocolFailure{Code: "rate_limited", Message: "The media resource limit was reached; close unused transports or tracks before retrying", Retryable: true}
 	case errors.Is(err, ErrForbidden):
 		return ProtocolFailure{Code: "forbidden", Message: "The RTC resource does not belong to this room session"}
 	case errors.Is(err, ErrInvalidRequest):

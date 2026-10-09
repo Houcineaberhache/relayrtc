@@ -92,6 +92,8 @@ func (media *MediaHTTP) Execute(ctx context.Context, command Command) (map[strin
 			cause = ErrInvalidRequest
 		case http.StatusForbidden:
 			cause = ErrForbidden
+		case http.StatusTooManyRequests:
+			cause = ErrCapacityExceeded
 		case http.StatusNotImplemented:
 			cause = ErrUnsupported
 		}

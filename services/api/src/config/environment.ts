@@ -1,3 +1,4 @@
+import { readRequestLimits, type RequestLimits } from "../resource-limits.js";
 import { isIP } from "node:net";
 import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { z } from "zod";
@@ -66,6 +67,7 @@ const environmentSchema = z
   .strict();
 
 export interface ApiConfig {
+  requestLimits?: RequestLimits;
   consoleAuth?: { baseUrl: string; secret: string };
   databaseUrl: string;
   host: string;
@@ -167,6 +169,16 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
   }
   return {
     ...(authSecret && authUrl ? { consoleAuth: { baseUrl: authUrl, secret: authSecret } } : {}),
+    ...([
+      "API_REQUESTS_PER_NODE_PER_MINUTE",
+      "API_REQUESTS_PER_IP_PER_MINUTE",
+      "API_REQUESTS_PER_KEY_PER_MINUTE",
+      "API_REQUESTS_PER_PROJECT_PER_MINUTE",
+      "API_REQUESTS_PER_ROOM_PER_MINUTE",
+      "API_LIMIT_TRACKED_SCOPES",
+    ].some((key) => source[key] !== undefined)
+      ? { requestLimits: readRequestLimits(source) }
+      : {}),
     databaseUrl: parsed.data.DATABASE_URL,
     host: parsed.data.API_HOST,
     logLevel: parsed.data.API_LOG_LEVEL,

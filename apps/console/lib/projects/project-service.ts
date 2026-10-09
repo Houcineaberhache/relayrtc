@@ -15,7 +15,7 @@ import {
   type RuntimeOperationView,
   type ResourceDeletionImpact,
 } from "@relayrtc/auth"
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
 
 import {
   projectError,
@@ -297,6 +297,8 @@ export const deleteProject = async (
         .update(schema.project)
         .set({ status: "deleting", updatedAt: new Date() })
         .where(eq(schema.project.id, project.id))
+      await transaction.execute(sql`UPDATE runtime_operation SET payload = payload || jsonb_build_object('requestedBy', ${userId}::text)
+        WHERE id = ${`project.delete:${project.id}`} AND NOT (payload ? 'requestedBy')`)
       return success({ projectId: project.id })
     })
     if (authorization.error) return failure(authorization.error.code)
@@ -338,7 +340,7 @@ export const updateEnvironment = async (
       }
 
       const [currentEnvironment] = await transaction
-        .select({ type: schema.environment.type })
+        .select({ type: schema.environment.type, status: schema.environment.status })
         .from(schema.environment)
         .where(
           and(
@@ -348,7 +350,7 @@ export const updateEnvironment = async (
         )
         .for("update")
 
-      if (!currentEnvironment) return failure("ENVIRONMENT_NOT_FOUND")
+      if (currentEnvironment?.status !== "active") return failure("ENVIRONMENT_NOT_FOUND")
 
       const [environment] = await transaction
         .update(schema.environment)
@@ -434,9 +436,9 @@ export const createEnvironment = async (
 export const deleteEnvironment = async (
   { database, userId }: ProjectServiceContext,
   input: DeleteEnvironmentInput
-): Promise<ProjectResult<{ environmentId: string; projectId: string }>> => {
+): Promise<ProjectResult<{ environmentId: string; projectId: string; operation: RuntimeOperationView | null }>> => {
   try {
-    return await database.transaction(async (transaction) => {
+    const authorization = await database.transaction(async (transaction) => {
       const project = await getLockedProject(transaction, input.projectId)
 
       if (!project) return failure("PROJECT_NOT_FOUND")
@@ -478,8 +480,13 @@ export const deleteEnvironment = async (
       await transaction.update(schema.environment)
         .set({ status: "deleting", updatedAt: new Date() })
         .where(eq(schema.environment.id, environment.id))
+      const operationId = `environment.delete:${environment.id}`
+      await transaction.execute(sql`UPDATE runtime_operation SET payload = payload || jsonb_build_object('requestedBy', ${userId}::text)
+        WHERE id = ${operationId} AND NOT (payload ? 'requestedBy')`)
       return success({ environmentId: environment.id, projectId: project.id })
     })
+    if (authorization.error) return failure(authorization.error.code)
+    return success({ environmentId: input.environmentId, projectId: input.projectId, operation: await getRuntimeOperation(database, `environment.delete:${input.environmentId}`) })
   } catch {
     return failure("ENVIRONMENT_DELETION_FAILED")
   }

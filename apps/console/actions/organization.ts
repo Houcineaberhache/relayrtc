@@ -12,7 +12,7 @@ import {
   type TransferOrganizationOwnershipResult,
 } from "@relayrtc/auth"
 import { createOrganizationInputSchema, deleteOrganizationInputSchema, organizationIdSchema, transferOrganizationOwnershipInputSchema } from "@relayrtc/validation"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 
@@ -91,6 +91,8 @@ export async function deleteOrganizationAction(input: unknown) {
         throw new Error("Organization owner changed during deletion")
       }
       await transaction.update(schema.organization).set({ status: "deleting", updatedAt: new Date() }).where(eq(schema.organization.id, organizationId))
+      await transaction.execute(sql`UPDATE runtime_operation SET payload = payload || jsonb_build_object('requestedBy', ${owned.userId}::text)
+        WHERE id = ${`organization.delete:${organizationId}`} AND NOT (payload ? 'requestedBy')`)
     })
 
     revalidatePath("/", "layout")

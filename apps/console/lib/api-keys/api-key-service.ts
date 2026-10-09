@@ -118,7 +118,8 @@ const getProjectEnvironment = async (
     .where(
       and(
         eq(schema.environment.id, environmentId),
-        eq(schema.environment.projectId, projectId)
+        eq(schema.environment.projectId, projectId),
+        eq(schema.environment.status, "active")
       )
     )
     .for("share")

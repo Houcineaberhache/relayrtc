@@ -304,6 +304,9 @@ func (adapter *Adapter) CloseRoom(ctx context.Context, roomID string) error {
 		if err != nil {
 			return err
 		}
+		if state.Generation == "" && len(state.Sessions) == 0 && !state.Allocating && !state.Ready {
+			return nil
+		}
 		state.Closing = true
 		if err := room.Save(ctx, state); err != nil {
 			return err

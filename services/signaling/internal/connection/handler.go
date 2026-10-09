@@ -28,6 +28,7 @@ const (
 )
 
 type Options struct {
+	ResourceLimits     ResourceLimits
 	TrustedProxyCIDRs  []netip.Prefix
 	StoreParticipantIP bool
 	AllowedOrigins     []string
@@ -68,6 +69,7 @@ type SessionStore interface {
 }
 
 type Handler struct {
+	limiter            *resourceLimiter
 	trustedProxyCIDRs  []netip.Prefix
 	storeParticipantIP bool
 	heartbeatInterval  time.Duration
@@ -76,6 +78,7 @@ type Handler struct {
 	participantMedia   ParticipantMediaService
 	pongTimeout        time.Duration
 	recoveries         map[string]chan struct{}
+	recoveryRooms      map[string]string
 	recoveryMu         sync.Mutex
 	recoveryTimeout    time.Duration
 	registry           *registry
@@ -96,6 +99,9 @@ type joinedSession struct {
 }
 
 func NewHandler(options Options) *Handler {
+	if options.ResourceLimits.Connections == 0 {
+		options.ResourceLimits = DefaultResourceLimits()
+	}
 	if options.Shutdown == nil {
 		options.Shutdown = context.Background()
 	}
@@ -108,6 +114,7 @@ func NewHandler(options Options) *Handler {
 		recoveryTimeout = 30 * time.Second
 	}
 	return &Handler{
+		limiter:            newResourceLimiter(options.ResourceLimits),
 		trustedProxyCIDRs:  append([]netip.Prefix(nil), options.TrustedProxyCIDRs...),
 		storeParticipantIP: options.StoreParticipantIP,
 		heartbeatInterval:  options.HeartbeatInterval,
@@ -117,6 +124,7 @@ func NewHandler(options Options) *Handler {
 		participantMedia:   options.ParticipantMedia,
 		pongTimeout:        options.PongTimeout,
 		recoveries:         make(map[string]chan struct{}),
+		recoveryRooms:      make(map[string]string),
 		recoveryTimeout:    recoveryTimeout,
 		registry:           newRegistry(),
 		rtcService:         options.RTCService,
@@ -140,6 +148,16 @@ func NewHandler(options Options) *Handler {
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if handler.shutdown.Err() != nil {
+		writeHTTPError(response, http.StatusServiceUnavailable, "SIGNALING_UNAVAILABLE", "The signaling owner is unavailable")
+		return
+	}
+	ip := scopeIP(requestClientIP(request, handler.trustedProxyCIDRs))
+	if !handler.limiter.allow(rateScope{"connect:" + ip, handler.limiter.limits.ConnectsPerIPPerMinute, time.Minute}) {
+		response.Header().Set("Retry-After", "60")
+		writeHTTPError(response, http.StatusTooManyRequests, "RATE_LIMITED", "The connection attempt limit was reached")
+		return
+	}
 	protocols := websocket.Subprotocols(request)
 	if !contains(protocols, protocolVersion) {
 		writeHTTPError(response, http.StatusBadRequest, "PROTOCOL_REQUIRED", "The relayrtc.v1 WebSocket protocol is required")
@@ -156,11 +174,20 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
+	release, admitted := handler.limiter.acquire(ip, claims.ProjectID, claims.RoomID)
+	if !admitted {
+		response.Header().Set("Retry-After", "1")
+		writeHTTPError(response, http.StatusTooManyRequests, "CONNECTION_LIMIT_EXCEEDED", "Connection capacity for this IP, project or room is exhausted")
+		return
+	}
+	defer release()
 	websocketConnection, err := handler.upgrader.Upgrade(response, request, nil)
 	if err != nil {
 		return
 	}
-	client := &client{connection: websocketConnection, writeTimeout: handler.writeTimeout}
+	client := &client{connection: websocketConnection, writeTimeout: handler.writeTimeout, rateID: newID("connection")}
+	client.startWriter(handler.limiter.limits.OutboundMessages, handler.limiter.limits.OutboundBytes)
+	defer client.stopWriter()
 	handler.wg.Add(1)
 	defer handler.wg.Done()
 	handler.registry.add(client)
@@ -169,6 +196,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 
 	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
 	joined := handler.serve(client, claims, rawToken, requestClientIP(request, handler.trustedProxyCIDRs))
+	client.stopWriter()
 	if joined != nil {
 		handler.disconnect(client, joined, claims)
 		handler.flushClientUsage(client, joined.session.ID)
@@ -185,17 +213,55 @@ func (handler *Handler) EndRoom(ctx context.Context, room session.Room) error {
 	if err := handler.sessionStore.EndRoom(ctx, room.ID, *room.EndedAt); err != nil {
 		return err
 	}
-	var cleanupError error
-	if runtime, ok := handler.rtcService.(RTCSessionLifecycle); ok {
-		cleanupError = runtime.CloseRoom(ctx, room.ID)
+	if reader, ok := handler.sessionStore.(interface {
+		GetRoom(context.Context, string) (session.Room, error)
+	}); ok {
+		stored, err := reader.GetRoom(ctx, room.ID)
+		if err != nil && !errors.Is(err, session.ErrRoomNotJoinable) {
+			return err
+		}
+		if err == nil {
+			stored.Status, stored.EndedAt = "ended", room.EndedAt
+			room = stored
+		}
 	}
+	handler.recoveryMu.Lock()
+	for sessionID, roomID := range handler.recoveryRooms {
+		if roomID == room.ID {
+			if recovery := handler.recoveries[sessionID]; recovery != nil {
+				close(recovery)
+			}
+			delete(handler.recoveries, sessionID)
+			delete(handler.recoveryRooms, sessionID)
+		}
+	}
+	handler.recoveryMu.Unlock()
 	clients := handler.registry.roomClients(room.ID)
 	message := event("room.ended", map[string]any{"room": room})
+	var closing []<-chan struct{}
 	for _, client := range clients {
-		_ = client.write(message)
-		client.close(closeRoomEnded, "room ended")
+		var payload any
+		if room.ProjectID != "" {
+			payload = message
+		}
+		closing = append(closing, client.end(payload, closeRoomEnded, "room ended"))
+		client.operationMu.Lock()
+		client.operationMu.Unlock()
 	}
-	return cleanupError
+	for _, done := range closing {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if runtime, ok := handler.rtcService.(RTCSessionLifecycle); ok {
+		return runtime.CloseRoom(ctx, room.ID)
+	}
+	return nil
 }
 
 func (handler *Handler) Wait(ctx context.Context) error {
@@ -238,6 +304,17 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 			return joined
 		case message := <-read:
 			if message.err != nil {
+				return joined
+			}
+			if !handler.limiter.allow(
+				rateScope{"message-node", handler.limiter.limits.MessagesPerNode, time.Second},
+				rateScope{"message-session:" + client.rateID, handler.limiter.limits.MessagesPerConnection, time.Second},
+				rateScope{"message-ip:" + scopeIP(clientIP), handler.limiter.limits.MessagesPerIP, time.Second},
+				rateScope{"message-project:" + claims.ProjectID, handler.limiter.limits.MessagesPerProject, time.Second},
+				rateScope{"message-room:" + claims.ProjectID + ":" + claims.RoomID, handler.limiter.limits.MessagesPerRoom, time.Second},
+			) {
+				client.protocolError("", "rate_limited", "The message rate limit was reached; reconnect after a short delay")
+				client.close(websocket.ClosePolicyViolation, "message rate limit exceeded")
 				return joined
 			}
 			client.recordMessageReceived()
@@ -329,6 +406,20 @@ func (handler *Handler) recordSessionLocation(sessionID, clientIP string) {
 }
 
 func (handler *Handler) handleMessage(client *client, claims auth.Claims, rawToken string, joined *joinedSession, clientIP string, data []byte) (bool, *joinedSession) {
+	client.operationMu.Lock()
+	defer client.operationMu.Unlock()
+	if client.isRevoked() {
+		return true, joined
+	}
+	if joined != nil {
+		ctx, cancel := context.WithTimeout(handler.shutdown, 2*time.Second)
+		active := handler.sessionActive(ctx, claims.RoomID, claims.ParticipantID, joined.session.ID)
+		cancel()
+		if !active {
+			client.rejectRevoked()
+			return true, joined
+		}
+	}
 	request := requestEnvelope{}
 	if err := json.Unmarshal(data, &request); err != nil || request.Version != 1 || request.ID == "" {
 		client.protocolError(request.ID, "invalid_message", "The protocol message is invalid")
@@ -534,6 +625,10 @@ func (handler *Handler) scheduleRecovery(roomID string, joined *joinedSession) {
 		close(existing)
 	}
 	handler.recoveries[joined.session.ID] = cancelRecovery
+	if handler.recoveryRooms == nil {
+		handler.recoveryRooms = make(map[string]string)
+	}
+	handler.recoveryRooms[joined.session.ID] = roomID
 	handler.recoveryMu.Unlock()
 
 	handler.wg.Add(1)
@@ -554,6 +649,7 @@ func (handler *Handler) scheduleRecovery(roomID string, joined *joinedSession) {
 			return
 		}
 		delete(handler.recoveries, joined.session.ID)
+		delete(handler.recoveryRooms, joined.session.ID)
 		handler.recoveryMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -576,6 +672,7 @@ func (handler *Handler) cancelRecovery(sessionID string) {
 	handler.recoveryMu.Lock()
 	cancelRecovery := handler.recoveries[sessionID]
 	delete(handler.recoveries, sessionID)
+	delete(handler.recoveryRooms, sessionID)
 	handler.recoveryMu.Unlock()
 	if cancelRecovery != nil {
 		close(cancelRecovery)
@@ -661,18 +758,27 @@ type usageSample struct {
 }
 
 type client struct {
-	rtcSessionID string
-	rtcCursor    uint64
-	rtcReady     bool
-	usageMu      sync.Mutex
-	pendingUsage *usageSample
-	connection   *websocket.Conn
-	writeTimeout time.Duration
-	mu           sync.Mutex
-	messagesIn   int64
-	messagesOut  int64
-	recordedIn   int64
-	recordedOut  int64
+	rateID         string
+	outbound       chan outboundMessage
+	outboundBytes  int
+	queuedBytes    int
+	writerStop     chan struct{}
+	writerStopOnce sync.Once
+	writerDone     chan struct{}
+	operationMu    sync.Mutex
+	revoked        bool
+	rtcSessionID   string
+	rtcCursor      uint64
+	rtcReady       bool
+	usageMu        sync.Mutex
+	pendingUsage   *usageSample
+	connection     *websocket.Conn
+	writeTimeout   time.Duration
+	mu             sync.Mutex
+	messagesIn     int64
+	messagesOut    int64
+	recordedIn     int64
+	recordedOut    int64
 }
 
 func (client *client) write(value any) error {
@@ -682,6 +788,12 @@ func (client *client) write(value any) error {
 }
 
 func (client *client) writeLocked(value any) error {
+	if client.revoked {
+		return session.ErrSessionNotResumable
+	}
+	if client.outbound != nil {
+		return client.enqueueLocked(value, 0, "")
+	}
 	_ = client.connection.SetWriteDeadline(time.Now().Add(client.writeTimeout))
 	err := client.connection.WriteJSON(value)
 	if err == nil {
@@ -704,11 +816,26 @@ func (client *client) drainUsage() (int64, int64) {
 	return messagesIn, messagesOut
 }
 func (client *client) control(kind int, data []byte) error {
-	client.mu.Lock()
-	defer client.mu.Unlock()
 	return client.connection.WriteControl(kind, data, time.Now().Add(client.writeTimeout))
 }
 func (client *client) close(code int, reason string) {
+	if client.outbound != nil {
+		client.mu.Lock()
+		select {
+		case client.outbound <- outboundMessage{closeCode: code, reason: reason}:
+		default:
+			_ = client.connection.Close()
+		}
+		client.mu.Unlock()
+		timer := time.NewTimer(client.writeTimeout)
+		defer timer.Stop()
+		select {
+		case <-client.writerDone:
+		case <-timer.C:
+			_ = client.connection.Close()
+		}
+		return
+	}
 	_ = client.control(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
 }
 func (client *client) response(requestID, kind string, payload any) {
@@ -719,7 +846,7 @@ func (client *client) protocolError(requestID, code, message string) {
 	if requestID == "" {
 		value = nil
 	}
-	_ = client.write(map[string]any{"v": 1, "id": newID("msg"), "requestId": value, "sentAt": time.Now().UTC(), "type": "protocol.error", "payload": map[string]any{"code": code, "message": message, "retryable": false, "details": map[string]any{}}})
+	_ = client.write(map[string]any{"v": 1, "id": newID("msg"), "requestId": value, "sentAt": time.Now().UTC(), "type": "protocol.error", "payload": map[string]any{"code": code, "message": message, "retryable": code == "rate_limited", "details": map[string]any{}}})
 }
 
 type registry struct {

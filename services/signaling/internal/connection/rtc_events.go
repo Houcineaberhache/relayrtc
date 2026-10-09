@@ -9,6 +9,12 @@ import (
 )
 
 func (handler *Handler) acceptWithTracks(client *client, claims auth.Claims, sessionID, requestID, kind string, payload map[string]any) error {
+	ctx, cancel := context.WithTimeout(handler.shutdown, 2*time.Second)
+	active := handler.sessionActive(ctx, claims.RoomID, claims.ParticipantID, sessionID)
+	cancel()
+	if !active {
+		return rtc.ErrForbidden
+	}
 	payload["tracks"] = []any{}
 	var sequence uint64
 	if discovery, ok := handler.rtcService.(RTCTrackDiscovery); ok {

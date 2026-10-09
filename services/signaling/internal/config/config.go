@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/connection"
 	"net"
 	"net/netip"
 	"net/url"
@@ -22,6 +23,7 @@ const (
 )
 
 type Config struct {
+	ResourceLimits         connection.ResourceLimits
 	TrustedProxyCIDRs      []netip.Prefix
 	StoreParticipantIP     bool
 	LocationRetention      time.Duration
@@ -153,7 +155,38 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("RELAYRTC_LOCATION_RETENTION must be between 1h and 720h")
 	}
 
+	limits := connection.DefaultResourceLimits()
+	fields := []struct {
+		name   string
+		target *int
+	}{
+		{"RELAYRTC_SIGNALING_MESSAGES_PER_NODE_PER_SECOND", &limits.MessagesPerNode},
+		{"RELAYRTC_SIGNALING_MAX_CONNECTIONS", &limits.Connections},
+		{"RELAYRTC_SIGNALING_MAX_CONNECTIONS_PER_IP", &limits.ConnectionsPerIP},
+		{"RELAYRTC_SIGNALING_MAX_CONNECTIONS_PER_PROJECT", &limits.ConnectionsPerProject},
+		{"RELAYRTC_SIGNALING_MAX_CONNECTIONS_PER_ROOM", &limits.ConnectionsPerRoom},
+		{"RELAYRTC_SIGNALING_CONNECTS_PER_IP_PER_MINUTE", &limits.ConnectsPerIPPerMinute},
+		{"RELAYRTC_SIGNALING_MESSAGES_PER_CONNECTION_PER_SECOND", &limits.MessagesPerConnection},
+		{"RELAYRTC_SIGNALING_MESSAGES_PER_IP_PER_SECOND", &limits.MessagesPerIP},
+		{"RELAYRTC_SIGNALING_MESSAGES_PER_PROJECT_PER_SECOND", &limits.MessagesPerProject},
+		{"RELAYRTC_SIGNALING_MESSAGES_PER_ROOM_PER_SECOND", &limits.MessagesPerRoom},
+		{"RELAYRTC_SIGNALING_OUTBOUND_MESSAGES", &limits.OutboundMessages},
+		{"RELAYRTC_SIGNALING_OUTBOUND_BYTES", &limits.OutboundBytes},
+		{"RELAYRTC_SIGNALING_LIMIT_TRACKED_SCOPES", &limits.TrackedScopes},
+	}
+	for _, field := range fields {
+		value, err := positiveInt64(lookup, field.name, int64(*field.target))
+		if err != nil {
+			return Config{}, err
+		}
+		if value > 16777216 {
+			return Config{}, fmt.Errorf("%s exceeds the maximum supported resource limit", field.name)
+		}
+		*field.target = int(value)
+	}
+
 	return Config{
+		ResourceLimits:         limits,
 		TrustedProxyCIDRs:      trustedProxyCIDRs,
 		StoreParticipantIP:     storeParticipantIP == "true",
 		LocationRetention:      locationRetention,

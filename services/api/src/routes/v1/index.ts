@@ -1,4 +1,5 @@
 import type { RelayKitDatabase } from "@relayrtc/database";
+import type { RoomTerminationConfig } from "@relayrtc/auth";
 import type { FastifyPluginCallback } from "fastify";
 
 import { registerAuthentication } from "../../authentication/authentication-plugin.js";
@@ -15,6 +16,7 @@ interface V1RoutesOptions {
   database: RelayKitDatabase;
   participantTokenSigner: ParticipantTokenSigner;
   roomRuntime: RoomRuntimeService;
+  runtimeConfig: RoomTerminationConfig;
   turnCredentialIssuer: TurnCredentialIssuer;
 }
 
@@ -40,7 +42,10 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
     database: options.database,
     signer: options.participantTokenSigner,
   });
-  void app.register(participantRoutes, { database: options.database });
+  void app.register(participantRoutes, {
+    database: options.database,
+    runtimeConfig: options.runtimeConfig,
+  });
   void app.register(turnCredentialRoutes, { issuer: options.turnCredentialIssuer });
 
   app.addHook("onSend", async (_request, reply, payload) => {

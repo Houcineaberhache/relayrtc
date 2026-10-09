@@ -1,11 +1,13 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { deleteOrganizationAction, getOrganizationDeletionImpactAction } from '@/actions/organization'
+import { getDeletionOperationAction } from '@/actions/resource-deletion'
 import { AuthErrorMessage } from '@/components/auth/auth-error-message'
 import { DeletionImpact } from '@/components/settings/deletion-impact'
+import { DeletionProgress } from '@/components/settings/deletion-progress'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { AuthError, ResourceDeletionImpact } from '@relayrtc/auth'
+import type { AuthError, ResourceDeletionImpact, RuntimeOperationView } from '@relayrtc/auth'
 
 export function DeleteOrganization({ organization }: {
   organization: { id: string; name: string }
@@ -29,6 +31,15 @@ export function DeleteOrganization({ organization }: {
   const [error, setError] = useState<AuthError | null>(null)
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
+  const [operation, setOperation] = useState<RuntimeOperationView | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getDeletionOperationAction({ kind: 'organization', resourceId: organization.id }).then(result => {
+      if (!cancelled && result.data) setOperation(result.data)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [organization.id])
 
   function close() {
     if (pending) return
@@ -62,20 +73,26 @@ export function DeleteOrganization({ organization }: {
       setPending(false)
       return
     }
-    router.replace('/')
-    router.refresh()
+    setPending(false)
+    if (result.data.operation?.status === 'completed') {
+      router.replace('/')
+      router.refresh()
+    } else if (result.data.operation) {
+      setOperation(result.data.operation)
+    }
   }
 
   return (
     <section aria-labelledby="delete-organization-heading" className="flex flex-col">
+      {operation && !open ? <DeletionProgress kind="organization" resourceId={organization.id} destination="/" initialOperation={operation} /> : null}
       <div className="flex flex-col gap-3 border-t py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <div>
           <p id="delete-organization-heading" className="text-[0.9375rem]">Delete organization</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Permanently removes all projects, environments, API keys, rooms and usage data.
+            Permanently removes all projects, environments, API keys and rooms. Usage history is retained.
           </p>
         </div>
-        <Button variant="destructive" className="self-start" onClick={() => void showPreview()}>
+        <Button variant="destructive" className="self-start" disabled={Boolean(operation)} onClick={() => void showPreview()}>
           Delete
         </Button>
       </div>
@@ -89,7 +106,7 @@ export function DeleteOrganization({ organization }: {
             </DialogDescription>
           </DialogHeader>
           <AuthErrorMessage error={error} />
-          {loading ? (
+          {operation ? <DeletionProgress kind="organization" resourceId={organization.id} destination="/" initialOperation={operation} /> : loading ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <LoaderCircle className="size-4 animate-spin" /> Loading deletion impact...
             </p>
@@ -101,17 +118,17 @@ export function DeleteOrganization({ organization }: {
             <Input
               id="organization-delete-confirmation"
               value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
+              onChange={(event) => { setConfirmation(event.target.value) }}
               className="h-10 rounded-xl"
               autoComplete="off"
-              disabled={pending || loading || !impact}
+              disabled={pending || loading || !impact || Boolean(operation)}
             />
           </div>
           <DialogFooter>
             <Button variant="ghost" disabled={pending} onClick={close}>Cancel</Button>
             <Button
               variant="destructive-solid"
-              disabled={!impact || pending || confirmation !== organization.name}
+              disabled={!impact || pending || Boolean(operation) || confirmation !== organization.name}
               onClick={() => void remove()}
             >
               {pending ? <LoaderCircle className="animate-spin" /> : null}
