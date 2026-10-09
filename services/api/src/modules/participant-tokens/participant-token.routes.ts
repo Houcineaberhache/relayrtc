@@ -1,5 +1,5 @@
 import { schema, type RelayKitDatabase } from "@relayrtc/database";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 
 import { requireApiKeyScope } from "../../authentication/authentication-plugin.js";
@@ -34,11 +34,20 @@ export const participantTokenRoutes: FastifyPluginCallback<ParticipantTokenRoute
   done,
 ) => {
   const service = createParticipantTokenService({
-    isProjectActive: async ({ projectId }) => {
+    isProjectActive: async ({ projectId, environmentId }) => {
       const [project] = await options.database
         .select({ status: schema.project.status })
         .from(schema.project)
-        .where(eq(schema.project.id, projectId));
+        .where(
+          and(
+            eq(schema.project.id, projectId),
+            sql`EXISTS (
+          SELECT 1 FROM environment e JOIN organization o ON o.id = ${schema.project.organizationId}
+          WHERE e.id = ${environmentId} AND e.project_id = ${schema.project.id}
+            AND e.status = 'active' AND o.status = 'active'
+        )`,
+          ),
+        );
       return project?.status === "active";
     },
     roomRepository: createRoomRepository(options.database),

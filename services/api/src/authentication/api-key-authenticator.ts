@@ -1,6 +1,6 @@
 import type { RelayKitDatabase } from "@relayrtc/database";
 import { schema } from "@relayrtc/database";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 
 import { apiKeyHashMatches, apiKeyPrefixFromRaw } from "./api-key-credentials.js";
 
@@ -39,7 +39,16 @@ export const authenticateApiKey = async (
   const [project] = await database
     .select({ status: schema.project.status })
     .from(schema.project)
-    .where(eq(schema.project.id, apiKey.projectId));
+    .where(
+      and(
+        eq(schema.project.id, apiKey.projectId),
+        sql`EXISTS (
+      SELECT 1 FROM environment e JOIN organization o ON o.id = ${schema.project.organizationId}
+      WHERE e.id = ${apiKey.environmentId} AND e.project_id = ${schema.project.id}
+        AND e.status = 'active' AND o.status = 'active'
+    )`,
+      ),
+    );
   if (project?.status !== "active") {
     return null;
   }
@@ -50,6 +59,10 @@ export const authenticateApiKey = async (
     .where(
       and(
         eq(schema.apiKey.id, apiKey.id),
+        sql`EXISTS (SELECT 1 FROM environment e JOIN project p ON p.id = e.project_id
+          JOIN organization o ON o.id = p.organization_id
+          WHERE e.id = ${apiKey.environmentId} AND p.id = ${apiKey.projectId}
+            AND e.status = 'active' AND p.status = 'active' AND o.status = 'active')`,
         isNull(schema.apiKey.revokedAt),
         or(isNull(schema.apiKey.expiresAt), gt(schema.apiKey.expiresAt, now)),
       ),
