@@ -32,13 +32,15 @@ func newMediaAdapter(cfg config.Config, pool *pgxpool.Pool) (*mediaAdapter, *rtc
 func newConnectionOptions(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, store *session.Store) (connection.Options, *mediaAdapter, *rtc.MediaHTTP, error) {
 	adapter, media, err := newMediaAdapter(cfg, pool)
 	if err != nil {
-		return connection.Options{}, nil, nil, err
+		return connection.Options{
+			ResourceLimits: cfg.ResourceLimits}, nil, nil, err
 	}
 	var locationLookup connection.LocationLookup
 	if cfg.IPInfoToken != "" {
 		locationLookup = geolocation.New(cfg.IPInfoToken)
 	}
 	return connection.Options{
+		ResourceLimits: cfg.ResourceLimits,
 		AllowedOrigins: cfg.AllowedOrigins, HeartbeatInterval: cfg.HeartbeatInterval,
 		LocationLookup: locationLookup, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 		StoreParticipantIP: cfg.StoreParticipantIP, MaxMessageBytes: cfg.MaxMessageBytes,
