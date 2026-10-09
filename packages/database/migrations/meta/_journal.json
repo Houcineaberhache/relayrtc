@@ -162,6 +162,13 @@
       "when": 1791583200009,
       "tag": "0022_media_usage_samples",
       "breakpoints": false
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791583200010,
+      "tag": "0023_signaling_lifecycle",
+      "breakpoints": false
     }
   ]
 }
