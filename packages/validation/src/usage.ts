@@ -1,6 +1,8 @@
 import {
   usageEventTypes,
   usageGranularities,
+  canonicalUsageMetric,
+  usageMetricDefinitions,
   type UsageDimensions,
   type UsageEvent,
   type UsageMetrics,
@@ -23,6 +25,12 @@ import {
 export const usageGranularitySchema = z.enum(usageGranularities);
 export const usageEventTypeSchema = z.enum(usageEventTypes);
 
+export function usageMetricValueSchema(name: string) {
+  return usageMetricDefinitions[canonicalUsageMetric(name)].integer
+    ? nonNegativeIntegerSchema
+    : nonNegativeNumberSchema;
+}
+
 export const usageDimensionsSchema: z.ZodType<UsageDimensions> = z
   .object({
     organizationId: organizationIdSchema,
@@ -35,31 +43,42 @@ export const usageDimensionsSchema: z.ZodType<UsageDimensions> = z
 
 export const usageMetricsSchema: z.ZodType<UsageMetrics> = z
   .object({
-    participantSeconds: nonNegativeIntegerSchema,
-    participantMinutesDerived: nonNegativeNumberSchema,
-    audioParticipantSeconds: nonNegativeIntegerSchema,
-    videoParticipantSeconds: nonNegativeIntegerSchema,
-    sfuIngressBytes: nonNegativeIntegerSchema,
-    sfuEgressBytes: nonNegativeIntegerSchema,
-    turnIngressBytes: nonNegativeIntegerSchema,
-    turnEgressBytes: nonNegativeIntegerSchema,
-    turnRelaySeconds: nonNegativeIntegerSchema,
-    turnSessions: nonNegativeIntegerSchema,
-    signalingConnections: nonNegativeIntegerSchema,
-    signalingConnectionSeconds: nonNegativeIntegerSchema,
-    signalingMessagesIn: nonNegativeIntegerSchema,
-    signalingMessagesOut: nonNegativeIntegerSchema,
-    roomsCreated: nonNegativeIntegerSchema,
-    roomsStarted: nonNegativeIntegerSchema,
-    roomSeconds: nonNegativeIntegerSchema,
-    peakConcurrentRooms: nonNegativeIntegerSchema,
-    peakConcurrentParticipants: nonNegativeIntegerSchema,
-    averageConcurrentParticipants: nonNegativeNumberSchema,
-    screenShareSeconds: nonNegativeIntegerSchema,
-    screenShareIngressBytes: nonNegativeIntegerSchema,
-    screenShareEgressBytes: nonNegativeIntegerSchema,
+    participantSeconds: usageMetricValueSchema("participantSeconds"),
+    participantMinutesDerived: usageMetricValueSchema("participantMinutesDerived"),
+    audioParticipantSeconds: usageMetricValueSchema("audioParticipantSeconds"),
+    videoParticipantSeconds: usageMetricValueSchema("videoParticipantSeconds"),
+    sfuIngressBytes: usageMetricValueSchema("sfuIngressBytes"),
+    sfuEgressBytes: usageMetricValueSchema("sfuEgressBytes"),
+    turnIngressBytes: usageMetricValueSchema("turnIngressBytes"),
+    turnEgressBytes: usageMetricValueSchema("turnEgressBytes"),
+    turnRelaySeconds: usageMetricValueSchema("turnRelaySeconds"),
+    turnSessions: usageMetricValueSchema("turnSessions"),
+    signalingConnections: usageMetricValueSchema("signalingConnections"),
+    signalingConnectionSeconds: usageMetricValueSchema("signalingConnectionSeconds"),
+    signalingMessagesIn: usageMetricValueSchema("signalingMessagesIn"),
+    signalingMessagesOut: usageMetricValueSchema("signalingMessagesOut"),
+    roomsCreated: usageMetricValueSchema("roomsCreated"),
+    roomsStarted: usageMetricValueSchema("roomsStarted"),
+    roomSeconds: usageMetricValueSchema("roomSeconds"),
+    peakConcurrentRooms: usageMetricValueSchema("peakConcurrentRooms"),
+    peakConcurrentParticipants: usageMetricValueSchema("peakConcurrentParticipants"),
+    averageConcurrentParticipants: usageMetricValueSchema("averageConcurrentParticipants"),
+    screenShareSeconds: usageMetricValueSchema("screenShareSeconds"),
+    screenShareIngressBytes: usageMetricValueSchema("screenShareIngressBytes"),
+    screenShareEgressBytes: usageMetricValueSchema("screenShareEgressBytes"),
   })
-  .strict();
+  .strict()
+  .refine(
+    (metrics) =>
+      Math.abs(metrics.participantMinutesDerived - metrics.participantSeconds / 60) <=
+      Number.EPSILON *
+        Math.max(1, metrics.participantMinutesDerived, metrics.participantSeconds / 60) *
+        8,
+    {
+      message: "Participant minutes must equal participant seconds divided by 60",
+      path: ["participantMinutesDerived"],
+    },
+  );
 
 export const usageEventSchema: z.ZodType<UsageEvent> = z
   .object({
@@ -83,7 +102,7 @@ export const usageRecordSchema: z.ZodType<UsageRecord> = z
     updatedAt: isoDateTimeSchema,
   })
   .strict()
-  .refine((value) => Date.parse(value.windowEndedAt) >= Date.parse(value.windowStartedAt), {
-    message: "windowEndedAt must not precede windowStartedAt",
+  .refine((value) => Date.parse(value.windowEndedAt) > Date.parse(value.windowStartedAt), {
+    message: "Usage windows must have positive duration",
     path: ["windowEndedAt"],
   });

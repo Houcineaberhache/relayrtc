@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { environmentIdSchema, organizationIdSchema, projectIdSchema } from "./common.js";
+import { usageMetricValueSchema } from "./usage.js";
 
 export const usageRangeSchema = z.enum(["24h", "7d", "14d", "30d"]);
 export const analyticsRangeSchema = z.enum(["live", "24h", "7d", "30d"]);
@@ -47,23 +48,23 @@ export const reportingWindowSchema = z
   });
 export const reportingUsageMetricsSchema = z
   .object({
-    participantSeconds: quantity,
-    audioParticipantSeconds: quantity,
-    videoParticipantSeconds: quantity,
-    screenShareSeconds: quantity,
-    screenShareIngressBytes: quantity,
-    screenShareEgressBytes: quantity,
-    sfuIngressBytes: quantity,
-    sfuEgressBytes: quantity,
-    turnIngressBytes: quantity,
-    turnEgressBytes: quantity,
-    roomsCreated: count,
-    peakConcurrentParticipants: count,
-    peakConcurrentRooms: count,
-    signalingConnections: count,
-    signalingConnectionSeconds: quantity,
-    messagesIn: count,
-    messagesOut: count,
+    participantSeconds: usageMetricValueSchema("participantSeconds"),
+    audioParticipantSeconds: usageMetricValueSchema("audioParticipantSeconds"),
+    videoParticipantSeconds: usageMetricValueSchema("videoParticipantSeconds"),
+    screenShareSeconds: usageMetricValueSchema("screenShareSeconds"),
+    screenShareIngressBytes: usageMetricValueSchema("screenShareIngressBytes"),
+    screenShareEgressBytes: usageMetricValueSchema("screenShareEgressBytes"),
+    sfuIngressBytes: usageMetricValueSchema("sfuIngressBytes"),
+    sfuEgressBytes: usageMetricValueSchema("sfuEgressBytes"),
+    turnIngressBytes: usageMetricValueSchema("turnIngressBytes"),
+    turnEgressBytes: usageMetricValueSchema("turnEgressBytes"),
+    roomsCreated: usageMetricValueSchema("roomsCreated"),
+    peakConcurrentParticipants: usageMetricValueSchema("peakConcurrentParticipants"),
+    peakConcurrentRooms: usageMetricValueSchema("peakConcurrentRooms"),
+    signalingConnections: usageMetricValueSchema("signalingConnections"),
+    signalingConnectionSeconds: usageMetricValueSchema("signalingConnectionSeconds"),
+    messagesIn: usageMetricValueSchema("messagesIn"),
+    messagesOut: usageMetricValueSchema("messagesOut"),
   })
   .strict();
 export const usageBucketSchema = z
@@ -122,10 +123,10 @@ export const organizationQuotaResponseSchema = z
 const seriesPoint = { startedAt: timestamp, endedAt: timestamp };
 const network = z
   .object({
-    sfuIngressBytes: quantity,
-    sfuEgressBytes: quantity,
-    turnIngressBytes: quantity,
-    turnEgressBytes: quantity,
+    sfuIngressBytes: usageMetricValueSchema("sfuIngressBytes"),
+    sfuEgressBytes: usageMetricValueSchema("sfuEgressBytes"),
+    turnIngressBytes: usageMetricValueSchema("turnIngressBytes"),
+    turnEgressBytes: usageMetricValueSchema("turnEgressBytes"),
   })
   .strict();
 export const projectAnalyticsResponseSchema = z
