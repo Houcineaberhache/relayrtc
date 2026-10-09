@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { usageMediaDurationMetrics } from "@relayrtc/types";
 import type { MediaUsageMetricsStore } from "./usage-metrics-store.js";
 
 type DurationMetric = "audioParticipantSeconds" | "videoParticipantSeconds" | "screenShareSeconds";
@@ -17,12 +18,9 @@ export class MediaDurationMeter {
   constructor(private readonly store: MediaUsageMetricsStore) {}
 
   start(trackId: string, participantId: string, trackType: string, at = Date.now()) {
-    const metrics: DurationMetric[] =
-      trackType === "audio" || trackType === "screen_audio"
-        ? ["audioParticipantSeconds"]
-        : trackType === "screen_video"
-          ? ["videoParticipantSeconds", "screenShareSeconds"]
-          : ["videoParticipantSeconds"];
+    if (!Object.hasOwn(usageMediaDurationMetrics, trackType))
+      throw new Error(`Unsupported usage track type: ${trackType}`);
+    const metrics = usageMediaDurationMetrics[trackType as keyof typeof usageMediaDurationMetrics];
     const keys = metrics.map((metric) => JSON.stringify([participantId, metric]));
     this.#tracks.set(trackId, keys);
     metrics.forEach((metric) => {
