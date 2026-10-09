@@ -16,7 +16,7 @@ export function UsageMetrics({ summary, dataQuality, period }: Pick<ProjectUsage
     Audio: [['Participant minutes', formatNumber(summary.audioParticipantSeconds / 60)]],
     Video: [['Participant minutes', formatNumber(summary.videoParticipantSeconds / 60)]],
     'Screen share': [['Minutes', formatNumber(summary.screenShareSeconds / 60)], ['Ingress', formatBytes(summary.screenShareIngressBytes, 2)], ['Egress', formatBytes(summary.screenShareEgressBytes, 2)]],
-    Signaling: [['Connections', formatNumber(summary.signalingConnections)], ['Connection minutes', formatNumber(summary.signalingConnectionSeconds / 60)], ['Messages in', formatNumber(summary.messagesIn)], ['Messages out', formatNumber(summary.messagesOut)]],
+    Signaling: [['Joined sessions', formatNumber(summary.signalingConnections)], ['Session connection minutes', formatNumber(summary.signalingConnectionSeconds / 60)], ['Messages in', formatNumber(summary.messagesIn)], ['Messages out', formatNumber(summary.messagesOut)]],
   }
   const network = [
     ['SFU ingress', summary.sfuIngressBytes], ['SFU egress', summary.sfuEgressBytes],
@@ -27,11 +27,12 @@ export function UsageMetrics({ summary, dataQuality, period }: Pick<ProjectUsage
       <section aria-labelledby={`${id}-network`} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <h2 id={`${id}-network`} className="text-xl font-normal tracking-tight">Network traffic</h2>
-          <p className="text-sm text-muted-foreground">{formatBytes(network.reduce((total, [, bytes]) => total + bytes, 0), 2)} transferred over {period}</p>
+          <p className="text-sm text-muted-foreground">SFU and TURN traffic over {period}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {network.map(([label, bytes]) => <StatCard key={label} label={label} value={formatBytes(bytes, 2)} hint={period} />)}
         </div>
+        <p className="text-xs text-muted-foreground">TURN figures are estimates. Relayed traffic can appear in both SFU and TURN totals.</p>
       </section>
       <section aria-labelledby={`${id}-breakdown`} className="flex flex-col gap-4">
         <h2 id={`${id}-breakdown`} className="text-xl font-normal tracking-tight">Breakdown</h2>
