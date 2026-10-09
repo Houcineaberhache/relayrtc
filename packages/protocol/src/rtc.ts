@@ -8,8 +8,12 @@ import {
 } from "@relayrtc/validation";
 import { z } from "zod";
 
-import type { ProtocolRequest, ProtocolResponse } from "./envelope.js";
-import { protocolRequestSchema, protocolResponseSchema } from "./envelope.js";
+import type { CorrelatedProtocolEvent, ProtocolRequest, ProtocolResponse } from "./envelope.js";
+import {
+  correlatedProtocolEventSchema,
+  protocolRequestSchema,
+  protocolResponseSchema,
+} from "./envelope.js";
 
 const rtcIdentifierSchema = z.string().trim().min(1).max(256).regex(/^\S+$/u);
 const rtcParametersSchema = z.record(z.string(), z.unknown());
@@ -259,7 +263,58 @@ export const rtcTrackSubscribedResponseSchema = protocolResponseSchema(
 export interface RtcSubscriptionResumePayload extends RtcSessionScope {
   readonly subscriptionId: string;
 }
-export type RtcSubscriptionResumeRequest = ProtocolRequest<"rtc.subscription.resume", RtcSubscriptionResumePayload>;
-export type RtcSubscriptionResumedResponse = ProtocolResponse<"rtc.subscription.resumed", RtcSubscriptionResumePayload>;
-export const rtcSubscriptionResumeRequestSchema = protocolRequestSchema("rtc.subscription.resume", rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict());
-export const rtcSubscriptionResumedResponseSchema = protocolResponseSchema("rtc.subscription.resumed", rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict());
+export type RtcSubscriptionResumeRequest = ProtocolRequest<
+  "rtc.subscription.resume",
+  RtcSubscriptionResumePayload
+>;
+export type RtcSubscriptionResumedResponse = ProtocolResponse<
+  "rtc.subscription.resumed",
+  RtcSubscriptionResumePayload
+>;
+export const rtcSubscriptionResumeRequestSchema = protocolRequestSchema(
+  "rtc.subscription.resume",
+  rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict(),
+);
+export const rtcSubscriptionResumedResponseSchema = protocolResponseSchema(
+  "rtc.subscription.resumed",
+  rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict(),
+);
+
+export type RtcSubscriptionCloseRequest = ProtocolRequest<
+  "rtc.subscription.close",
+  RtcSubscriptionResumePayload
+>;
+export type RtcSubscriptionCloseAcceptedResponse = ProtocolResponse<
+  "rtc.subscription.close.accepted",
+  RtcSubscriptionResumePayload
+>;
+export const rtcSubscriptionCloseRequestSchema = protocolRequestSchema(
+  "rtc.subscription.close",
+  rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict(),
+);
+export const rtcSubscriptionCloseAcceptedResponseSchema = protocolResponseSchema(
+  "rtc.subscription.close.accepted",
+  rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict(),
+);
+
+const subscriptionClosedPayloadSchema = rtcSessionScopeSchema
+  .extend({
+    subscriptionId: rtcIdentifierSchema,
+    trackId: trackIdSchema.nullable(),
+    reason: z.enum([
+      "cancelled",
+      "track_unpublished",
+      "owner_left",
+      "negotiation_timeout",
+      "runtime_reset",
+    ]),
+  })
+  .strict();
+export type RtcSubscriptionClosedEvent = CorrelatedProtocolEvent<
+  "rtc.subscription.closed",
+  z.infer<typeof subscriptionClosedPayloadSchema>
+>;
+export const rtcSubscriptionClosedEventSchema = correlatedProtocolEventSchema(
+  "rtc.subscription.closed",
+  subscriptionClosedPayloadSchema,
+);

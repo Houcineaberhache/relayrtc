@@ -18,6 +18,7 @@ const participantRoutes = new Set([
   "POST /internal/v1/rooms/:roomId/subscriptions",
   "POST /internal/v1/rooms/:roomId/stats",
   "PATCH /internal/v1/rooms/:roomId/subscriptions/:subscriptionId/resume",
+  "DELETE /internal/v1/rooms/:roomId/subscriptions/:subscriptionId",
   "PATCH /internal/v1/rooms/:roomId/subscriptions/:subscriptionId/quality",
   "PATCH /internal/v1/rooms/:roomId/participants/:participantId/priority",
   "PATCH /internal/v1/rooms/:roomId/participants/:participantId/quality-mode",

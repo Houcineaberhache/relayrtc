@@ -2,17 +2,17 @@ import type { Track } from "@relayrtc/types";
 import { trackSchema } from "@relayrtc/validation";
 import { z } from "zod";
 
-import type { ProtocolEvent } from "./envelope.js";
-import { protocolEventSchema } from "./envelope.js";
+import type { CorrelatedProtocolEvent } from "./envelope.js";
+import { correlatedProtocolEventSchema } from "./envelope.js";
 
 export interface TrackEventPayload {
   readonly track: Track;
 }
 
-export type TrackPublishedEvent = ProtocolEvent<"track.published", TrackEventPayload>;
-export type TrackPausedEvent = ProtocolEvent<"track.paused", TrackEventPayload>;
-export type TrackResumedEvent = ProtocolEvent<"track.resumed", TrackEventPayload>;
-export type TrackUnpublishedEvent = ProtocolEvent<"track.unpublished", TrackEventPayload>;
+export type TrackPublishedEvent = CorrelatedProtocolEvent<"track.published", TrackEventPayload>;
+export type TrackPausedEvent = CorrelatedProtocolEvent<"track.paused", TrackEventPayload>;
+export type TrackResumedEvent = CorrelatedProtocolEvent<"track.resumed", TrackEventPayload>;
+export type TrackUnpublishedEvent = CorrelatedProtocolEvent<"track.unpublished", TrackEventPayload>;
 
 function trackEventPayloadSchema(state: Track["state"]) {
   return z
@@ -30,22 +30,22 @@ function trackEventPayloadSchema(state: Track["state"]) {
     .strict();
 }
 
-export const trackPublishedEventSchema = protocolEventSchema(
+export const trackPublishedEventSchema = correlatedProtocolEventSchema(
   "track.published",
   trackEventPayloadSchema("published"),
 ) satisfies z.ZodType<TrackPublishedEvent>;
 
-export const trackPausedEventSchema = protocolEventSchema(
+export const trackPausedEventSchema = correlatedProtocolEventSchema(
   "track.paused",
   trackEventPayloadSchema("paused"),
 ) satisfies z.ZodType<TrackPausedEvent>;
 
-export const trackResumedEventSchema = protocolEventSchema(
+export const trackResumedEventSchema = correlatedProtocolEventSchema(
   "track.resumed",
   trackEventPayloadSchema("resumed"),
 ) satisfies z.ZodType<TrackResumedEvent>;
 
-export const trackUnpublishedEventSchema = protocolEventSchema(
+export const trackUnpublishedEventSchema = correlatedProtocolEventSchema(
   "track.unpublished",
   trackEventPayloadSchema("unpublished"),
 ) satisfies z.ZodType<TrackUnpublishedEvent>;

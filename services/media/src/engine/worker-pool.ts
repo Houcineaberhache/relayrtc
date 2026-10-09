@@ -113,6 +113,7 @@ export interface MediaQualityOptions {
 }
 
 interface ConsumerState {
+  negotiationTimer?: ReturnType<typeof setTimeout>;
   consumer: Consumer;
   participantId: string;
   quality: SubscriberQualityMode;
@@ -470,12 +471,26 @@ export class MediasoupWorkerPool implements MediaEngine {
     });
     room.consumerUsage.set(consumer.id, { bytes: 0, sampledAt: Date.now() });
     consumer.observer.once("close", () => {
+      clearTimeout(room.consumers.get(consumer.id)?.negotiationTimer);
       room.consumers.delete(consumer.id);
       room.consumerUsage.delete(consumer.id);
     });
-    await consumer.setPriority(priority === "high" ? 255 : priority === "low" ? 1 : 127);
-    if (selectedQuality && selectedQuality !== "audio-only") {
-      await consumer.setPreferredLayers(preferredLayers[selectedQuality]);
+    try {
+      await consumer.setPriority(priority === "high" ? 255 : priority === "low" ? 1 : 127);
+      if (selectedQuality && selectedQuality !== "audio-only") {
+        await consumer.setPreferredLayers(preferredLayers[selectedQuality]);
+      }
+      const state = room.consumers.get(consumer.id);
+      if (!state || consumer.closed) {
+        throw new MediaEngineError("NOT_FOUND", "The subscription closed during negotiation");
+      }
+      state.negotiationTimer = setTimeout(() => {
+        consumer.close();
+      }, 60_000);
+      state.negotiationTimer.unref();
+    } catch (error) {
+      consumer.close();
+      throw error;
     }
     return {
       id: consumer.id,
@@ -501,7 +516,29 @@ export class MediasoupWorkerPool implements MediaEngine {
     if (state.participantId !== request.participantId) {
       throw new MediaEngineError("FORBIDDEN", "The subscription belongs to another participant");
     }
-    if (state.quality !== "audio-only" && state.consumer.paused) await state.consumer.resume();
+    clearTimeout(state.negotiationTimer);
+    delete state.negotiationTimer;
+    try {
+      if (state.quality !== "audio-only" && state.consumer.paused) await state.consumer.resume();
+    } catch (error) {
+      state.consumer.close();
+      throw error;
+    }
+  }
+
+  async removeSubscription(request: ResumeSubscriptionRequest): Promise<void> {
+    const room = this.#rooms.get(request.roomId);
+    const state = room?.consumers.get(request.subscriptionId);
+    if (!room || !state) return;
+    if (state.participantId !== request.participantId) {
+      throw new MediaEngineError("FORBIDDEN", "The subscription belongs to another participant");
+    }
+    await this.#recordConsumerUsage(
+      request.roomId,
+      state.consumer,
+      room.consumerUsage.get(request.subscriptionId),
+    );
+    state.consumer.close();
   }
 
   async ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void> {
