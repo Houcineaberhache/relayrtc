@@ -77,12 +77,31 @@ type storePool interface {
 }
 
 type Store struct {
-	pool              storePool
-	locationRetention time.Duration
+	signalingInstanceID string
+	pool                storePool
+	locationRetention   time.Duration
 }
 
 func NewStore(pool *pgxpool.Pool, locationRetention time.Duration) *Store {
 	return &Store{pool: pool, locationRetention: locationRetention}
+}
+
+func (store *Store) SetSignalingInstance(instanceID string) {
+	store.signalingInstanceID = instanceID
+}
+
+func (store *Store) IsActive(ctx context.Context, roomID, participantID, sessionID string) (bool, error) {
+	var active bool
+	err := store.pool.QueryRow(ctx, `SELECT EXISTS (
+ SELECT 1 FROM participant_session s JOIN participant p ON p.id = s.participant_id JOIN room r ON r.id = p.room_id
+ JOIN environment e ON e.id = r.environment_id JOIN project pr ON pr.id = r.project_id
+ JOIN organization o ON o.id = pr.organization_id
+ WHERE s.id = $1 AND p.id = $2 AND p.room_id = $3 AND p.left_at IS NULL
+ AND s.connection_state = 'connected' AND r.status IN ('created', 'active') AND r.ended_at IS NULL AND e.status = 'active' AND pr.status = 'active' AND o.status = 'active'
+ AND (s.signaling_instance_id IS NULL OR EXISTS (SELECT 1 FROM signaling_node_lease l
+ WHERE l.instance_id = s.signaling_instance_id AND l.node_id = s.signaling_node_id AND l.expires_at > now()))
+)`, sessionID, participantID, roomID).Scan(&active)
+	return active, err
 }
 
 func (store *Store) RecordUsageSample(ctx context.Context, sessionID, sampleID string, messagesIn, messagesOut int64) error {
@@ -121,7 +140,7 @@ func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nod
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := requireActiveProject(ctx, tx, claims.ProjectID); err != nil {
+	if err := requireActiveEnvironment(ctx, tx, claims.ProjectID, claims.EnvironmentID); err != nil {
 		return JoinResult{}, err
 	}
 
@@ -168,11 +187,11 @@ func (store *Store) Join(ctx context.Context, claims auth.Claims, sessionID, nod
 
 	participantSession := ParticipantSession{}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO participant_session (id, participant_id, signaling_node_id)
-		VALUES ($1, $2, $3)
+		INSERT INTO participant_session (id, participant_id, signaling_node_id, signaling_instance_id)
+		VALUES ($1, $2, $3, NULLIF($4, ''))
 		RETURNING id, participant_id, signaling_node_id, media_node_id, connection_state,
 		          transport_type, joined_at, disconnected_at, reconnected_at`,
-		sessionID, participant.ID, nodeID,
+		sessionID, participant.ID, nodeID, store.signalingInstanceID,
 	).Scan(
 		&participantSession.ID, &participantSession.ParticipantID, &participantSession.SignalingNodeID,
 		&participantSession.MediaNodeID, &participantSession.ConnectionState,
@@ -235,7 +254,7 @@ func (store *Store) Resume(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := requireActiveProject(ctx, tx, claims.ProjectID); err != nil {
+	if err := requireActiveEnvironment(ctx, tx, claims.ProjectID, claims.EnvironmentID); err != nil {
 		if errors.Is(err, ErrRoomNotJoinable) {
 			return ResumeResult{}, ErrSessionNotResumable
 		}
@@ -277,11 +296,11 @@ func (store *Store) Resume(
 	err = tx.QueryRow(ctx, `
 		UPDATE participant_session
 		SET connection_state = 'connected', signaling_node_id = $1, reconnected_at = $2,
-		    disconnected_at = NULL
+		    disconnected_at = NULL, signaling_instance_id = NULLIF($4, '')
 		WHERE id = $3 AND connection_state = 'reconnecting'
 		RETURNING id, participant_id, signaling_node_id, media_node_id, connection_state,
 		          transport_type, joined_at, disconnected_at, reconnected_at`,
-		nodeID, reconnectedAt, sessionID,
+		nodeID, reconnectedAt, sessionID, store.signalingInstanceID,
 	).Scan(
 		&session.ID, &session.ParticipantID, &session.SignalingNodeID, &session.MediaNodeID,
 		&session.ConnectionState, &session.TransportType, &session.JoinedAt,
@@ -312,9 +331,9 @@ func (store *Store) EndRoom(ctx context.Context, roomID string, endedAt time.Tim
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `
 		UPDATE participant_session s
-		SET connection_seconds = connection_seconds + case when connection_state = 'connected'
-		      then extract(epoch from ($1 - coalesce(reconnected_at, joined_at))) else 0 end,
-		    connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
+		SET connection_seconds = s.connection_seconds + case when s.connection_state = 'connected'
+		      then greatest(0, extract(epoch from ($1 - coalesce(s.reconnected_at, s.joined_at)))) else 0 end,
+		    connection_state = 'disconnected', disconnected_at = COALESCE(s.disconnected_at, $1)
 		FROM participant p
 		WHERE s.participant_id = p.id AND p.room_id = $2
 		  AND s.connection_state IN ('connected', 'reconnecting')`, endedAt, roomID); err != nil {
@@ -329,6 +348,19 @@ func (store *Store) EndRoom(ctx context.Context, roomID string, endedAt time.Tim
 		return fmt.Errorf("commit room termination: %w", err)
 	}
 	return nil
+}
+
+func (store *Store) GetRoom(ctx context.Context, roomID string) (Room, error) {
+	var room Room
+	err := store.pool.QueryRow(ctx, `SELECT id, project_id, environment_id, name, metadata, status,
+ max_participants, created_at, started_at, ended_at FROM room WHERE id = $1`, roomID).Scan(
+		&room.ID, &room.ProjectID, &room.EnvironmentID, &room.Name, &room.Metadata, &room.Status,
+		&room.MaxParticipants, &room.CreatedAt, &room.StartedAt, &room.EndedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Room{}, ErrRoomNotJoinable
+	}
+	return room, err
 }
 
 func (store *Store) UpdateMetadata(
@@ -430,14 +462,24 @@ func listParticipants(ctx context.Context, tx pgx.Tx, roomID string) ([]Particip
 	return participants, rows.Err()
 }
 
-func requireActiveProject(ctx context.Context, tx pgx.Tx, projectID string) error {
+func requireActiveEnvironment(ctx context.Context, tx pgx.Tx, projectID, environmentID string) error {
 	var status string
-	err := tx.QueryRow(ctx, `SELECT status FROM project WHERE id = $1 FOR SHARE`, projectID).Scan(&status)
+	err := tx.QueryRow(ctx, `WITH locked_organization AS MATERIALIZED (
+  SELECT o.id, o.status FROM organization o
+  WHERE o.id = (SELECT organization_id FROM project WHERE id = $1) FOR SHARE OF o
+ ), locked_project AS MATERIALIZED (
+  SELECT p.id, p.status FROM project p JOIN locked_organization o ON o.id = p.organization_id
+  WHERE p.id = $1 FOR SHARE OF p
+ ), locked_environment AS MATERIALIZED (
+  SELECT e.status FROM environment e JOIN locked_project p ON p.id = e.project_id
+  WHERE e.id = $2 FOR SHARE OF e
+ ) SELECT p.status FROM locked_project p, locked_organization o, locked_environment e
+ WHERE o.status = 'active' AND e.status = 'active'`, projectID, environmentID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrRoomNotJoinable
 	}
 	if err != nil {
-		return fmt.Errorf("check project admission: %w", err)
+		return fmt.Errorf("check environment admission: %w", err)
 	}
 	if status != "active" {
 		return ErrRoomNotJoinable

@@ -29,13 +29,25 @@ func Run(ctx context.Context) error {
 	if err := pool.Ping(ctx); err != nil {
 		return err
 	}
+	runtimeContext, cancelRuntime := context.WithCancel(ctx)
+	defer cancelRuntime()
+	admissionContext, cancelAdmission := context.WithTimeout(ctx, 10*time.Second)
+	owner, err := session.AcquireNodeLease(admissionContext, cfg.DatabaseURL, cfg.SignalingNodeID)
+	cancelAdmission()
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	leaseDone := owner.KeepAlive(runtimeContext, cancelRuntime)
+	defer func() { cancelRuntime(); <-leaseDone }()
+	slog.Info("signaling topology: single owner per database; replicas are rejected", "node_id", cfg.SignalingNodeID)
 	store := session.NewStore(pool, cfg.LocationRetention)
+	store.SetSignalingInstance(owner.InstanceID)
 	connectionOptions, mediaAdapter, mediaHTTP, err := newConnectionOptions(ctx, cfg, pool, store)
 	if err != nil {
 		return err
 	}
 	defer mediaHTTP.Close()
-	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	connectionOptions.Shutdown = runtimeContext
 	runtimeDone := runRTCReconciliation(runtimeContext, mediaAdapter)
 	defer func() { cancelRuntime(); <-runtimeDone }()
@@ -45,16 +57,26 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	retentionContext, cancelRetention := context.WithCancel(ctx)
+	retentionContext, cancelRetention := context.WithCancel(runtimeContext)
 	retentionDone := runLocationRetention(retentionContext, store, cfg.LocationRetention, !cfg.StoreParticipantIP, time.Hour)
 	defer func() { cancelRetention(); <-retentionDone }()
 	connections := connection.NewHandler(connectionOptions)
+	removalContext, cancelRemoval := context.WithCancel(runtimeContext)
+	removalDone := runParticipantRemoval(removalContext, pool, connections, cfg.SignalingNodeID, owner.InstanceID)
+	defer func() { cancelRemoval(); <-removalDone }()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health("ok"))
-	mux.HandleFunc("GET /ready", health("ready"))
+	mux.HandleFunc("GET /ready", func(response http.ResponseWriter, request *http.Request) {
+		if runtimeContext.Err() != nil {
+			http.Error(response, "signaling owner unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		health("ready")(response, request)
+	})
 	mux.Handle("GET /v1/connect", connections)
 	mux.HandleFunc("POST /internal/v1/rooms/{roomId}/end", endRoom(connections, cfg.InternalSecret))
+	mux.HandleFunc("POST /internal/v1/rooms/{roomId}/participants/{participantId}/remove", removeParticipant(pool, connections, cfg.InternalSecret, cfg.SignalingNodeID, owner.InstanceID))
 	mux.HandleFunc("POST /internal/v1/rooms/{roomId}/quality-events", qualityEvents(connections, cfg.InternalSecret))
 
 	server := &http.Server{
@@ -76,14 +98,16 @@ func Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	case err = <-leaseDone:
 	case <-ctx.Done():
 	}
+	cancelRuntime()
 
 	shutdownContext, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	shutdownError := server.Shutdown(shutdownContext)
 	waitError := connections.Wait(shutdownContext)
-	return errors.Join(shutdownError, waitError)
+	return errors.Join(err, shutdownError, waitError)
 }
 
 func health(status string) http.HandlerFunc {
