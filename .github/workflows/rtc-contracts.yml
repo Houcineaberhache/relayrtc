@@ -1,0 +1,30 @@
+name: RTC contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter @relayrtc/protocol... build
+      - run: pnpm exec vitest run packages/protocol/src --configLoader native --maxWorkers 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/signaling/go.mod
+          cache-dependency-path: services/signaling/go.sum
+      - run: go test ./internal/rtc ./internal/connection
+        working-directory: services/signaling
