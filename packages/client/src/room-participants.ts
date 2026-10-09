@@ -109,7 +109,15 @@ export class RemoteRoomRegistry {
   ready(): void {
     if (this.#closed) return;
     this.#ready = true;
-    for (const track of this.#tracks.values()) this.#subscribe(track);
+    for (const track of this.#tracks.values()) {
+      if (track.wantsSubscription) void track.subscribe().catch(() => undefined);
+      else this.#subscribe(track);
+    }
+  }
+
+  suspend(): void {
+    this.#ready = false;
+    for (const track of this.#tracks.values()) track.suspend();
   }
 
   snapshotParticipants(): readonly Participant[] {
@@ -263,6 +271,7 @@ export class RemoteRoomRegistry {
       !this.#closed &&
       this.#ready &&
       this.autoSubscribe &&
+      this.#tracks.get(track.id)?.canAutoSubscribe &&
       track.type !== "data" &&
       this.#participants.has(track.participantId)
     )

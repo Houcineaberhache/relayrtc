@@ -12,6 +12,15 @@ export class RemoteTrack implements RoomRemoteTrack {
   #pending: Promise<MediaStreamTrack> | undefined;
   #closing: Promise<void> | undefined;
   #version = 0;
+  #desired = false;
+  #autoAllowed = true;
+
+  get wantsSubscription(): boolean {
+    return this.#desired;
+  }
+  get canAutoSubscribe(): boolean {
+    return this.#autoAllowed;
+  }
   readonly #attachments = new Map<
     HTMLMediaElement,
     { stream?: MediaStream; track?: MediaStreamTrack }
@@ -59,7 +68,16 @@ export class RemoteTrack implements RoomRemoteTrack {
           : new RoomError("MEDIA_SUBSCRIBE_FAILED", "The remote subscription is unavailable"),
       );
     }
-    if (this.#closing) return this.#closing.then(() => this.subscribe());
+    this.#desired = true;
+    this.#autoAllowed = false;
+    if (this.#closing) {
+      const version = this.#version;
+      return this.#closing.then(() => {
+        if (version !== this.#version || !this.#desired)
+          throw new RoomError("MEDIA_OPERATION_CANCELLED", "Remote subscription was cancelled");
+        return this.subscribe();
+      });
+    }
     if (this.#pending) return this.#pending;
     if (this.#subscription) return Promise.resolve(this.#subscription.track);
     const version = this.#version;
@@ -93,6 +111,8 @@ export class RemoteTrack implements RoomRemoteTrack {
       this.#stream = new MediaStream([subscription.track]);
       subscription.setPaused(this.#info.state === "paused");
       this.#state = "subscribed";
+      for (const [element, attachment] of this.#attachments)
+        this.#attach(element, attachment, subscription.track);
       this.events.emit("trackSubscribed", this);
       return subscription.track;
     } catch (error) {
@@ -113,9 +133,11 @@ export class RemoteTrack implements RoomRemoteTrack {
   }
 
   unsubscribe(): Promise<void> {
-    if (this.#closing) return this.#closing;
+    this.#desired = false;
+    this.#autoAllowed = false;
     this.#version++;
     this.detach();
+    if (this.#closing) return this.#closing;
     const subscription = this.#subscription;
     this.#subscription = undefined;
     this.#stream = null;
@@ -145,17 +167,55 @@ export class RemoteTrack implements RoomRemoteTrack {
     try {
       const track = await this.subscribe();
       if (this.#attachments.get(element) !== attachment) return element;
-      const stream =
-        element.srcObject instanceof MediaStream ? element.srcObject : new MediaStream();
-      stream.addTrack(track);
-      attachment.stream = stream;
-      attachment.track = track;
-      element.srcObject = stream;
+      this.#attach(element, attachment, track);
       return element;
     } catch (error) {
       if (this.#attachments.get(element) === attachment) this.#attachments.delete(element);
       throw error;
     }
+  }
+
+  #attach(
+    element: HTMLMediaElement,
+    attachment: { stream?: MediaStream; track?: MediaStreamTrack },
+    track: MediaStreamTrack,
+  ): void {
+    const stream = element.srcObject instanceof MediaStream ? element.srcObject : new MediaStream();
+    stream.addTrack(track);
+    attachment.stream = stream;
+    attachment.track = track;
+    element.srcObject = stream;
+  }
+
+  suspend(): void {
+    if (this.#state === "closed") return;
+    this.#version++;
+    for (const [element, attachment] of this.#attachments) {
+      if (attachment.stream && attachment.track) {
+        attachment.stream.removeTrack(attachment.track);
+        if (element.srcObject === attachment.stream && attachment.stream.getTracks().length === 0)
+          element.srcObject = null;
+      }
+      delete attachment.stream;
+      delete attachment.track;
+    }
+    const subscription = this.#subscription;
+    this.#subscription = undefined;
+    this.#stream = null;
+    this.#state = "unsubscribed";
+    subscription?.dispose();
+    if (subscription) this.events.emit("trackUnsubscribed", this);
+    const pending = this.#pending;
+    const operation = Promise.all([
+      subscription?.close() ?? Promise.resolve(),
+      pending?.catch(() => undefined) ?? Promise.resolve(),
+    ]).then(() => undefined);
+    this.#closing = operation;
+    void operation
+      .finally(() => {
+        if (this.#closing === operation) this.#closing = undefined;
+      })
+      .catch(() => undefined);
   }
 
   detach(element?: HTMLMediaElement): void {
@@ -178,6 +238,7 @@ export class RemoteTrack implements RoomRemoteTrack {
   dispose(): void {
     if (this.#state === "closed") return;
     this.#version++;
+    this.#desired = false;
     this.detach();
     const subscription = this.#subscription;
     this.#subscription = undefined;
