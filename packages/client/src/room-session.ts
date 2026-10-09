@@ -2,6 +2,8 @@ import type { ParticipantJoinAcceptedPayload, ServerProtocolMessage } from "@rel
 import { RoomError } from "./room-errors.js";
 import { RoomEventEmitter } from "./room-events.js";
 import { RoomRtc } from "./room-rtc.js";
+import { LocalRoomMedia } from "./room-local-media.js";
+import type { RoomLocalParticipant } from "./room-media.js";
 import type { JoinOptions, RelayClientOptions, Room, RoomConnectionState } from "./room.js";
 import { SignalingClient } from "./signaling-client.js";
 
@@ -13,6 +15,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   #stopSetup: ((error: RoomError) => void) | undefined;
   readonly #rtc = new RoomRtc();
   readonly #signaling: SignalingClient;
+  readonly #localMedia: LocalRoomMedia;
 
   constructor(
     readonly options: RelayClientOptions,
@@ -20,6 +23,19 @@ export class RoomSession extends RoomEventEmitter implements Room {
     readonly onEnded: () => void,
   ) {
     super();
+    this.#localMedia = new LocalRoomMedia(
+      this.#rtc,
+      () => {
+        if (this.#ended || this.#leaving || this.#state !== "connected")
+          throw new RoomError("NOT_CONNECTED", "Join the room before using local media controls");
+      },
+      (error) => {
+        if (!this.#ended && !this.#leaving) {
+          this.emit("error", error);
+          this.clientEvents.emit("error", error);
+        }
+      },
+    );
     this.#signaling = new SignalingClient(
       options.signalingUrl,
       options.requestTimeoutMs ?? 10_000,
@@ -39,8 +55,30 @@ export class RoomSession extends RoomEventEmitter implements Room {
   get info(): ParticipantJoinAcceptedPayload["room"] {
     return this.#requireJoined().room;
   }
-  get localParticipant(): ParticipantJoinAcceptedPayload["localParticipant"] {
-    return this.#requireJoined().localParticipant;
+  get localParticipant(): RoomLocalParticipant {
+    return {
+      ...this.#requireJoined().localParticipant,
+      microphone: this.microphone,
+      camera: this.camera,
+      screen: this.screen,
+      devices: this.devices,
+      permissions: this.permissions,
+    };
+  }
+  get microphone(): Room["microphone"] {
+    return this.#localMedia.microphone;
+  }
+  get camera(): Room["camera"] {
+    return this.#localMedia.camera;
+  }
+  get screen(): Room["screen"] {
+    return this.#localMedia.screen;
+  }
+  get devices(): Room["devices"] {
+    return this.#localMedia.devices;
+  }
+  get permissions(): Room["permissions"] {
+    return this.#localMedia.permissions;
   }
   get session(): ParticipantJoinAcceptedPayload["session"] {
     return this.#requireJoined().session;
@@ -111,6 +149,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   leave(): Promise<void> {
     if (this.#leaving) return this.#leaving;
     if (this.#ended) return Promise.resolve();
+    this.#localMedia.dispose();
     if (this.#state === "connecting") {
       const error = new RoomError("JOIN_CANCELLED", "Joining the room was cancelled");
       this.#rtc.close();
@@ -189,6 +228,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   #finish(state: RoomConnectionState, error?: RoomError, reportError = false): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#localMedia.dispose();
     this.#stopSetup?.(error ?? new RoomError("JOIN_CANCELLED", "Room setup was cancelled"));
     this.#rtc.close();
     this.#signaling.close(error);
