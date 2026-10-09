@@ -256,7 +256,7 @@ export const usageReportingCompatibility = {
   mediaDurations:
     "Existing media samples contain unioned duration deltas at observation time, not complete per-participant publication intervals. Precise bucket splitting and connected-interval intersection require the subsequent sampling and lifecycle phases.",
   turnTraffic:
-    "Existing TURN byte values come from client reports and must be displayed as estimates until project-attributed coturn observations are implemented.",
+    "TURN totals accept only trusted coturn allocation observations. Legacy browser estimates are excluded. Relay duration ends at the last confirmed observation; missing closure or collection coverage remains partial or unavailable.",
 } as const;
 
 export const usageMediaDurationMetrics = {

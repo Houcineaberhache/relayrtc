@@ -55,6 +55,11 @@ const usageSummary = (projectId: SQL | null): SQL => {
       where s.event_type = 'connection.opened' and ${projectFilter("s", projectId)}),
     'signalingConnectionSeconds', coalesce((select sum(extract(epoch from ends - starts))
       from connections c where ${projectFilter("c", projectId)}), 0),
+    'turnSessions', (select count(*) from scoped_turn_allocations t cross join bounds b
+      where t.started_at >= b.starts and t.started_at < b.ends and ${projectFilter("t", projectId)}),
+    'turnRelaySeconds', coalesce((select sum(extract(epoch from least(t.last_observed_at, b.ends) - greatest(t.started_at, b.starts)))
+      from scoped_turn_allocations t cross join bounds b where t.started_at < b.ends and t.last_observed_at > b.starts
+        and ${projectFilter("t", projectId)}), 0),
     ${sql.join(pairs, sql`, `)}
   )`;
 };
@@ -165,8 +170,23 @@ export function createUsageReportQuery(
       select ue.* from usage_event ue
       join scoped_projects pr on pr.id = ue.project_id cross join bounds b
       where ue.organization_id = ${scope.organizationId}
+        and (ue.metric not in ('turnIngressBytes', 'turnEgressBytes', 'turn.bytes.ingress', 'turn.bytes.egress') or ue.source = 'coturn')
         ${scope.environmentId === null ? sql`` : sql`and ue.environment_id = ${scope.environmentId}`}
         and ue.occurred_at >= b.starts and ue.occurred_at < b.ends
+    ), scoped_turn_allocations as (
+      select t.* from turn_allocation t join scoped_projects pr on pr.id = t.project_id
+      where t.organization_id = ${scope.organizationId}
+        ${scope.environmentId === null ? sql`` : sql`and t.environment_id = ${scope.environmentId}`}
+    ), turn_quality as (
+      select case when not exists (select 1 from turn_log_checkpoint where started_at is not null) then 'unavailable'
+        when (select min(started_at) from turn_log_checkpoint) > (select starts from bounds)
+          or coalesce((select max(collected_through_at) from turn_log_checkpoint) < (select ends from bounds), true)
+          or exists (select 1 from turn_log_checkpoint where reconciliation->>'status' = 'different')
+          then 'partial'
+        when exists (select 1 from scoped_turn_allocations t cross join bounds b
+          where t.started_at < b.ends and greatest(t.last_observed_at, t.expires_at) > b.starts and t.coverage = 'partial')
+          or exists (select 1 from turn_observation o cross join bounds b where o.allocation_id is null and o.kind in ('new', 'refreshed', 'deleted') and o.occurred_at >= b.starts and o.occurred_at < b.ends)
+          then 'partial' else 'authoritative' end as coverage
     ), event_totals as (
       select project_id, metric, sum(value) as value from scoped_usage_events group by project_id, metric
     ), report_sessions as (
@@ -203,6 +223,7 @@ export function createUsageReportQuery(
     ) order by b.starts), '[]'::jsonb) from buckets b)`
     } as buckets,
     (select complete from history) as complete,
+    (select coverage from turn_quality) as turn_coverage,
     (select count(*) from scoped_projects) as total,
     ${
       scope.projectId === null
@@ -211,7 +232,8 @@ export function createUsageReportQuery(
       'summary', ${usageSummary(sql`pr.id`)},
       'dataQuality', jsonb_build_object(
         'sessionHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end,
-        'messageHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end
+        'messageHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end,
+        'turnTraffic', (select coverage from turn_quality)
       )
     ) order by pr.id), '[]'::jsonb) from (
       select id from scoped_projects order by id limit ${pagination.limit} offset ${pagination.offset}
@@ -232,9 +254,18 @@ export function createUsageReportQuery(
   };
 }
 
-export const usageDataQuality = (complete: boolean | undefined) => ({
+export const usageDataQuality = (
+  complete: boolean | undefined,
+  turnCoverage: unknown = "unavailable",
+) => ({
   sessionHistory: complete ? "complete" : "partial",
   messageHistory: complete ? "complete" : "partial",
+  turnTraffic:
+    turnCoverage === "authoritative"
+      ? "authoritative"
+      : turnCoverage === "partial"
+        ? "partial"
+        : "unavailable",
 });
 
 export function createUsageAggregationQuery(
@@ -247,7 +278,7 @@ export function createUsageAggregationQuery(
     "24h",
     endedAt,
     undefined,
-    sql`select ${usageSummary(null)} as metrics, (select complete from history) as complete`,
+    sql`select ${usageSummary(null)} as metrics, (select complete from history) as complete, (select coverage from turn_quality) as turn_coverage`,
     startedAt,
   ).query;
 }

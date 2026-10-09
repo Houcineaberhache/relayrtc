@@ -58,6 +58,8 @@ export const reportingUsageMetricsSchema = z
     sfuEgressBytes: quantity,
     turnIngressBytes: quantity,
     turnEgressBytes: quantity,
+    turnRelaySeconds: quantity.default(0),
+    turnSessions: count.default(0),
     roomsCreated: usageMetricValueSchema("roomsCreated"),
     roomsStarted: usageMetricValueSchema("roomsStarted"),
     roomSeconds: usageMetricValueSchema("roomSeconds"),
@@ -87,6 +89,7 @@ export const usageDataQualitySchema = z
   .object({
     sessionHistory: z.enum(["complete", "partial"]),
     messageHistory: z.enum(["complete", "partial"]),
+    turnTraffic: z.enum(["unavailable", "partial", "authoritative"]).default("unavailable"),
   })
   .strict();
 export const projectUsageResponseSchema = z
