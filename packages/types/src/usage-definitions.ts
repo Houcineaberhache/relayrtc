@@ -252,7 +252,7 @@ export const usageReportingCompatibility = {
   messageNames:
     "Existing reporting responses retain messagesIn/messagesOut; these alias signalingMessagesIn/signalingMessagesOut without changing their units or values.",
   connectionCount:
-    "Existing reporting signalingConnections counts joined participant sessions, not every accepted WebSocket upgrade or resume. Display it as joined sessions until the durable connection lifecycle ledger replaces this derivation.",
+    "Reporting signalingConnections counts durable connection-open events, including resumes. Legacy coverage is limited to retained connection intervals; migration cannot reconstruct previously purged connection starts.",
   mediaDurations:
     "Existing media samples contain unioned duration deltas at observation time, not complete per-participant publication intervals. Precise bucket splitting and connected-interval intersection require the subsequent sampling and lifecycle phases.",
   turnTraffic:
