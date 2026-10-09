@@ -16,3 +16,4 @@ export * from "./relay-client.js";
 export * from "./room.js";
 export * from "./room-errors.js";
 export * from "./room-media.js";
+export * from "./room-remote.js";

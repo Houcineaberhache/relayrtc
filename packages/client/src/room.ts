@@ -1,12 +1,26 @@
 import type { ParticipantSession, Room as RoomInfo } from "@relayrtc/types";
 import type { RoomError } from "./room-errors.js";
 import type { RoomLocalMedia, RoomLocalParticipant } from "./room-media.js";
+import type { RoomRemoteParticipant, RoomRemoteTrack } from "./room-remote.js";
 
 export type RoomConnectionState = "connecting" | "connected" | "disconnected" | "failed";
 
 export interface RoomEvents {
   readonly connectionStateChanged: RoomConnectionState;
   readonly error: RoomError;
+  readonly participantJoined: RoomRemoteParticipant;
+  readonly participantLeft: RoomRemoteParticipant;
+  readonly participantUpdated: RoomRemoteParticipant;
+  readonly participantReconnected: {
+    readonly participant: RoomRemoteParticipant;
+    readonly session: ParticipantSession;
+  };
+  readonly trackPublished: RoomRemoteTrack;
+  readonly trackUnpublished: RoomRemoteTrack;
+  readonly trackUpdated: RoomRemoteTrack;
+  readonly trackSubscribed: RoomRemoteTrack;
+  readonly trackUnsubscribed: RoomRemoteTrack;
+  readonly trackSubscriptionFailed: { readonly track: RoomRemoteTrack; readonly error: RoomError };
 }
 
 export interface Room extends RoomLocalMedia {
@@ -15,6 +29,8 @@ export interface Room extends RoomLocalMedia {
   readonly localParticipant: RoomLocalParticipant;
   readonly session: ParticipantSession;
   readonly connectionState: RoomConnectionState;
+  readonly participants: ReadonlyMap<string, RoomRemoteParticipant>;
+  readonly remoteTracks: ReadonlyMap<string, RoomRemoteTrack>;
   on<Event extends keyof RoomEvents>(
     event: Event,
     listener: (value: RoomEvents[Event]) => void,
@@ -27,6 +43,7 @@ export interface RelayClientOptions {
   readonly requestTimeoutMs?: number;
   readonly iceServers?: readonly RTCIceServer[];
   readonly iceTransportPolicy?: RTCIceTransportPolicy;
+  readonly autoSubscribe?: boolean;
 }
 
 export interface JoinOptions {

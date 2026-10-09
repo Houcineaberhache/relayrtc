@@ -3,7 +3,20 @@ import type { RoomEvents } from "./room.js";
 export class RoomEventEmitter {
   readonly #listeners: {
     [Event in keyof RoomEvents]: Set<(value: RoomEvents[Event]) => void>;
-  } = { connectionStateChanged: new Set(), error: new Set() };
+  } = {
+    connectionStateChanged: new Set(),
+    error: new Set(),
+    participantJoined: new Set(),
+    participantLeft: new Set(),
+    participantUpdated: new Set(),
+    participantReconnected: new Set(),
+    trackPublished: new Set(),
+    trackUnpublished: new Set(),
+    trackUpdated: new Set(),
+    trackSubscribed: new Set(),
+    trackUnsubscribed: new Set(),
+    trackSubscriptionFailed: new Set(),
+  };
 
   on<Event extends keyof RoomEvents>(
     event: Event,
@@ -26,7 +39,6 @@ export class RoomEventEmitter {
   }
 
   clear(): void {
-    this.#listeners.connectionStateChanged.clear();
-    this.#listeners.error.clear();
+    for (const listeners of Object.values(this.#listeners)) listeners.clear();
   }
 }
