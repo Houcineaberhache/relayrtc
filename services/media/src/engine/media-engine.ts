@@ -138,6 +138,7 @@ export interface MediaEngine {
   publishTrack(request: PublishTrackRequest): Promise<PublishedTrack>;
   removeTrack(request: RemoveTrackRequest): Promise<void>;
   removeParticipant(request: RemoveParticipantRequest): Promise<void>;
+  removeSubscription?(request: ResumeSubscriptionRequest): Promise<void>;
   restartParticipantTransport(
     request: RestartTransportRequest,
   ): Promise<Readonly<Record<string, unknown>>>;

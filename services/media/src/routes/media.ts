@@ -348,6 +348,29 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
     },
   );
 
+  app.delete<{ Body: SubscriptionOwnerBody; Params: SubscriptionParameters }>(
+    "/rooms/:roomId/subscriptions/:subscriptionId",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["participantId"],
+          properties: { participantId: { type: "string", minLength: 1, maxLength: 128 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!options.engine.removeSubscription) {
+        return reply
+          .code(501)
+          .send({ code: "NOT_IMPLEMENTED", description: "Subscription removal is unavailable" });
+      }
+      await options.engine.removeSubscription({ ...request.body, ...request.params });
+      return reply.code(204).send();
+    },
+  );
+
   app.patch<{ Body: QualityBody; Params: SubscriptionParameters }>(
     "/rooms/:roomId/subscriptions/:subscriptionId/quality",
     {
