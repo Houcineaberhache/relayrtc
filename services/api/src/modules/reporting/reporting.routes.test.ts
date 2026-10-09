@@ -6,11 +6,20 @@ import { authenticateApiKey } from "../../authentication/api-key-authenticator.j
 import { registerErrorHandling } from "../../http/errors/error-handler.js";
 import { createReportingAccessRepository } from "./reporting-access.js";
 import { getProjectUsage } from "./project-usage.service.js";
-import { projectUsageResponseSchema, reportingUsageMetricsSchema } from "@relayrtc/validation";
+import { getOrganizationUsage } from "./organization-usage.service.js";
+import { getProjectAnalytics } from "./project-analytics.service.js";
+import {
+  organizationUsageResponseSchema,
+  projectAnalyticsResponseSchema,
+  projectUsageResponseSchema,
+  reportingUsageMetricsSchema,
+} from "@relayrtc/validation";
 import { reportingRoutes } from "./reporting.routes.js";
 
 vi.mock("../../authentication/api-key-authenticator.js", () => ({ authenticateApiKey: vi.fn() }));
 vi.mock("./project-usage.service.js", () => ({ getProjectUsage: vi.fn() }));
+vi.mock("./organization-usage.service.js", () => ({ getOrganizationUsage: vi.fn() }));
+vi.mock("./project-analytics.service.js", () => ({ getProjectAnalytics: vi.fn() }));
 vi.mock("./reporting-access.js", async (original) => ({
   ...(await original<typeof import("./reporting-access.js")>()),
   createReportingAccessRepository: vi.fn(),
@@ -37,6 +46,52 @@ const createApp = () => {
 const cookie = { cookie: "better-auth.session_token=signed-session" };
 
 beforeEach(() => {
+  vi.mocked(getProjectAnalytics).mockResolvedValue(
+    projectAnalyticsResponseSchema.parse({
+      scope: { organizationId: "org_1", projectId: "project_1", environmentId: "env_1" },
+      window: {
+        range: "live",
+        startedAt: "2026-10-08T11:45:00.000Z",
+        endedAt: "2026-10-08T12:00:00.000Z",
+        timezone: "UTC",
+        endExclusive: true,
+      },
+      summary: {
+        peakConcurrent: 0,
+        totalSessions: 0,
+        averageSessionSeconds: 0,
+        participantSeconds: 0,
+        connectionSuccessRate: 0,
+      },
+      network: { sfuIngressBytes: 0, sfuEgressBytes: 0, turnIngressBytes: 0, turnEgressBytes: 0 },
+      traffic: [],
+      networkSeries: [],
+      quality: [],
+      regions: [],
+      qualityDistribution: [],
+      topRooms: [],
+      qualityGranularitySeconds: 60,
+      dataQuality: { sessionHistory: "complete", messageHistory: "complete" },
+    }),
+  );
+  vi.mocked(getOrganizationUsage).mockResolvedValue(
+    organizationUsageResponseSchema.parse({
+      organizationId: "org_1",
+      window: {
+        range: "30d",
+        startedAt: "2026-09-08T00:00:00.000Z",
+        endedAt: "2026-10-08T00:00:00.000Z",
+        timezone: "UTC",
+        endExclusive: true,
+      },
+      summary: Object.fromEntries(
+        Object.keys(reportingUsageMetricsSchema.shape).map((key) => [key, 0]),
+      ),
+      projects: [],
+      pagination: { limit: 10, offset: 0, total: 0 },
+      dataQuality: { sessionHistory: "complete", messageHistory: "complete" },
+    }),
+  );
   vi.mocked(getProjectUsage).mockResolvedValue(
     projectUsageResponseSchema.parse({
       scope: { organizationId: "org_1", projectId: "project_1", environmentId: "env_1" },
@@ -100,13 +155,42 @@ describe("versioned reporting routes", () => {
     });
     expect(response.headers["cache-control"]).toBe("private, no-store");
   });
-  it.each([
-    "/v1/projects/project_1/analytics?range=live",
-    "/v1/organizations/org_1/usage?range=30d&limit=10&offset=0",
-  ])("exposes a protected calculation placeholder for %s", async (url) => {
-    const response = await createApp().inject({ url, headers: cookie });
-    expect(response.statusCode).toBe(501);
-    expect(response.json()).toMatchObject({ code: "REPORTING_NOT_IMPLEMENTED" });
+  it.each(["/v1/projects/project_1/analytics?range=live"])(
+    "serves the selected analytics range for %s",
+    async (url) => {
+      const response = await createApp().inject({ url, headers: cookie });
+      expect(response.statusCode).toBe(200);
+      expect(getProjectAnalytics).toHaveBeenCalledWith(
+        expect.anything(),
+        { organizationId: "org_1", projectId: "project_1", environmentId: null },
+        "live",
+      );
+    },
+  );
+  it("passes the organization, range, and pagination to the usage service", async () => {
+    const response = await createApp().inject({
+      url: "/v1/organizations/org_1/usage?range=30d&limit=10&offset=0",
+      headers: cookie,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(getOrganizationUsage).toHaveBeenCalledWith(expect.anything(), "org_1", {
+      range: "30d",
+      limit: 10,
+      offset: 0,
+    });
+    expect(response.json()).toMatchObject({
+      organizationId: "org_1",
+      dataQuality: { sessionHistory: "complete" },
+    });
+  });
+  it.each(["usage", "quota"])("hides organization %s from nonmembers", async (route) => {
+    access.isMember.mockResolvedValue(false);
+    const response = await createApp().inject({
+      url: `/v1/organizations/org_other/${route}`,
+      headers: cookie,
+    });
+    expect(response.statusCode).toBe(404);
+    expect(getOrganizationUsage).not.toHaveBeenCalled();
   });
   it("passes the key's enforced environment and selected range to the usage service", async () => {
     const response = await createApp().inject({

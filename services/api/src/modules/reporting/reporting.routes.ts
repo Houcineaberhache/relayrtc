@@ -19,6 +19,8 @@ import { assertClaimedScope } from "../../authentication/authentication-plugin.j
 import { ApiError } from "../../http/errors/api-error.js";
 import { validate } from "../../http/validation/validate.js";
 import { getProjectUsage } from "./project-usage.service.js";
+import { getOrganizationUsage } from "./organization-usage.service.js";
+import { getProjectAnalytics } from "./project-analytics.service.js";
 import {
   authorizeOrganizationReport,
   authorizeProjectReport,
@@ -48,14 +50,6 @@ const principalFor = (request: FastifyRequest): ReportingPrincipal => {
     );
   }
   return request.reportingPrincipal;
-};
-
-const unavailable = (): never => {
-  throw new ApiError(
-    501,
-    "REPORTING_NOT_IMPLEMENTED",
-    "Reporting calculations are not implemented yet",
-  );
 };
 
 const responseSchema = (schema: z.ZodType) => ({
@@ -105,9 +99,9 @@ export const reportingRoutes: FastifyPluginCallback<ReportingRoutesOptions> = (
     },
     async (request) => {
       const { organizationId } = validate(reportingOrganizationParamsSchema, request.params);
-      validate(organizationUsageQuerySchema, request.query);
+      const query = validate(organizationUsageQuerySchema, request.query);
       await authorizeOrganizationReport(repository, principalFor(request), organizationId);
-      return unavailable();
+      return getOrganizationUsage(options.database, organizationId, query);
     },
   );
 
@@ -155,14 +149,14 @@ export const reportingRoutes: FastifyPluginCallback<ReportingRoutesOptions> = (
     async (request) => {
       const { projectId } = validate(reportingProjectParamsSchema, request.params);
       const query = validate(projectAnalyticsQuerySchema, request.query);
-      await authorizeProjectReport(
+      const scope = await authorizeProjectReport(
         repository,
         principalFor(request),
         projectId,
         query.environmentId,
         "analytics:read",
       );
-      return unavailable();
+      return getProjectAnalytics(options.database, scope, query.range);
     },
   );
   done();
