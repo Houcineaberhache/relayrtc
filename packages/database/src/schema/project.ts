@@ -38,6 +38,7 @@ export const environment = pgTable(
       .notNull()
       .references(() => project.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    status: text("status").default("active").notNull(),
     slug: text("slug").notNull(),
     type: text("type").notNull(),
     deletionProtected: boolean("deletion_protected").default(false).notNull(),
@@ -52,6 +53,7 @@ export const environment = pgTable(
     index("environment_type_idx").on(table.type),
     uniqueIndex("environment_id_project_id_idx").on(table.id, table.projectId),
     uniqueIndex("environment_project_slug_idx").on(table.projectId, table.slug),
+    check("environment_status_check", sql`${table.status} in ('active', 'deleting')`),
     check(
       "environment_type_check",
       sql`${table.type} in ('development', 'production', 'preview', 'staging', 'custom')`,

@@ -8,3 +8,4 @@ export * from "./room.js";
 export * from "./rtc-runtime.js";
 export * from "./usage.js";
 export * from "./usage-history.js";
+export * from "./runtime-operation.js";

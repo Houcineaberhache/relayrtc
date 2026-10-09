@@ -1,6 +1,6 @@
 import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
 import { schema, type RelayKitDatabase } from "@relayrtc/database";
-import { createMediaControlToken } from "@relayrtc/protocol/media-control";
+import { terminateRoomRuntime } from "./runtime-operations.js";
 import { and, count, eq, inArray, isNull, notInArray } from "drizzle-orm";
 
 export interface ResourceDeletionImpact {
@@ -37,7 +37,6 @@ export const getDeletionProjectIds = async (
   }
 
   const organizationId = scope.organizationId;
-  if (organizationId === undefined) return [];
   const projects = await database
     .select({ id: schema.project.id })
     .from(schema.project)
@@ -106,53 +105,25 @@ export const readRoomTerminationConfig = (
   };
 };
 
-const requireSuccess = async (url: string, init: RequestInit): Promise<void> => {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
-  if (!response.ok) throw new Error(`Room termination failed with HTTP ${response.status}`);
-};
-
 export const terminateResourceRooms = async (
   database: RelayKitDatabase,
   projectIds: readonly string[],
   config: RoomTerminationConfig,
 ): Promise<void> => {
   if (projectIds.length === 0) return;
-
   const rooms = await database
     .select()
     .from(schema.room)
-    .where(
-      and(
-        inArray(schema.room.projectId, [...projectIds]),
-        notInArray(schema.room.status, ["ended", "failed"]),
-      ),
-    );
-
+    .where(inArray(schema.room.projectId, [...projectIds]));
   for (const room of rooms) {
-    const endedAt = new Date();
-    const roomId = encodeURIComponent(room.id);
-    await requireSuccess(`${config.signalingUrl}/rooms/${roomId}/end`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.internalSecret}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ ...room, status: "ended", endedAt }),
-    });
-    await requireSuccess(`${config.mediaUrl}/rooms/${roomId}`, {
-      method: "DELETE",
-      headers: {
-        authorization: `Bearer ${createMediaControlToken(config.internalSecret, {
-          service: "relayrtc-console",
-          method: "DELETE",
-          path: new URL(`${config.mediaUrl}/rooms/${roomId}`).pathname,
-          authority: { kind: "room", roomId: room.id },
-        })}`,
-      },
-    });
+    const endedAt = room.endedAt ?? new Date();
     await database
       .update(schema.room)
       .set({ status: "ended", endedAt })
       .where(eq(schema.room.id, room.id));
+    await terminateRoomRuntime(
+      { ...room, status: "ended", endedAt },
+      { ...config, service: "relayrtc-console" },
+    );
   }
 };

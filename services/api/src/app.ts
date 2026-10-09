@@ -12,6 +12,7 @@ import { createTurnCredentialService } from "./modules/turn-credentials/turn-cre
 import { healthRoutes } from "./routes/health.js";
 import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
+import { registerRuntimeOperationWorker } from "./runtime/runtime-operation-worker.js";
 import { registerUsageRetention } from "./modules/reporting/usage-retention-worker.js";
 
 interface BuildAppOptions {
@@ -61,7 +62,13 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     ttlSeconds: options.config.turnCredentialTtlSeconds,
     turnUrls: options.config.turnUrls,
   });
+  const runtimeConfig = {
+    internalSecret: options.config.internalSecret,
+    mediaUrl: options.config.mediaInternalUrl,
+    signalingUrl: options.config.signalingInternalUrl,
+  };
   const roomRuntime = createRoomRuntimeService({
+    database: options.database,
     internalSecret: options.config.internalSecret,
     mediaUrl: options.config.mediaInternalUrl,
     signalingUrl: options.config.signalingInternalUrl,
@@ -73,9 +80,17 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     reply.header("x-request-id", request.id);
   });
 
-  const stopUsageRetention = options.usageRetentionDays === undefined ? undefined
-    : registerUsageRetention(app, options.database, options.usageRetentionDays);
+  const stopUsageRetention =
+    options.usageRetentionDays === undefined
+      ? undefined
+      : registerUsageRetention(app, options.database, options.usageRetentionDays);
+  const stopRuntimeOperations = registerRuntimeOperationWorker(
+    app,
+    options.database,
+    runtimeConfig,
+  );
   app.addHook("onClose", async () => {
+    await stopRuntimeOperations();
     await stopUsageRetention?.();
     await options.closeDatabase?.();
   });
