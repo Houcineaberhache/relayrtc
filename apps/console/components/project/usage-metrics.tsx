@@ -16,7 +16,7 @@ export function UsageMetrics({ summary, dataQuality, period }: Pick<ProjectUsage
     Audio: [['Participant minutes', formatNumber(summary.audioParticipantSeconds / 60)]],
     Video: [['Participant minutes', formatNumber(summary.videoParticipantSeconds / 60)]],
     'Screen share': [['Minutes', formatNumber(summary.screenShareSeconds / 60)], ['Ingress', formatBytes(summary.screenShareIngressBytes, 2)], ['Egress', formatBytes(summary.screenShareEgressBytes, 2)]],
-    Signaling: [['Joined sessions', formatNumber(summary.signalingConnections)], ['Session connection minutes', formatNumber(summary.signalingConnectionSeconds / 60)], ['Messages in', formatNumber(summary.messagesIn)], ['Messages out', formatNumber(summary.messagesOut)]],
+    Signaling: [['Connections', formatNumber(summary.signalingConnections)], ['Connection minutes', formatNumber(summary.signalingConnectionSeconds / 60)], ['Messages in', formatNumber(summary.messagesIn)], ['Messages out', formatNumber(summary.messagesOut)]],
   }
   const network = [
     ['SFU ingress', summary.sfuIngressBytes], ['SFU egress', summary.sfuEgressBytes],
