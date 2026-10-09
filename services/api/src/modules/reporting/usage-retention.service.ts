@@ -19,11 +19,22 @@ export async function expireUsageHistory(
   if (!Number.isFinite(now.getTime())) throw new Error("A valid retention time is required");
   const cutoff = new Date(now.getTime() - retentionDays * 86400_000).toISOString();
   return database.transaction(async (transaction) => {
-    const [lock] = await transaction.execute(sql`select pg_try_advisory_xact_lock(hashtextextended('relayrtc:usage-retention', 0)) as acquired`);
+    const [lock] = await transaction.execute(
+      sql`select pg_try_advisory_xact_lock(hashtextextended('relayrtc:usage-retention', 0)) as acquired`,
+    );
     if (lock?.acquired !== true) return { status: "busy" as const, cutoff };
-    await transaction.execute(sql`delete from usage_event where occurred_at < ${cutoff}::timestamptz`);
-    await transaction.execute(sql`delete from usage_aggregate where window_ended_at < ${cutoff}::timestamptz`);
-    await transaction.execute(sql`delete from usage_history_interval where ended_at < ${cutoff}::timestamptz`);
+    await transaction.execute(
+      sql`delete from usage_event where occurred_at < ${cutoff}::timestamptz`,
+    );
+    await transaction.execute(
+      sql`delete from media_usage_sample where occurred_at < ${cutoff}::timestamptz`,
+    );
+    await transaction.execute(
+      sql`delete from usage_aggregate where window_ended_at < ${cutoff}::timestamptz`,
+    );
+    await transaction.execute(
+      sql`delete from usage_history_interval where ended_at < ${cutoff}::timestamptz`,
+    );
     await transaction.execute(sql`
       with expired as (
         select s.id from usage_history_session s left join usage_history_room r on r.id = s.room_id
