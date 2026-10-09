@@ -7,6 +7,7 @@ import {
   type ServerProtocolMessage,
 } from "@relayrtc/protocol";
 import { RoomError, type RoomErrorCode } from "./room-errors.js";
+import { signalingFrameLimit } from "./room-json.js";
 
 const serverErrorCodes = {
   unauthorized: "AUTHENTICATION_FAILED",
@@ -87,7 +88,14 @@ export class SignalingClient {
       type,
       payload,
     });
-    if (!request.success) throw new RoomError("PROTOCOL_ERROR", "The signaling request is invalid");
+    if (!request.success)
+      throw new RoomError("INVALID_PAYLOAD", "The signaling request payload is invalid");
+    const encoded = JSON.stringify(request.data);
+    if (new TextEncoder().encode(encoded).byteLength > signalingFrameLimit)
+      throw new RoomError(
+        "PAYLOAD_TOO_LARGE",
+        "Signaling messages must fit within 65536 UTF-8 bytes including their envelope",
+      );
     const message = await new Promise<ProtocolResponseMessage>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
@@ -95,7 +103,7 @@ export class SignalingClient {
       }, this.timeoutMs);
       this.#pending.set(id, { operation: type, expected, resolve, reject, timer });
       try {
-        socket.send(JSON.stringify(request.data));
+        socket.send(encoded);
       } catch {
         clearTimeout(timer);
         this.#pending.delete(id);
@@ -180,7 +188,13 @@ export class SignalingClient {
       this.#fail(new RoomError("PROTOCOL_ERROR", "The server sent an invalid signaling message"));
       return;
     }
-    const parsed = protocolMessageSchema.safeParse(input);
+    let parsed: ReturnType<typeof protocolMessageSchema.safeParse>;
+    try {
+      parsed = protocolMessageSchema.safeParse(input);
+    } catch {
+      this.#fail(new RoomError("PROTOCOL_ERROR", "The server sent an invalid signaling payload"));
+      return;
+    }
     if (!parsed.success || protocolRequestTypes.some((type) => type === parsed.data.type)) {
       this.#fail(new RoomError("PROTOCOL_ERROR", "The server sent an invalid signaling message"));
       return;
