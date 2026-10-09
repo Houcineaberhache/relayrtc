@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+import type { RoomRuntimeStore } from "./room-runtime-store.js";
 import { randomUUID } from "node:crypto";
 import { MediaDurationMeter } from "../usage/media-duration-meter.js";
 import type {
@@ -72,6 +74,9 @@ const mediaCodecs: RouterRtpCodecCapability[] = [
 ];
 
 interface WorkerSlot {
+  index: number;
+  instanceId: string;
+  allocating: Set<string>;
   alive: boolean;
   rooms: number;
   webRtcServer: WebRtcServer;
@@ -90,6 +95,15 @@ interface TurnUsageState {
 }
 
 interface RoomState {
+  closing: boolean;
+  reservations: { transports: number; producers: number; consumers: number };
+  closingParticipants: Set<string>;
+  removingParticipants: Map<string, number>;
+  pendingParticipants: Map<string, number>;
+  participantReservations: Map<
+    string,
+    { transports: number; producers: number; consumers: number }
+  >;
   turnUsage: Map<string, TurnUsageState>;
   durationMeter: MediaDurationMeter | undefined;
   consumers: Map<string, ConsumerState>;
@@ -106,6 +120,9 @@ interface RoomState {
 }
 
 export interface MediaQualityOptions {
+  roomRuntimeStore?: RoomRuntimeStore;
+  onWorkerError?: (error: unknown) => void;
+  onWorkerExhausted?: () => void;
   eventPublisher?: QualityEventPublisher;
   metricsStore?: QualityMetricsStore;
   usageMetricsStore?: MediaUsageMetricsStore;
@@ -145,6 +162,14 @@ export class MediasoupWorkerPool implements MediaEngine {
   readonly #pendingRooms = new Map<string, Promise<void>>();
   readonly #rooms = new Map<string, RoomState>();
   readonly #workers: WorkerSlot[] = [];
+  readonly #recoveryAbort = new AbortController();
+  readonly #replacements = new Map<number, Promise<void>>();
+  readonly #exhaustedWorkers = new Set<number>();
+  readonly #replacementAttempts = new Map<number, number>();
+  readonly #failedRooms = new Map<string, { room?: RoomState }>();
+  #failureFlush: Promise<void> | null = null;
+  #failureTimer: ReturnType<typeof setTimeout> | undefined;
+  #starting: Promise<void> | null = null;
   #closed = false;
   #usageFlush: Promise<void> | null = null;
 
@@ -160,48 +185,111 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   async start(): Promise<void> {
     if (this.#closed) throw new MediaEngineError("NOT_READY", "The media engine is closed");
-    if (this.#workers.length > 0) return;
-
-    try {
-      for (let index = 0; index < this.#config.workerCount; index += 1) {
-        const worker = await this.#createWorker(this.#workerSettings());
-        const webRtcServer = await worker.createWebRtcServer({
-          appData: { nodeId: this.#config.nodeId, workerIndex: index },
-          listenInfos: [
-            {
-              announcedAddress: this.#config.rtcAnnouncedAddress,
-              ip: this.#config.rtcListenIp,
-              port: this.#config.rtcPort + index,
-              protocol: "udp",
-            },
-            {
-              announcedAddress: this.#config.rtcAnnouncedAddress,
-              ip: this.#config.rtcListenIp,
-              port: this.#config.rtcPort + index,
-              protocol: "tcp",
-            },
-          ],
-        });
-        const slot: WorkerSlot = { alive: true, rooms: 0, webRtcServer, worker };
-        worker.on("died", () => {
-          this.#handleWorkerDeath(slot);
-        });
-        this.#workers.push(slot);
+    if (this.#starting) return this.#starting;
+    if (this.#workers.length === this.#config.workerCount) {
+      if (this.#workers.some((slot) => !slot.alive))
+        throw new MediaEngineError(
+          "NOT_READY",
+          "Media worker recovery is in progress or exhausted",
+        );
+      return;
+    }
+    this.#starting = (async () => {
+      try {
+        for (let index = 0; index < this.#config.workerCount; index += 1) {
+          this.#workers[index] = await this.#openWorker(index);
+        }
+      } catch (error) {
+        await this.close();
+        throw error;
       }
+    })().finally(() => {
+      this.#starting = null;
+    });
+    return this.#starting;
+  }
+
+  async #openWorker(index: number): Promise<WorkerSlot> {
+    if (this.#closed) throw new MediaEngineError("NOT_READY", "The media engine is closed");
+    const instanceId = randomUUID();
+    const worker = await this.#createWorker({
+      ...this.#workerSettings(),
+      appData: { nodeId: this.#config.nodeId, workerIndex: index, instanceId },
+    });
+    try {
+      const webRtcServer = await worker.createWebRtcServer({
+        appData: { nodeId: this.#config.nodeId, workerIndex: index },
+        listenInfos: ["udp", "tcp"].map((protocol) => ({
+          announcedAddress: this.#config.rtcAnnouncedAddress,
+          ip: this.#config.rtcListenIp,
+          port: this.#config.rtcPort + index,
+          protocol: protocol as "udp" | "tcp",
+        })),
+      });
+      if (this.#isClosed() || worker.closed) {
+        webRtcServer.close();
+        throw new MediaEngineError("NOT_READY", "The media worker closed during initialization");
+      }
+      const slot: WorkerSlot = {
+        index,
+        instanceId,
+        allocating: new Set(),
+        alive: true,
+        rooms: 0,
+        webRtcServer,
+        worker,
+      };
+      worker.on("died", () => {
+        this.#handleWorkerDeath(slot);
+      });
+      return slot;
     } catch (error) {
-      await this.close();
+      worker.close();
       throw error;
+    }
+  }
+
+  async #recoverWorker(index: number): Promise<void> {
+    while (!this.#closed) {
+      const attempt = (this.#replacementAttempts.get(index) ?? 0) + 1;
+      if (attempt > 5) {
+        this.#exhaustedWorkers.add(index);
+        this.#quality.onWorkerExhausted?.();
+        return;
+      }
+      this.#replacementAttempts.set(index, attempt);
+      try {
+        await delay(Math.min(4_000, 250 * 2 ** (attempt - 1)), undefined, {
+          signal: this.#recoveryAbort.signal,
+        });
+        const replacement = await this.#openWorker(index);
+        this.#workers[index] = replacement;
+        if (!replacement.alive || replacement.worker.closed)
+          throw new MediaEngineError(
+            "NOT_READY",
+            "The replacement worker died during initialization",
+          );
+        return;
+      } catch (error) {
+        if (this.#isClosed()) return;
+        this.#quality.onWorkerError?.(error);
+      }
     }
   }
 
   async close(): Promise<void> {
     if (this.#closed) return;
+    this.#closed = true;
+    this.#recoveryAbort.abort();
+    clearTimeout(this.#failureTimer);
+    await Promise.allSettled(this.#replacements.values());
+    await this.#flushFailures();
     if (this.#usageFlush) await this.#usageFlush;
     for (const room of this.#rooms.values())
       for (const producer of room.producers.values()) room.durationMeter?.stop(producer.id);
     await this.flushUsage();
-    this.#closed = true;
     await Promise.allSettled(this.#pendingRooms.values());
+    await this.#flushFailures();
     for (const room of this.#rooms.values()) room.router.close();
     this.#rooms.clear();
     for (const slot of this.#workers) {
@@ -214,6 +302,8 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   createRoom(request: MediaRoomRequest): Promise<void> {
     this.#assertReady();
+    if (this.#failedRooms.has(request.roomId))
+      throw new MediaEngineError("NOT_READY", "The room is awaiting failure cleanup");
     if (this.#rooms.has(request.roomId)) return Promise.resolve();
     const pending = this.#pendingRooms.get(request.roomId);
     if (pending) return pending;
@@ -227,17 +317,37 @@ export class MediasoupWorkerPool implements MediaEngine {
   async #createRoom(request: MediaRoomRequest): Promise<void> {
     const slot = this.#selectWorker();
     slot.rooms += 1;
+    slot.allocating.add(request.roomId);
     let router: Router;
     try {
+      await this.#quality.roomRuntimeStore?.allocated(request.roomId, slot.instanceId);
+      if (!this.#slotAvailable(slot))
+        throw new MediaEngineError("NOT_READY", "The media worker is unavailable");
       router = await slot.worker.createRouter({
         appData: { roomId: request.roomId },
         mediaCodecs,
       });
     } catch (error) {
-      slot.rooms -= 1;
+      slot.allocating.delete(request.roomId);
+      slot.rooms = Math.max(0, slot.rooms - 1);
+      this.#failedRooms.set(request.roomId, {});
+      void this.#flushFailures();
       throw error;
     }
+    slot.allocating.delete(request.roomId);
+    if (!this.#slotAvailable(slot) || router.closed) {
+      router.close();
+      this.#failedRooms.set(request.roomId, {});
+      void this.#flushFailures();
+      throw new MediaEngineError("NOT_READY", "The media worker closed during room allocation");
+    }
     const state: RoomState = {
+      closing: false,
+      reservations: { transports: 0, producers: 0, consumers: 0 },
+      closingParticipants: new Set(),
+      removingParticipants: new Map(),
+      pendingParticipants: new Map(),
+      participantReservations: new Map(),
       consumers: new Map(),
       consumerUsage: new Map(),
       durationMeter: this.#quality.usageMetricsStore
@@ -256,6 +366,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     };
     this.#rooms.set(request.roomId, state);
     router.observer.once("close", () => {
+      if (slot.worker.closed && !this.#closed) this.#handleWorkerDeath(slot);
       if (this.#rooms.get(request.roomId) !== state) return;
       this.#rooms.delete(request.roomId);
       slot.rooms = Math.max(0, slot.rooms - 1);
@@ -265,6 +376,7 @@ export class MediasoupWorkerPool implements MediaEngine {
   async closeRoom(request: MediaRoomRequest): Promise<void> {
     const room = this.#rooms.get(request.roomId);
     if (!room) return;
+    room.closing = true;
     await Promise.all([
       ...[...room.consumers.values()].map((state) =>
         this.#recordConsumerUsage(
@@ -292,23 +404,32 @@ export class MediasoupWorkerPool implements MediaEngine {
     request: ParticipantTransportRequest,
   ): Promise<ParticipantTransport> {
     const room = this.#getRoom(request.roomId);
-    if (room.transports.size >= this.#config.maxTransportsPerRoom) {
-      throw new MediaEngineError(
-        "CAPACITY_EXCEEDED",
-        `Room ${request.roomId} reached its transport capacity`,
-      );
+    const release = this.#reserve(
+      room,
+      "transports",
+      this.#config.maxTransportsPerRoom,
+      request.participantId,
+    );
+    let transport;
+    try {
+      transport = await room.router.createWebRtcTransport({
+        appData: {
+          direction: request.direction,
+          participantId: request.participantId,
+          roomId: request.roomId,
+        },
+        enableTcp: true,
+        enableUdp: true,
+        preferUdp: true,
+        webRtcServer: room.slot.webRtcServer,
+      });
+      if (!this.#allocationActive(room, request.participantId) || transport.closed) {
+        transport.close();
+        throw new MediaEngineError("NOT_READY", "The participant or room closed during allocation");
+      }
+    } finally {
+      release();
     }
-    const transport = await room.router.createWebRtcTransport({
-      appData: {
-        direction: request.direction,
-        participantId: request.participantId,
-        roomId: request.roomId,
-      },
-      enableTcp: true,
-      enableUdp: true,
-      preferUdp: true,
-      webRtcServer: room.slot.webRtcServer,
-    });
     room.transports.set(transport.id, {
       direction: request.direction,
       participantId: request.participantId,
@@ -376,7 +497,8 @@ export class MediasoupWorkerPool implements MediaEngine {
     const workersAlive = checks.filter((check) => check.status === "fulfilled").length;
     return {
       capacity: this.getCapacity(),
-      healthy: !this.#closed && workersAlive === this.#config.workerCount,
+      healthy:
+        !this.#closed && this.#failedRooms.size === 0 && workersAlive === this.#config.workerCount,
       workersAlive,
     };
   }
@@ -397,16 +519,31 @@ export class MediasoupWorkerPool implements MediaEngine {
         `Track type ${request.trackType} requires ${expectedKind} media`,
       );
     }
-    const producer = await transport.produce({
-      appData: {
-        participantId: request.participantId,
-        roomId: request.roomId,
-        trackType: request.trackType,
-        ...(request.priority ? { priority: request.priority } : {}),
-      },
-      kind: request.kind,
-      rtpParameters: request.rtpParameters as RtpParameters,
-    });
+    const release = this.#reserve(
+      room,
+      "producers",
+      this.#config.maxProducersPerRoom ?? 100,
+      request.participantId,
+    );
+    let producer;
+    try {
+      producer = await transport.produce({
+        appData: {
+          participantId: request.participantId,
+          roomId: request.roomId,
+          trackType: request.trackType,
+          ...(request.priority ? { priority: request.priority } : {}),
+        },
+        kind: request.kind,
+        rtpParameters: request.rtpParameters as RtpParameters,
+      });
+      if (!this.#allocationActive(room, request.participantId) || producer.closed) {
+        producer.close();
+        throw new MediaEngineError("NOT_READY", "The participant or room closed during allocation");
+      }
+    } finally {
+      release();
+    }
     room.producers.set(producer.id, producer);
     room.durationMeter?.start(producer.id, request.participantId, request.trackType);
     room.producerUsage.set(producer.id, { bytes: 0, sampledAt: Date.now() });
@@ -450,12 +587,27 @@ export class MediasoupWorkerPool implements MediaEngine {
         `Participant cannot consume media track ${request.trackId}`,
       );
     }
-    const consumer = await transport.consume({
-      appData: { participantId: request.participantId, roomId: request.roomId },
-      paused: true,
-      producerId: producer.id,
-      rtpCapabilities,
-    });
+    const release = this.#reserve(
+      room,
+      "consumers",
+      this.#config.maxConsumersPerRoom ?? 600,
+      request.participantId,
+    );
+    let consumer;
+    try {
+      consumer = await transport.consume({
+        appData: { participantId: request.participantId, roomId: request.roomId },
+        paused: true,
+        producerId: producer.id,
+        rtpCapabilities,
+      });
+      if (!this.#allocationActive(room, request.participantId) || consumer.closed) {
+        consumer.close();
+        throw new MediaEngineError("NOT_READY", "The participant or room closed during allocation");
+      }
+    } finally {
+      release();
+    }
     const priority =
       (producer.appData.priority as MediaPriority | undefined) ??
       room.participantPriorities.get(String(producer.appData.participantId)) ??
@@ -481,7 +633,7 @@ export class MediasoupWorkerPool implements MediaEngine {
         await consumer.setPreferredLayers(preferredLayers[selectedQuality]);
       }
       const state = room.consumers.get(consumer.id);
-      if (!state || consumer.closed) {
+      if (!state || !this.#resourceOpen(consumer)) {
         throw new MediaEngineError("NOT_FOUND", "The subscription closed during negotiation");
       }
       state.negotiationTimer = setTimeout(() => {
@@ -686,51 +838,66 @@ export class MediasoupWorkerPool implements MediaEngine {
   async removeParticipant(request: RemoveParticipantRequest): Promise<void> {
     const room = this.#rooms.get(request.roomId);
     if (!room) return;
-    const ownedProducerIds = new Set(
-      [...room.producers.values()]
-        .filter((producer) => producer.appData.participantId === request.participantId)
-        .map((producer) => producer.id),
+    room.closingParticipants.add(request.participantId);
+    room.removingParticipants.set(
+      request.participantId,
+      (room.removingParticipants.get(request.participantId) ?? 0) + 1,
     );
-    for (const [consumerId, state] of room.consumers) {
-      if (
-        state.participantId === request.participantId ||
-        ownedProducerIds.has(state.consumer.producerId)
-      ) {
-        await this.#recordConsumerUsage(
-          request.roomId,
-          state.consumer,
-          room.consumerUsage.get(consumerId),
-        );
-        state.consumer.close();
-        room.consumers.delete(consumerId);
+    try {
+      const ownedProducerIds = new Set(
+        [...room.producers.values()]
+          .filter((producer) => producer.appData.participantId === request.participantId)
+          .map((producer) => producer.id),
+      );
+      for (const [consumerId, state] of room.consumers) {
+        if (
+          state.participantId === request.participantId ||
+          ownedProducerIds.has(state.consumer.producerId)
+        ) {
+          await this.#recordConsumerUsage(
+            request.roomId,
+            state.consumer,
+            room.consumerUsage.get(consumerId),
+          );
+          state.consumer.close();
+          room.consumers.delete(consumerId);
+        }
+      }
+      for (const producerId of ownedProducerIds) {
+        const producer = room.producers.get(producerId);
+        if (producer) {
+          await this.#recordProducerUsage(
+            request.roomId,
+            producer,
+            room.producerUsage.get(producerId),
+          );
+          room.durationMeter?.stop(producerId);
+          await this.#flushDurations(request.roomId, room);
+          producer.close();
+        }
+        room.producers.delete(producerId);
+      }
+      for (const [transportId, state] of room.transports) {
+        if (state.participantId === request.participantId) {
+          state.transport.close();
+          room.transports.delete(transportId);
+        }
+      }
+      room.participantPriorities.delete(request.participantId);
+      room.participantQualities.delete(request.participantId);
+      room.participantQualityPreferences.delete(request.participantId);
+      room.participantStats.delete(request.participantId);
+      await this.#flushTurnUsage(request.roomId, room);
+      room.turnUsage.delete(request.participantId);
+    } finally {
+      const removing = (room.removingParticipants.get(request.participantId) ?? 1) - 1;
+      if (removing > 0) room.removingParticipants.set(request.participantId, removing);
+      else {
+        room.removingParticipants.delete(request.participantId);
+        if (!room.pendingParticipants.has(request.participantId))
+          room.closingParticipants.delete(request.participantId);
       }
     }
-    for (const producerId of ownedProducerIds) {
-      const producer = room.producers.get(producerId);
-      if (producer) {
-        await this.#recordProducerUsage(
-          request.roomId,
-          producer,
-          room.producerUsage.get(producerId),
-        );
-        room.durationMeter?.stop(producerId);
-        await this.#flushDurations(request.roomId, room);
-        producer.close();
-      }
-      room.producers.delete(producerId);
-    }
-    for (const [transportId, state] of room.transports) {
-      if (state.participantId === request.participantId) {
-        state.transport.close();
-        room.transports.delete(transportId);
-      }
-    }
-    room.participantPriorities.delete(request.participantId);
-    room.participantQualities.delete(request.participantId);
-    room.participantQualityPreferences.delete(request.participantId);
-    room.participantStats.delete(request.participantId);
-    await this.#flushTurnUsage(request.roomId, room);
-    room.turnUsage.delete(request.participantId);
   }
 
   async #recordTurnUsage(room: RoomState, request: IngestSubscriberStatsRequest): Promise<void> {
@@ -943,8 +1110,87 @@ export class MediasoupWorkerPool implements MediaEngine {
     );
   }
 
+  #resourceOpen(resource: { closed: boolean }): boolean {
+    return !resource.closed;
+  }
+
+  #allocationActive(room: RoomState, participantId: string): boolean {
+    return (
+      !this.#closed &&
+      !room.closing &&
+      !room.router.closed &&
+      room.slot.alive &&
+      !room.closingParticipants.has(participantId) &&
+      [...this.#rooms.values()].includes(room)
+    );
+  }
+
+  #reserve(
+    room: RoomState,
+    kind: "transports" | "producers" | "consumers",
+    limit: number,
+    participantId: string,
+  ): () => void {
+    if (!this.#allocationActive(room, participantId))
+      throw new MediaEngineError("NOT_READY", "The participant or room is closing");
+    if (room[kind].size + room.reservations[kind] >= limit)
+      throw new MediaEngineError("CAPACITY_EXCEEDED", `Room ${kind} capacity is exhausted`);
+    const participantLimit =
+      kind === "transports"
+        ? (this.#config.maxTransportsPerParticipant ?? 4)
+        : kind === "producers"
+          ? (this.#config.maxProducersPerParticipant ?? 4)
+          : (this.#config.maxConsumersPerParticipant ?? 128);
+    const owned =
+      kind === "producers"
+        ? [...room.producers.values()].filter(
+            (producer) => producer.appData.participantId === participantId,
+          ).length
+        : [...(kind === "transports" ? room.transports.values() : room.consumers.values())].filter(
+            (state) => state.participantId === participantId,
+          ).length;
+    const reservations = room.participantReservations.get(participantId) ?? {
+      transports: 0,
+      producers: 0,
+      consumers: 0,
+    };
+    if (owned + reservations[kind] >= participantLimit)
+      throw new MediaEngineError("CAPACITY_EXCEEDED", `Participant ${kind} capacity is exhausted`);
+    reservations[kind]++;
+    room.participantReservations.set(participantId, reservations);
+    room.reservations[kind]++;
+    room.pendingParticipants.set(
+      participantId,
+      (room.pendingParticipants.get(participantId) ?? 0) + 1,
+    );
+    return () => {
+      room.reservations[kind]--;
+      reservations[kind]--;
+      const pending = (room.pendingParticipants.get(participantId) ?? 1) - 1;
+      if (pending > 0) room.pendingParticipants.set(participantId, pending);
+      else {
+        room.pendingParticipants.delete(participantId);
+        room.participantReservations.delete(participantId);
+        if (!room.removingParticipants.has(participantId))
+          room.closingParticipants.delete(participantId);
+      }
+    };
+  }
+
+  #isClosed(): boolean {
+    return this.#closed;
+  }
+
+  #slotAvailable(slot: WorkerSlot): boolean {
+    return slot.alive && !slot.worker.closed && !this.#closed;
+  }
+
   #assertReady(): void {
-    if (this.#closed || this.#workers.length !== this.#config.workerCount) {
+    if (
+      this.#closed ||
+      this.#workers.length !== this.#config.workerCount ||
+      !this.#workers.some((slot) => slot.alive && !slot.worker.closed)
+    ) {
       throw new MediaEngineError("NOT_READY", "The media worker pool is not ready");
     }
   }
@@ -986,20 +1232,63 @@ export class MediasoupWorkerPool implements MediaEngine {
   }
 
   #handleWorkerDeath(slot: WorkerSlot): void {
-    if (!slot.alive) return;
+    if (!slot.alive || this.#closed) return;
     slot.alive = false;
+    for (const roomId of slot.allocating) this.#failedRooms.set(roomId, {});
     for (const [roomId, room] of this.#rooms) {
-      if (room.slot === slot) {
-        room.router.close();
-        this.#rooms.delete(roomId);
-      }
+      if (room.slot !== slot) continue;
+      for (const producer of room.producers.values()) room.durationMeter?.stop(producer.id);
+      this.#failedRooms.set(roomId, { room });
+      this.#rooms.delete(roomId);
+      room.router.close();
     }
     slot.rooms = 0;
+    slot.webRtcServer.close();
+    slot.worker.close();
+    void this.#flushFailures();
+    this.#scheduleRecovery(slot.index);
+  }
+
+  #scheduleRecovery(index: number): void {
+    if (this.#closed || this.#replacements.has(index) || this.#exhaustedWorkers.has(index)) return;
+    const recovery = this.#recoverWorker(index).finally(() => {
+      this.#replacements.delete(index);
+      if (!this.#workers[index]?.alive) this.#scheduleRecovery(index);
+    });
+    this.#replacements.set(index, recovery);
+  }
+
+  #flushFailures(): Promise<void> {
+    if (this.#failureFlush) return this.#failureFlush;
+    this.#failureFlush = (async () => {
+      const pending = [...this.#failedRooms.entries()];
+      try {
+        await this.#quality.roomRuntimeStore?.failed(pending.map(([roomId]) => roomId));
+        for (const [roomId, failure] of pending) {
+          await failure.room?.durationMeter?.flush(roomId);
+          if (this.#failedRooms.get(roomId) === failure) this.#failedRooms.delete(roomId);
+        }
+      } catch (error) {
+        this.#quality.onWorkerError?.(error);
+      }
+    })().finally(() => {
+      this.#failureFlush = null;
+      if (this.#failedRooms.size > 0 && !this.#closed) {
+        clearTimeout(this.#failureTimer);
+        this.#failureTimer = setTimeout(() => {
+          void this.#flushFailures();
+        }, 2_000);
+        this.#failureTimer.unref();
+      }
+    });
+    return this.#failureFlush;
   }
 
   #selectWorker(): WorkerSlot {
     const candidates = this.#workers
-      .filter((slot) => slot.alive && slot.rooms < this.#config.maxRoomsPerWorker)
+      .filter(
+        (slot) => slot.alive && !slot.worker.closed && slot.rooms < this.#config.maxRoomsPerWorker,
+      )
       .sort((left, right) => left.rooms - right.rooms);
     const slot = candidates[0];
     if (!slot) throw new MediaEngineError("CAPACITY_EXCEEDED", "Media room capacity is exhausted");

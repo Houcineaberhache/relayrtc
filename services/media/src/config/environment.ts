@@ -18,6 +18,11 @@ const environmentSchema = z
     MEDIA_LOG_LEVEL: z.enum(logLevels).default("info"),
     MEDIA_MAX_ROOMS_PER_WORKER: z.coerce.number().int().min(1).max(10_000).default(100),
     MEDIA_MAX_TRANSPORTS_PER_ROOM: z.coerce.number().int().min(1).max(10_000).default(200),
+    MEDIA_MAX_PRODUCERS_PER_ROOM: z.coerce.number().int().min(1).max(10000).default(100),
+    MEDIA_MAX_CONSUMERS_PER_ROOM: z.coerce.number().int().min(1).max(10000).default(600),
+    MEDIA_MAX_TRANSPORTS_PER_PARTICIPANT: z.coerce.number().int().min(1).max(10000).default(4),
+    MEDIA_MAX_PRODUCERS_PER_PARTICIPANT: z.coerce.number().int().min(1).max(10000).default(4),
+    MEDIA_MAX_CONSUMERS_PER_PARTICIPANT: z.coerce.number().int().min(1).max(10000).default(128),
     MEDIA_NODE_ID: z.string().trim().min(1).max(128).default("media-local"),
     MEDIA_PORT: z.coerce.number().int().min(1).max(65_535).default(8082),
     MEDIA_RTC_ANNOUNCED_ADDRESS: z.string().trim().min(1).default("127.0.0.1"),
@@ -39,6 +44,11 @@ export interface MediaConfig {
   databaseUrl: string;
   host: string;
   logLevel: (typeof logLevels)[number];
+  maxProducersPerRoom?: number;
+  maxConsumersPerRoom?: number;
+  maxTransportsPerParticipant?: number;
+  maxProducersPerParticipant?: number;
+  maxConsumersPerParticipant?: number;
   maxRoomsPerWorker: number;
   maxTransportsPerRoom: number;
   nodeEnvironment: "development" | "test" | "production";
@@ -66,6 +76,11 @@ export const readMediaEnvironment = (source: MediaEnvironmentSource): MediaConfi
     MEDIA_LOG_LEVEL: source.MEDIA_LOG_LEVEL,
     MEDIA_MAX_ROOMS_PER_WORKER: source.MEDIA_MAX_ROOMS_PER_WORKER,
     MEDIA_MAX_TRANSPORTS_PER_ROOM: source.MEDIA_MAX_TRANSPORTS_PER_ROOM,
+    MEDIA_MAX_PRODUCERS_PER_ROOM: source.MEDIA_MAX_PRODUCERS_PER_ROOM,
+    MEDIA_MAX_CONSUMERS_PER_ROOM: source.MEDIA_MAX_CONSUMERS_PER_ROOM,
+    MEDIA_MAX_TRANSPORTS_PER_PARTICIPANT: source.MEDIA_MAX_TRANSPORTS_PER_PARTICIPANT,
+    MEDIA_MAX_PRODUCERS_PER_PARTICIPANT: source.MEDIA_MAX_PRODUCERS_PER_PARTICIPANT,
+    MEDIA_MAX_CONSUMERS_PER_PARTICIPANT: source.MEDIA_MAX_CONSUMERS_PER_PARTICIPANT,
     MEDIA_NODE_ID: source.MEDIA_NODE_ID,
     MEDIA_PORT: source.MEDIA_PORT,
     MEDIA_RTC_ANNOUNCED_ADDRESS: source.MEDIA_RTC_ANNOUNCED_ADDRESS,
@@ -89,6 +104,21 @@ export const readMediaEnvironment = (source: MediaEnvironmentSource): MediaConfi
     databaseUrl: parsed.data.DATABASE_URL,
     host: parsed.data.MEDIA_HOST,
     logLevel: parsed.data.MEDIA_LOG_LEVEL,
+    ...(source.MEDIA_MAX_PRODUCERS_PER_ROOM === undefined
+      ? {}
+      : { maxProducersPerRoom: parsed.data.MEDIA_MAX_PRODUCERS_PER_ROOM }),
+    ...(source.MEDIA_MAX_CONSUMERS_PER_ROOM === undefined
+      ? {}
+      : { maxConsumersPerRoom: parsed.data.MEDIA_MAX_CONSUMERS_PER_ROOM }),
+    ...(source.MEDIA_MAX_TRANSPORTS_PER_PARTICIPANT === undefined
+      ? {}
+      : { maxTransportsPerParticipant: parsed.data.MEDIA_MAX_TRANSPORTS_PER_PARTICIPANT }),
+    ...(source.MEDIA_MAX_PRODUCERS_PER_PARTICIPANT === undefined
+      ? {}
+      : { maxProducersPerParticipant: parsed.data.MEDIA_MAX_PRODUCERS_PER_PARTICIPANT }),
+    ...(source.MEDIA_MAX_CONSUMERS_PER_PARTICIPANT === undefined
+      ? {}
+      : { maxConsumersPerParticipant: parsed.data.MEDIA_MAX_CONSUMERS_PER_PARTICIPANT }),
     maxRoomsPerWorker: parsed.data.MEDIA_MAX_ROOMS_PER_WORKER,
     maxTransportsPerRoom: parsed.data.MEDIA_MAX_TRANSPORTS_PER_ROOM,
     nodeEnvironment: parsed.data.NODE_ENV,
