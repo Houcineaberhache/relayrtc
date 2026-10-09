@@ -1,6 +1,62 @@
 # @relayrtc/client
 
-## Usage Media
+## Join and leave a room
+
+```ts
+import { RelayClient, RoomError } from "@relayrtc/client";
+
+const relay = new RelayClient({
+  signalingUrl: "wss://rtc.example.com/v1/connect",
+  requestTimeoutMs: 10_000,
+});
+
+relay.on("connectionStateChanged", (state) => renderConnectionState(state));
+relay.on("error", (error) => showError(error.code));
+
+const controller = new AbortController();
+try {
+  const token = await getParticipantTokenFromYourServer();
+  const room = await relay.join(token, { signal: controller.signal });
+  console.log(room.id, room.localParticipant, room.session);
+  await room.leave();
+} catch (error) {
+  if (error instanceof RoomError) showError(error.code);
+  else throw error;
+}
+```
+
+## Room microphone, camera and screen sharing
+
+```ts
+const room = await relay.join(token);
+
+await room.microphone.enable();
+await room.camera.enable({ width: 1280, height: 720 });
+
+room.microphone.mute();
+room.microphone.unmute();
+
+const devices = await room.devices.enumerate();
+if (devices.microphones[0]) {
+  await room.microphone.switchDevice(devices.microphones[0].deviceId);
+}
+if (devices.cameras[0]) {
+  await room.camera.switchDevice(devices.cameras[0].deviceId);
+}
+
+const unsubscribe = room.camera.subscribe((snapshot) => {
+  console.log(snapshot.enabled, snapshot.muted, snapshot.publication);
+});
+
+await room.screen.start({ video: true, audio: true });
+await room.screen.stop();
+await room.camera.disable();
+await room.microphone.disable();
+unsubscribe();
+await room.leave();
+```
+
+## Standalone media helpers
 
 ```ts
 import { MediaManager } from "@relayrtc/client";
@@ -42,8 +98,6 @@ connection.rtc.onRemoteTrack(({ track, streams }) => {
 const offer = await connection.rtc.createOffer();
 sendOfferThroughSignaling(offer);
 ```
-
-
 
 ## ICE lifecycle
 

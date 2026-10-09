@@ -195,7 +195,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	defer websocketConnection.Close()
 
 	slog.Info("signaling connection accepted", "participant_id", claims.ParticipantID, "room_id", claims.RoomID)
-	joined := handler.serve(client, claims, rawToken, requestClientIP(request, handler.trustedProxyCIDRs))
+	joined, claims := handler.serve(client, claims, rawToken, requestClientIP(request, handler.trustedProxyCIDRs))
 	client.stopWriter()
 	if joined != nil {
 		handler.disconnect(client, joined, claims)
@@ -275,7 +275,7 @@ func (handler *Handler) Wait(ctx context.Context) error {
 	}
 }
 
-func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clientIP string) *joinedSession {
+func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clientIP string) (*joinedSession, auth.Claims) {
 	client.connection.SetReadLimit(handler.maxMessageBytes)
 	_ = client.connection.SetReadDeadline(time.Now().Add(handler.pongTimeout))
 	client.connection.SetPongHandler(func(string) error {
@@ -298,13 +298,13 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 		select {
 		case <-handler.shutdown.Done():
 			client.close(websocket.CloseGoingAway, "server shutting down")
-			return joined
+			return joined, claims
 		case <-expires.C:
 			client.close(closeTokenExpired, "participant token expired")
-			return joined
+			return joined, claims
 		case message := <-read:
 			if message.err != nil {
-				return joined
+				return joined, claims
 			}
 			if !handler.limiter.allow(
 				rateScope{"message-node", handler.limiter.limits.MessagesPerNode, time.Second},
@@ -315,9 +315,23 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 			) {
 				client.protocolError("", "rate_limited", "The message rate limit was reached; reconnect after a short delay")
 				client.close(websocket.ClosePolicyViolation, "message rate limit exceeded")
-				return joined
+				return joined, claims
 			}
 			client.recordMessageReceived()
+			if handled, refreshed := handler.tryRefresh(client, claims, joined, message.data); handled {
+				if refreshed != nil {
+					claims, rawToken = refreshed.claims, refreshed.token
+					expires.Reset(time.Until(claims.ExpiresAt.Time))
+				}
+				if client.isRevoked() {
+					select {
+					case <-client.writerDone:
+					case <-time.After(handler.writeTimeout):
+					}
+					return joined, claims
+				}
+				continue
+			}
 			leave, next := handler.handleMessage(client, claims, rawToken, joined, clientIP, message.data)
 			if next != nil {
 				joined = next
@@ -326,7 +340,7 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 				if joined != nil {
 					handler.flushClientUsage(client, joined.session.ID)
 				}
-				return nil
+				return nil, claims
 			}
 		case <-usage.C:
 			if joined != nil {
@@ -334,7 +348,7 @@ func (handler *Handler) serve(client *client, claims auth.Claims, rawToken, clie
 			}
 		case now := <-heartbeat.C:
 			if err := client.control(websocket.PingMessage, []byte(now.UTC().Format(time.RFC3339Nano))); err != nil {
-				return joined
+				return joined, claims
 			}
 		}
 	}
@@ -607,7 +621,7 @@ func (handler *Handler) disconnect(client *client, joined *joinedSession, claims
 	handler.registry.releaseSession(joined.session.ID, client)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if handler.shutdown.Err() != nil || !time.Now().Before(claims.ExpiresAt.Time) {
+	if client.isRevoked() || handler.shutdown.Err() != nil || !time.Now().Before(claims.ExpiresAt.Time) {
 		handler.finalizeSession(ctx, claims.RoomID, joined)
 		return
 	}
