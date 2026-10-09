@@ -132,6 +132,9 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   });
   void app.register(v1Routes, {
     database: options.database,
+    ...(options.usageRetentionDays === undefined
+      ? {}
+      : { usageRetentionDays: options.usageRetentionDays }),
     participantTokenSigner,
     roomRuntime,
     runtimeConfig,
