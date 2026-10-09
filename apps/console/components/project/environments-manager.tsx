@@ -21,6 +21,8 @@ import {
   deleteEnvironmentAction,
   updateEnvironmentAction,
 } from '@/actions/projects'
+import { DeletionProgress } from '@/components/settings/deletion-progress'
+import type { RuntimeOperationView } from '@relayrtc/auth'
 import { AuthErrorMessage } from '@/components/auth/auth-error-message'
 import { CopyButton } from '@/components/page/copy-button'
 import { PageHeader } from '@/components/page/page-header'
@@ -117,6 +119,7 @@ export function EnvironmentsManager({
 
   const [pendingDelete, setPendingDelete] =
     useState<ConsoleEnvironment | null>(null)
+  const [deleteOperation, setDeleteOperation] = useState<RuntimeOperationView | null>(null)
   const [deletePending, setDeletePending] = useState(false)
   const [deleteError, setDeleteError] =
     useState<ProjectError | null>(null)
@@ -146,7 +149,7 @@ export function EnvironmentsManager({
   }
 
   async function handleCreate(
-    event: React.FormEvent<HTMLFormElement>,
+    event: React.SyntheticEvent<HTMLFormElement>,
   ) {
     event.preventDefault()
 
@@ -204,7 +207,7 @@ export function EnvironmentsManager({
   }
 
   async function handleEdit(
-    event: React.FormEvent<HTMLFormElement>,
+    event: React.SyntheticEvent<HTMLFormElement>,
   ) {
     event.preventDefault()
 
@@ -260,6 +263,7 @@ export function EnvironmentsManager({
     }
 
     setPendingDelete(null)
+    setDeleteOperation(null)
     setDeleteError(null)
   }
 
@@ -284,7 +288,15 @@ export function EnvironmentsManager({
 
     setDeletePending(true)
 
-    const result = await deleteEnvironmentAction(validation.data)
+    let result
+    try {
+      result = await deleteEnvironmentAction(validation.data)
+    } catch {
+      setDeleteError(projectError('ENVIRONMENT_DELETION_FAILED'))
+      setDeletePending(false)
+      router.refresh()
+      return
+    }
 
     if (result.error) {
       setDeleteError(result.error)
@@ -293,8 +305,11 @@ export function EnvironmentsManager({
     }
 
     setDeletePending(false)
-    closeDelete()
-
+    if (result.data.operation && result.data.operation.status !== 'completed') {
+      setDeleteOperation(result.data.operation)
+    } else {
+      closeDelete()
+    }
     router.refresh()
   }
 
@@ -369,6 +384,11 @@ export function EnvironmentsManager({
                     {formatCreatedAt(environment.createdAt)}
                   </span>
                 </div>
+                {canManage && environment.status === 'deleting' ? (
+                  <div className="mt-3">
+                    <DeletionProgress kind="environment" resourceId={environment.id} />
+                  </div>
+                ) : null}
               </div>
 
               {canManage && environment.status !== 'deleting' ? (
@@ -386,7 +406,7 @@ export function EnvironmentsManager({
                   >
                     <DropdownMenuItem
                       className="gap-2 rounded-lg"
-                      onClick={() => openEdit(environment)}
+                      onClick={() => { openEdit(environment) }}
                     >
                       <Edit3 className="size-4" />
                       Edit environment
@@ -395,7 +415,7 @@ export function EnvironmentsManager({
                     <DropdownMenuItem
                       disabled={deletionProtected}
                       className="gap-2 rounded-lg text-destructive focus:text-destructive"
-                      onClick={() => openDelete(environment)}
+                      onClick={() => { openDelete(environment) }}
                     >
                       {deletionProtected ? (
                         <Lock className="size-4" />
@@ -427,7 +447,7 @@ export function EnvironmentsManager({
       >
         <DialogContent className="sm:max-w-md">
           <form
-            onSubmit={handleCreate}
+            onSubmit={(event) => { void handleCreate(event) }}
             className="grid gap-5"
           >
             <DialogHeader>
@@ -499,11 +519,9 @@ export function EnvironmentsManager({
               <SimpleSelect
                 id={createTypeId}
                 value={createType}
-                onValueChange={(value) =>
-                  setCreateType(
-                    value as EnvironmentType,
-                  )
-                }
+                onValueChange={(value) => {
+                  setCreateType(value as EnvironmentType)
+                }}
                 options={typeOptions}
                 className="w-full"
               />
@@ -512,9 +530,9 @@ export function EnvironmentsManager({
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-3">
               <Checkbox
                 checked={createProtected}
-                onCheckedChange={(checked) =>
-                  setCreateProtected(checked === true)
-                }
+                onCheckedChange={(checked) => {
+                  setCreateProtected(checked)
+                }}
                 className="mt-0.5"
               />
 
@@ -570,7 +588,7 @@ export function EnvironmentsManager({
         <DialogContent className="sm:max-w-md">
           {editingEnvironment ? (
             <form
-              onSubmit={handleEdit}
+              onSubmit={(event) => { void handleEdit(event) }}
               className="grid gap-5"
             >
               <DialogHeader>
@@ -594,9 +612,9 @@ export function EnvironmentsManager({
                 <Input
                   id={editNameId}
                   value={editName}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setEditName(event.target.value)
-                  }
+                  }}
                   className="h-10 rounded-xl"
                   maxLength={120}
                   required
@@ -612,11 +630,9 @@ export function EnvironmentsManager({
                 <Input
                   id={editSlugId}
                   value={editSlug}
-                  onChange={(event) =>
-                    setEditSlug(
-                      event.target.value.toLowerCase(),
-                    )
-                  }
+                  onChange={(event) => {
+                    setEditSlug(event.target.value.toLowerCase())
+                  }}
                   className="h-10 rounded-xl"
                   maxLength={80}
                   required
@@ -649,9 +665,9 @@ export function EnvironmentsManager({
                     editingEnvironment.type ===
                       'production'
                   }
-                  onCheckedChange={(checked) =>
-                    setEditProtected(checked === true)
-                  }
+                  onCheckedChange={(checked) => {
+                    setEditProtected(checked)
+                  }}
                   className="mt-0.5"
                 />
 
@@ -717,11 +733,15 @@ export function EnvironmentsManager({
 
             <DialogDescription>
               Keys and rooms scoped to this environment will stop
-              working. This can&apos;t be undone.
+              working. Live connections will close before deletion finishes.
+              Usage history will be retained. This can&apos;t be undone.
             </DialogDescription>
           </DialogHeader>
 
           <AuthErrorMessage error={deleteError} />
+          {deleteOperation && pendingDelete ? (
+            <DeletionProgress kind="environment" resourceId={pendingDelete.id} initialOperation={deleteOperation} />
+          ) : null}
 
           <DialogFooter>
             <Button
@@ -729,13 +749,13 @@ export function EnvironmentsManager({
               onClick={closeDelete}
               disabled={deletePending}
             >
-              Cancel
+              {deleteOperation ? 'Close' : 'Cancel'}
             </Button>
 
             <Button
               variant="destructive-solid"
-              onClick={handleDelete}
-              disabled={deletePending}
+              onClick={() => { void handleDelete() }}
+              disabled={deletePending || deleteOperation !== null}
             >
               {deletePending ? (
                 <LoaderCircle className="animate-spin" />
