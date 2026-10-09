@@ -33,6 +33,7 @@ type Config struct {
 	IPInfoToken            string
 	MaxMessageBytes        int64
 	MediaInternalURL       string
+	MediaNodeID            string
 	ParticipantTokenSecret string
 	PongTimeout            time.Duration
 	RecoveryTimeout        time.Duration
@@ -99,6 +100,10 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
 	mediaInternalURL := valueOrDefault(lookup, "RELAYRTC_MEDIA_INTERNAL_URL", "http://media:8082/internal/v1")
+	mediaNodeID := valueOrDefault(lookup, "MEDIA_NODE_ID", "media-local")
+	if len(mediaNodeID) > 128 || strings.ContainsAny(mediaNodeID, " \t\r\n") {
+		return Config{}, fmt.Errorf("MEDIA_NODE_ID must be a non-whitespace identifier of at most 128 characters")
+	}
 	parsedMediaURL, err := url.Parse(mediaInternalURL)
 	if err != nil || (parsedMediaURL.Scheme != "http" && parsedMediaURL.Scheme != "https") || parsedMediaURL.Host == "" || parsedMediaURL.User != nil || parsedMediaURL.RawQuery != "" || parsedMediaURL.Fragment != "" {
 		return Config{}, fmt.Errorf("RELAYRTC_MEDIA_INTERNAL_URL must be a valid HTTP URL")
@@ -160,6 +165,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 		IPInfoToken:            strings.TrimSpace(valueOrDefault(lookup, "RELAYRTC_IPINFO_TOKEN", "")),
 		MaxMessageBytes:        maxMessageBytes,
 		MediaInternalURL:       strings.TrimRight(mediaInternalURL, "/"),
+		MediaNodeID:            mediaNodeID,
 		ParticipantTokenSecret: secret,
 		PongTimeout:            pongTimeout,
 		RecoveryTimeout:        recoveryTimeout,
