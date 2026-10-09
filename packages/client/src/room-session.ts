@@ -3,6 +3,7 @@ import { RoomError } from "./room-errors.js";
 import { RoomEventEmitter } from "./room-events.js";
 import { RoomRtc } from "./room-rtc.js";
 import { LocalRoomMedia } from "./room-local-media.js";
+import { RemoteRoomRegistry } from "./room-participants.js";
 import type { RoomLocalParticipant } from "./room-media.js";
 import type { JoinOptions, RelayClientOptions, Room, RoomConnectionState } from "./room.js";
 import { SignalingClient } from "./signaling-client.js";
@@ -16,6 +17,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   readonly #rtc = new RoomRtc();
   readonly #signaling: SignalingClient;
   readonly #localMedia: LocalRoomMedia;
+  readonly #remote: RemoteRoomRegistry;
 
   constructor(
     readonly options: RelayClientOptions,
@@ -23,6 +25,20 @@ export class RoomSession extends RoomEventEmitter implements Room {
     readonly onEnded: () => void,
   ) {
     super();
+    this.#remote = new RemoteRoomRegistry(
+      this.#rtc,
+      {
+        emit: (event, value) => {
+          this.emit(event, value);
+          this.clientEvents.emit(event, value);
+        },
+      },
+      () => {
+        if (this.#ended || this.#leaving || this.#state !== "connected")
+          throw new RoomError("NOT_CONNECTED", "Join the room before subscribing to remote media");
+      },
+      options.autoSubscribe ?? true,
+    );
     this.#localMedia = new LocalRoomMedia(
       this.#rtc,
       () => {
@@ -48,6 +64,12 @@ export class RoomSession extends RoomEventEmitter implements Room {
 
   get connectionState(): RoomConnectionState {
     return this.#state;
+  }
+  get participants(): Room["participants"] {
+    return this.#remote.participants;
+  }
+  get remoteTracks(): Room["remoteTracks"] {
+    return this.#remote.tracks;
   }
   get id(): string {
     return this.info.id;
@@ -121,6 +143,11 @@ export class RoomSession extends RoomEventEmitter implements Room {
         );
       }
       this.#joined = joined;
+      this.#remote.reconcile(joined, {
+        roomId: joined.room.id,
+        participantId: joined.localParticipant.id,
+        sessionId: joined.session.id,
+      });
       await this.#initializeRtc({
         roomId: joined.room.id,
         sessionId: joined.session.id,
@@ -128,6 +155,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
       this.#assertOpen();
       this.#setState("connected");
       this.#assertOpen();
+      this.#remote.ready();
     } catch (error) {
       const failure =
         error instanceof RoomError
@@ -150,6 +178,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
     if (this.#leaving) return this.#leaving;
     if (this.#ended) return Promise.resolve();
     this.#localMedia.dispose();
+    this.#remote.dispose();
     if (this.#state === "connecting") {
       const error = new RoomError("JOIN_CANCELLED", "Joining the room was cancelled");
       this.#rtc.close();
@@ -229,6 +258,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
     if (this.#ended) return;
     this.#ended = true;
     this.#localMedia.dispose();
+    this.#remote.dispose();
     this.#stopSetup?.(error ?? new RoomError("JOIN_CANCELLED", "Room setup was cancelled"));
     this.#rtc.close();
     this.#signaling.close(error);
@@ -259,14 +289,47 @@ export class RoomSession extends RoomEventEmitter implements Room {
   }
 
   readonly #onMessage = (message: ServerProtocolMessage): void => {
-    if (message.type === "room.ended" && message.payload.room.id === this.#joined?.room.id) {
-      this.#fail(new RoomError("ROOM_ENDED", "The room has ended"));
-    } else if (
-      message.type === "participant.left" &&
-      message.payload.participantId === this.#joined?.localParticipant.id &&
-      message.payload.sessionId === this.#joined.session.id
-    ) {
-      this.#fail(new RoomError("CONNECTION_CLOSED", "The local participant left the room"));
+    if (this.#ended || this.#leaving) return;
+    try {
+      if (message.type === "room.ended" && message.payload.room.id === this.#joined?.room.id) {
+        this.#fail(new RoomError("ROOM_ENDED", "The room has ended"));
+      } else if (
+        message.type === "participant.left" &&
+        message.payload.participantId === this.#joined?.localParticipant.id &&
+        message.payload.sessionId === this.#joined.session.id
+      ) {
+        this.#fail(new RoomError("CONNECTION_CLOSED", "The local participant left the room"));
+      }
+      if (message.type === "session.resume.accepted" && this.#joined) {
+        const payload = message.payload;
+        if (
+          payload.roomId !== this.#joined.room.id ||
+          payload.session.participantId !== this.#joined.localParticipant.id ||
+          payload.session.id !== this.#joined.session.id
+        )
+          throw new RoomError(
+            "PROTOCOL_ERROR",
+            "The resumed snapshot does not match the room session",
+          );
+        this.#joined = {
+          ...this.#joined,
+          session: payload.session,
+          participants: payload.participants,
+          tracks: payload.tracks,
+        };
+        this.#remote.reconcile(payload, {
+          roomId: payload.roomId,
+          participantId: payload.session.participantId,
+          sessionId: payload.session.id,
+        });
+      }
+      this.#remote.handle(message);
+    } catch (error) {
+      this.#fail(
+        error instanceof RoomError
+          ? error
+          : new RoomError("PROTOCOL_ERROR", "The room event could not be applied"),
+      );
     }
   };
 }
