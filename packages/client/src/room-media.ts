@@ -1,4 +1,4 @@
-import type { Participant, Track } from "@relayrtc/types";
+import type { Metadata, Participant, Track } from "@relayrtc/types";
 import type {
   MediaDeviceListener,
   MediaDeviceSnapshot,
@@ -62,4 +62,6 @@ export interface RoomLocalMedia {
   readonly permissions: RoomMediaPermissions;
 }
 
-export interface RoomLocalParticipant extends Participant, RoomLocalMedia {}
+export interface RoomLocalParticipant extends Participant, RoomLocalMedia {
+  updateMetadata(metadata: Metadata): Promise<Participant>;
+}

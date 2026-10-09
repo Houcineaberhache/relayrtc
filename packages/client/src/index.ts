@@ -17,3 +17,4 @@ export * from "./room.js";
 export * from "./room-errors.js";
 export * from "./room-media.js";
 export * from "./room-remote.js";
+export * from "./room-messaging-types.js";

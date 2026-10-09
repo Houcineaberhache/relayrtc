@@ -6,6 +6,12 @@ export class RoomEventEmitter {
   } = {
     connectionStateChanged: new Set(),
     error: new Set(),
+    messageReceived: new Set(),
+    messageSent: new Set(),
+    customEventReceived: new Set(),
+    customEventSent: new Set(),
+    localParticipantUpdated: new Set(),
+    presenceChanged: new Set(),
     participantJoined: new Set(),
     participantLeft: new Set(),
     participantUpdated: new Set(),
