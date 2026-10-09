@@ -87,16 +87,16 @@ export async function getProjectAnalytics(
       join scoped_rooms r on r.id = participant.room_id
       group by r.id, r.name order by seconds desc, r.id limit 10
     ) busiest) "topRooms",
-  (select complete from history) complete`;
+  (select complete from history) complete, (select coverage from turn_quality) turn_coverage`;
   const { query, window } = createUsageReportQuery(scope, range, endedAt, undefined, projection);
   const result = await database.execute(query);
   const row = result[0];
-  const { complete, ...data } = row ?? {};
+  const { complete, turn_coverage: turnCoverage, ...data } = row ?? {};
   return projectAnalyticsResponseSchema.parse({
     ...data,
     scope,
     window,
     qualityGranularitySeconds: 60,
-    dataQuality: usageDataQuality(complete === true),
+    dataQuality: usageDataQuality(complete === true, turnCoverage),
   });
 }

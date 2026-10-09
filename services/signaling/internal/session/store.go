@@ -229,7 +229,7 @@ func (store *Store) Disconnect(ctx context.Context, participantID, sessionID str
 	command, err := store.pool.Exec(ctx, `
 		UPDATE participant_session
 		SET connection_state = 'reconnecting', disconnected_at = $1,
-		    connection_seconds = connection_seconds + extract(epoch from ($1 - coalesce(reconnected_at, joined_at)))
+		    connection_seconds = connection_seconds + greatest(0, extract(epoch from ($1 - coalesce(reconnected_at, joined_at))))
 		WHERE id = $2 AND participant_id = $3 AND connection_state = 'connected'`,
 		disconnectedAt, sessionID, participantID,
 	)
@@ -403,7 +403,7 @@ func (store *Store) finalize(
 	query := `
 		UPDATE participant_session
 		SET connection_seconds = connection_seconds + case when connection_state = 'connected'
-		      then extract(epoch from ($1 - coalesce(reconnected_at, joined_at))) else 0 end,
+		      then greatest(0, extract(epoch from ($1 - coalesce(reconnected_at, joined_at)))) else 0 end,
 		    connection_state = 'disconnected', disconnected_at = COALESCE(disconnected_at, $1)
 		WHERE id = $2 AND participant_id = $3`
 	if reconnectingOnly {

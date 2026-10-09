@@ -56,6 +56,8 @@ const environmentSchema = z
     RELAYRTC_MEDIA_INTERNAL_URL: z.url().default("http://media:8082/internal/v1"),
     RELAYRTC_SIGNALING_INTERNAL_URL: z.url().default("http://signaling:8081/internal/v1"),
     TURN_CREDENTIAL_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
+    TURN_ACCOUNTING_LOG_DIRECTORY: z.string().trim().min(1).optional(),
+    TURN_ACCOUNTING_METRICS_URL: z.url().optional(),
     TURN_SHARED_SECRET: z.string().min(32),
     TURN_STUN_URLS: iceUrls(["stun", "stuns"]).default(["stun:localhost:3478"]),
     TURN_URLS: iceUrls(["turn", "turns"]).default([
@@ -83,6 +85,8 @@ export interface ApiConfig {
   signalingInternalUrl: string;
   trustProxy: false | string[];
   turnCredentialTtlSeconds: number;
+  turnAccountingLogDirectory?: string;
+  turnAccountingMetricsUrl?: string;
   turnSharedSecret: string;
   turnStunUrls: readonly string[];
   turnUrls: readonly string[];
@@ -115,6 +119,8 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     RELAYRTC_MEDIA_INTERNAL_URL: source.RELAYRTC_MEDIA_INTERNAL_URL,
     RELAYRTC_SIGNALING_INTERNAL_URL: source.RELAYRTC_SIGNALING_INTERNAL_URL,
     TURN_CREDENTIAL_TTL_SECONDS: source.TURN_CREDENTIAL_TTL_SECONDS,
+    TURN_ACCOUNTING_LOG_DIRECTORY: source.TURN_ACCOUNTING_LOG_DIRECTORY,
+    TURN_ACCOUNTING_METRICS_URL: source.TURN_ACCOUNTING_METRICS_URL,
     TURN_SHARED_SECRET: source.TURN_SHARED_SECRET,
     TURN_STUN_URLS: source.TURN_STUN_URLS,
     TURN_URLS: source.TURN_URLS,
@@ -193,6 +199,12 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     signalingInternalUrl: parsed.data.RELAYRTC_SIGNALING_INTERNAL_URL,
     trustProxy: parsed.data.API_TRUST_PROXY ? trustedProxyCIDRs : false,
     turnCredentialTtlSeconds: parsed.data.TURN_CREDENTIAL_TTL_SECONDS,
+    ...(parsed.data.TURN_ACCOUNTING_LOG_DIRECTORY
+      ? { turnAccountingLogDirectory: parsed.data.TURN_ACCOUNTING_LOG_DIRECTORY }
+      : {}),
+    ...(parsed.data.TURN_ACCOUNTING_METRICS_URL
+      ? { turnAccountingMetricsUrl: parsed.data.TURN_ACCOUNTING_METRICS_URL }
+      : {}),
     turnSharedSecret: parsed.data.TURN_SHARED_SECRET,
     turnStunUrls: parsed.data.TURN_STUN_URLS,
     turnUrls: parsed.data.TURN_URLS,

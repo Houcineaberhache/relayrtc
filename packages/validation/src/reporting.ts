@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { environmentIdSchema, organizationIdSchema, projectIdSchema } from "./common.js";
+import { usageMetricValueSchema } from "./usage.js";
 
 export const usageRangeSchema = z.enum(["24h", "7d", "14d", "30d"]);
 export const analyticsRangeSchema = z.enum(["live", "24h", "7d", "30d"]);
@@ -47,23 +48,28 @@ export const reportingWindowSchema = z
   });
 export const reportingUsageMetricsSchema = z
   .object({
-    participantSeconds: quantity,
-    audioParticipantSeconds: quantity,
-    videoParticipantSeconds: quantity,
-    screenShareSeconds: quantity,
+    participantSeconds: usageMetricValueSchema("participantSeconds"),
+    audioParticipantSeconds: usageMetricValueSchema("audioParticipantSeconds"),
+    videoParticipantSeconds: usageMetricValueSchema("videoParticipantSeconds"),
+    screenShareSeconds: usageMetricValueSchema("screenShareSeconds"),
     screenShareIngressBytes: quantity,
     screenShareEgressBytes: quantity,
     sfuIngressBytes: quantity,
     sfuEgressBytes: quantity,
     turnIngressBytes: quantity,
     turnEgressBytes: quantity,
-    roomsCreated: count,
-    peakConcurrentParticipants: count,
-    peakConcurrentRooms: count,
-    signalingConnections: count,
-    signalingConnectionSeconds: quantity,
-    messagesIn: count,
-    messagesOut: count,
+    turnRelaySeconds: quantity.default(0),
+    turnSessions: count.default(0),
+    roomsCreated: usageMetricValueSchema("roomsCreated"),
+    roomsStarted: usageMetricValueSchema("roomsStarted"),
+    roomSeconds: usageMetricValueSchema("roomSeconds"),
+    averageConcurrentParticipants: usageMetricValueSchema("averageConcurrentParticipants"),
+    peakConcurrentParticipants: usageMetricValueSchema("peakConcurrentParticipants"),
+    peakConcurrentRooms: usageMetricValueSchema("peakConcurrentRooms"),
+    signalingConnections: usageMetricValueSchema("signalingConnections"),
+    signalingConnectionSeconds: usageMetricValueSchema("signalingConnectionSeconds"),
+    messagesIn: usageMetricValueSchema("messagesIn"),
+    messagesOut: usageMetricValueSchema("messagesOut"),
   })
   .strict();
 export const usageBucketSchema = z
@@ -83,6 +89,7 @@ export const usageDataQualitySchema = z
   .object({
     sessionHistory: z.enum(["complete", "partial"]),
     messageHistory: z.enum(["complete", "partial"]),
+    turnTraffic: z.enum(["unavailable", "partial", "authoritative"]).default("unavailable"),
   })
   .strict();
 export const projectUsageResponseSchema = z

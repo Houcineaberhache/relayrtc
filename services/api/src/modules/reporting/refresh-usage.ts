@@ -9,8 +9,9 @@ const endedAt = new Date();
 const startedAt = new Date(endedAt.getTime() - 30 * 86400_000);
 const database = createDatabase(databaseUrl);
 try {
-  await refreshUsageAggregates(database.db, organizationId, startedAt, endedAt);
-  console.log(JSON.stringify({ organizationId, status: "refreshed", startedAt, endedAt }));
+  const result = await refreshUsageAggregates(database.db, organizationId, startedAt, endedAt);
+  console.log(JSON.stringify({ organizationId, ...result, startedAt, endedAt }));
+  if (result.status === "busy") process.exitCode = 1;
 } finally {
   await database.close();
 }

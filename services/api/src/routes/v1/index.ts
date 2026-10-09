@@ -11,6 +11,7 @@ import { roomRoutes } from "../../modules/rooms/room.routes.js";
 import type { RoomRuntimeService } from "../../modules/rooms/room-runtime.service.js";
 import { turnCredentialRoutes } from "../../modules/turn-credentials/turn-credential.routes.js";
 import type { TurnCredentialIssuer } from "../../modules/turn-credentials/turn-credential.service.js";
+import { usageRoutes } from "../../modules/usage/usage.routes.js";
 
 interface V1RoutesOptions {
   database: RelayKitDatabase;
@@ -18,6 +19,7 @@ interface V1RoutesOptions {
   roomRuntime: RoomRuntimeService;
   runtimeConfig: RoomTerminationConfig;
   turnCredentialIssuer: TurnCredentialIssuer;
+  usageRetentionDays?: number;
 }
 
 const contextResponseSchema = {
@@ -47,6 +49,12 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
     runtimeConfig: options.runtimeConfig,
   });
   void app.register(turnCredentialRoutes, { issuer: options.turnCredentialIssuer });
+  void app.register(usageRoutes, {
+    database: options.database,
+    ...(options.usageRetentionDays === undefined
+      ? {}
+      : { retentionDays: options.usageRetentionDays }),
+  });
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("x-relayrtc-api-version", "v1");

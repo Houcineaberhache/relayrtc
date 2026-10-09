@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type { RelayKitDatabase } from "@relayrtc/database";
 import { schema } from "@relayrtc/database";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { validateUsageSample } from "./usage-sample-batch.js";
 
 export type MediaUsageMetric =
   | "audioParticipantSeconds"
@@ -34,34 +35,57 @@ export const createMediaUsageMetricsStore = (
     metrics: Partial<Record<MediaUsageMetric, number>>,
     occurredAt: Date,
   ) => {
-    const values = Object.entries(metrics).filter(
-      ([, value]) => Number.isFinite(value) && value > 0,
-    );
-    if (values.length === 0) return;
-    const [scope] = await database
-      .select({
-        environmentId: schema.room.environmentId,
-        organizationId: schema.project.organizationId,
-        projectId: schema.room.projectId,
-      })
-      .from(schema.room)
-      .innerJoin(schema.project, eq(schema.project.id, schema.room.projectId))
-      .where(eq(schema.room.id, roomId))
-      .limit(1);
-    if (!scope) return;
-    await database
-      .insert(schema.usageEvent)
-      .values(
-        values.map(([metric, value]) => ({
-          id: `usage_event_${sampleId}_${metric}`,
-          metric,
-          roomId,
-          value,
-          occurredAt,
-          ...scope,
-        })),
-      )
-      .onConflictDoNothing();
+    validateUsageSample(roomId, sampleId, metrics, occurredAt);
+    if (metrics.turnIngressBytes !== undefined || metrics.turnEgressBytes !== undefined)
+      throw new Error("Authoritative TURN usage requires trusted coturn allocation observations");
+    const values = Object.entries(metrics).sort(([a], [b]) => a.localeCompare(b));
+    const payload = Object.fromEntries(values);
+    await database.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${sampleId}, 732451))`,
+      );
+      const [existing] = await transaction
+        .select()
+        .from(schema.mediaUsageSample)
+        .where(eq(schema.mediaUsageSample.id, sampleId))
+        .limit(1);
+      if (existing) {
+        const previous = Object.entries(existing.metrics).sort(([a], [b]) => a.localeCompare(b));
+        if (
+          existing.roomId !== roomId ||
+          existing.occurredAt.getTime() !== occurredAt.getTime() ||
+          JSON.stringify(previous) !== JSON.stringify(values)
+        )
+          throw new Error("A media sample identity was reused with different contents");
+        return;
+      }
+      const [scope] = await transaction
+        .select({
+          environmentId: schema.usageHistoryRoom.environmentId,
+          organizationId: schema.usageHistoryRoom.organizationId,
+          projectId: schema.usageHistoryRoom.projectId,
+        })
+        .from(schema.usageHistoryRoom)
+        .where(eq(schema.usageHistoryRoom.id, roomId))
+        .limit(1)
+        .for("share");
+      if (!scope) throw new Error("The retained room scope for a media sample is unavailable");
+      await transaction
+        .insert(schema.mediaUsageSample)
+        .values({ id: sampleId, roomId, metrics: payload, occurredAt, ...scope });
+      const positive = values.filter(([, value]) => value > 0);
+      if (positive.length > 0)
+        await transaction.insert(schema.usageEvent).values(
+          positive.map(([metric, value]) => ({
+            id: `usage_event_${sampleId}_${metric}`,
+            metric,
+            roomId,
+            value,
+            occurredAt,
+            ...scope,
+          })),
+        );
+    });
   };
   return {
     recordBatch,

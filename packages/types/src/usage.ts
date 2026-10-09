@@ -8,6 +8,9 @@ import type {
   UsageRecordId,
 } from "./common.js";
 
+export * from "./usage-definitions.js";
+export * from "./usage-intervals.js";
+
 export const usageGranularities = ["minute", "hour", "day", "month"] as const;
 
 export type UsageGranularity = (typeof usageGranularities)[number];

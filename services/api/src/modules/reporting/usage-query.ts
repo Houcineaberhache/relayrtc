@@ -14,8 +14,27 @@ const projectFilter = (alias: string, projectId: SQL | null) =>
     ? sql`true`
     : sql`${sql.identifier(alias)}.${sql.identifier("project_id")} = ${projectId}`;
 
-const usageSummary = (projectId: SQL | null): SQL => {
-  const peak = (table: string) => sql`coalesce((select max(active) from (
+const usageSummary = (projectId: SQL | null, bucket?: { starts: SQL; ends: SQL }): SQL => {
+  const starts = bucket?.starts ?? sql`(select starts from bounds)`;
+  const ends = bucket?.ends ?? sql`(select ends from bounds)`;
+  const duration = (table: string) => sql`coalesce((select sum(extract(epoch from
+    least(i.ends, ${ends}) - greatest(i.starts, ${starts})))
+    from ${sql.identifier(table)} i where i.starts < ${ends} and i.ends > ${starts}
+      and ${projectFilter("i", projectId)}), 0)`;
+  const peak = (table: string): SQL =>
+    bucket
+      ? sql`coalesce((select max(active) from (
+      select sum(sum(delta)) over (order by at) as active from (
+        select greatest(i.starts, ${starts}) as at, 1 as delta
+        from ${sql.identifier(table === "participant_events" ? "participant_intervals" : "room_intervals")} i
+        where i.starts < ${ends} and i.ends > ${starts} and ${projectFilter("i", projectId)}
+        union all
+        select least(i.ends, ${ends}) as at, -1 as delta
+        from ${sql.identifier(table === "participant_events" ? "participant_intervals" : "room_intervals")} i
+        where i.starts < ${ends} and i.ends > ${starts} and ${projectFilter("i", projectId)}
+      ) events group by at
+    ) ranked), 0)`
+      : sql`coalesce((select max(active) from (
     select sum(sum(delta)) over (order by at) as active
     from ${sql.identifier(table)} e where ${projectFilter("e", projectId)} group by at
   ) ranked), 0)`;
@@ -34,20 +53,30 @@ const usageSummary = (projectId: SQL | null): SQL => {
   ];
   const pairs = events.map(
     (metric) => sql`${metric}::text,
-    coalesce((select sum(value) from event_totals e where metric = ${metric}
+    coalesce((select sum(value) from ${bucket ? sql`scoped_usage_events` : sql`event_totals`} e where metric = ${metric}
+      ${bucket ? sql`and e.occurred_at >= ${starts} and e.occurred_at < ${ends}` : sql``}
       and ${projectFilter("e", projectId)}), 0)`,
   );
   return sql`jsonb_build_object(
-    'participantSeconds', coalesce((select sum(extract(epoch from ends - starts))
-      from participant_intervals p where ${projectFilter("p", projectId)}), 0),
+    'participantSeconds', ${duration("participant_intervals")},
     'roomsCreated', (select count(*) from scoped_rooms r, bounds b
-      where r.created_at >= b.starts and r.created_at < b.ends and ${projectFilter("r", projectId)}),
+      where r.created_at >= ${starts} and r.created_at < ${ends} and ${projectFilter("r", projectId)}),
+    'roomsStarted', (select count(*) from scoped_rooms r, bounds b
+      where r.started_at >= ${starts} and r.started_at < ${ends} and ${projectFilter("r", projectId)}),
+    'roomSeconds', ${duration("room_intervals")},
+    'averageConcurrentParticipants', ${duration("participant_intervals")}
+      / extract(epoch from ${ends} - ${starts}),
     'peakConcurrentParticipants', ${peak("participant_events")},
     'peakConcurrentRooms', ${peak("room_events")},
-    'signalingConnections', (select count(*) from scoped_sessions s, bounds b
-      where s.joined_at >= b.starts and s.joined_at < b.ends and ${projectFilter("s", projectId)}),
-    'signalingConnectionSeconds', coalesce((select sum(extract(epoch from ends - starts))
-      from connections c where ${projectFilter("c", projectId)}), 0),
+    'signalingConnections', (select count(*) from scoped_lifecycle_events s
+      where s.event_type = 'connection.opened' and s.occurred_at >= ${starts} and s.occurred_at < ${ends}
+        and ${projectFilter("s", projectId)}),
+    'signalingConnectionSeconds', ${duration("connections")},
+    'turnSessions', (select count(*) from scoped_turn_allocations t cross join bounds b
+      where t.started_at >= ${starts} and t.started_at < ${ends} and ${projectFilter("t", projectId)}),
+    'turnRelaySeconds', coalesce((select sum(extract(epoch from least(t.last_observed_at, ${ends}) - greatest(t.started_at, ${starts})))
+      from scoped_turn_allocations t cross join bounds b where t.started_at < ${ends} and t.last_observed_at > ${starts}
+        and ${projectFilter("t", projectId)}), 0),
     ${sql.join(pairs, sql`, `)}
   )`;
 };
@@ -58,6 +87,15 @@ const historyComplete = (projectId: SQL | null): SQL => sql`not exists (
     and s.joined_at < b.ends
     and coalesce(s.disconnected_at, s.left_at, s.room_ended_at, b.ends) > b.starts
     and ${projectFilter("s", projectId)}
+) and not exists (
+  select 1 from connections c join scoped_sessions s on s.id = c.session_id
+  where c.ends = s.owner_expires_at and ${projectFilter("c", projectId)}
+) and not exists (
+  select 1 from scoped_lifecycle_events e where e.boundary = 'lease_bound'
+    and ${projectFilter("e", projectId)}
+) and not exists (
+  select 1 from room_intervals r where r.ends = r.owner_expires_at
+    and ${projectFilter("r", projectId)}
 )`;
 
 export function createUsageReportQuery(
@@ -66,6 +104,8 @@ export function createUsageReportQuery(
   endedAt = new Date(),
   pagination = { limit: 50, offset: 0 },
   projection?: SQL,
+  windowStartedAt?: Date,
+  bucketGranularity?: "hour" | "day",
 ) {
   const duration = {
     live: 900_000,
@@ -74,8 +114,15 @@ export function createUsageReportQuery(
     "14d": 14 * 86_400_000,
     "30d": 30 * 86_400_000,
   }[range];
-  const startedAt = new Date(endedAt.getTime() - duration);
-  const granularity = range === "live" ? "minute" : range === "24h" ? "hour" : "day";
+  const startedAt = windowStartedAt ?? new Date(endedAt.getTime() - duration);
+  if (
+    !Number.isFinite(startedAt.getTime()) ||
+    !Number.isFinite(endedAt.getTime()) ||
+    startedAt >= endedAt
+  )
+    throw new Error("A positive usage window is required");
+  const granularity =
+    bucketGranularity ?? (range === "live" ? "minute" : range === "24h" ? "hour" : "day");
   const query = sql`
     with bounds as (
       select ${startedAt.toISOString()}::timestamptz as starts,
@@ -100,7 +147,7 @@ export function createUsageReportQuery(
           coalesce(i.ended_at,
             case when s.connection_state = 'connected' then b.ends else s.disconnected_at end,
             i.started_at),
-          s.left_at, s.room_ended_at, b.ends
+          s.left_at, s.room_ended_at, s.owner_expires_at, b.ends
         ) as ends
       from usage_history_interval i
       join scoped_sessions s on s.id = i.session_id
@@ -124,10 +171,10 @@ export function createUsageReportQuery(
       select project_id, starts as at, 1 as delta from participant_intervals
       union all select project_id, ends as at, -1 as delta from participant_intervals
     ), clipped_rooms as (
-      select r.project_id, greatest(coalesce(r.started_at, r.created_at), b.starts) as starts,
+      select r.project_id, r.owner_expires_at, greatest(coalesce(r.started_at, r.created_at), b.starts) as starts,
         least(coalesce(r.ended_at,
           case when r.status in ('active', 'ending') then b.ends else r.started_at end,
-          r.created_at), b.ends) as ends
+          r.created_at), r.owner_expires_at, b.ends) as ends
       from scoped_rooms r cross join bounds b
       where r.started_at is not null or r.status in ('active', 'ending')
     ), room_intervals as (
@@ -135,12 +182,30 @@ export function createUsageReportQuery(
     ), room_events as (
       select project_id, starts as at, 1 as delta from room_intervals
       union all select project_id, ends as at, -1 as delta from room_intervals
+    ), scoped_lifecycle_events as (
+      select e.* from usage_lifecycle_event e join scoped_rooms r on r.id = e.room_id
+      cross join bounds b where e.occurred_at >= b.starts and e.occurred_at < b.ends
     ), scoped_usage_events as (
       select ue.* from usage_event ue
       join scoped_projects pr on pr.id = ue.project_id cross join bounds b
       where ue.organization_id = ${scope.organizationId}
+        and (ue.metric not in ('turnIngressBytes', 'turnEgressBytes', 'turn.bytes.ingress', 'turn.bytes.egress') or ue.source = 'coturn')
         ${scope.environmentId === null ? sql`` : sql`and ue.environment_id = ${scope.environmentId}`}
         and ue.occurred_at >= b.starts and ue.occurred_at < b.ends
+    ), scoped_turn_allocations as (
+      select t.* from turn_allocation t join scoped_projects pr on pr.id = t.project_id
+      where t.organization_id = ${scope.organizationId}
+        ${scope.environmentId === null ? sql`` : sql`and t.environment_id = ${scope.environmentId}`}
+    ), turn_quality as (
+      select case when not exists (select 1 from turn_log_checkpoint where started_at is not null) then 'unavailable'
+        when (select min(started_at) from turn_log_checkpoint) > (select starts from bounds)
+          or coalesce((select max(collected_through_at) from turn_log_checkpoint) < (select ends from bounds), true)
+          or exists (select 1 from turn_log_checkpoint where reconciliation->>'status' = 'different')
+          then 'partial'
+        when exists (select 1 from scoped_turn_allocations t cross join bounds b
+          where t.started_at < b.ends and greatest(t.last_observed_at, t.expires_at) > b.starts and t.coverage = 'partial')
+          or exists (select 1 from turn_observation o cross join bounds b where o.allocation_id is null and o.kind in ('new', 'refreshed', 'deleted') and o.occurred_at >= b.starts and o.occurred_at < b.ends)
+          then 'partial' else 'authoritative' end as coverage
     ), event_totals as (
       select project_id, metric, sum(value) as value from scoped_usage_events group by project_id, metric
     ), report_sessions as (
@@ -160,7 +225,7 @@ export function createUsageReportQuery(
       where at at time zone 'UTC' < b.ends
     ), history as (
       select ${historyComplete(null)} as complete
-    )
+)
     ${
       projection ??
       sql`select ${usageSummary(null)} as summary,
@@ -177,6 +242,7 @@ export function createUsageReportQuery(
     ) order by b.starts), '[]'::jsonb) from buckets b)`
     } as buckets,
     (select complete from history) as complete,
+    (select coverage from turn_quality) as turn_coverage,
     (select count(*) from scoped_projects) as total,
     ${
       scope.projectId === null
@@ -185,7 +251,8 @@ export function createUsageReportQuery(
       'summary', ${usageSummary(sql`pr.id`)},
       'dataQuality', jsonb_build_object(
         'sessionHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end,
-        'messageHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end
+        'messageHistory', case when ${historyComplete(sql`pr.id`)} then 'complete' else 'partial' end,
+        'turnTraffic', (select coverage from turn_quality)
       )
     ) order by pr.id), '[]'::jsonb) from (
       select id from scoped_projects order by id limit ${pagination.limit} offset ${pagination.offset}
@@ -206,7 +273,55 @@ export function createUsageReportQuery(
   };
 }
 
-export const usageDataQuality = (complete: boolean | undefined) => ({
+export function createPublicUsageReportQuery(
+  scope: UsageReportScope,
+  startedAt: Date,
+  endedAt: Date,
+  granularity: "hour" | "day",
+) {
+  return createUsageReportQuery(
+    scope,
+    "30d",
+    endedAt,
+    undefined,
+    sql`select ${usageSummary(null)} as summary,
+      (select coalesce(jsonb_agg(jsonb_build_object(
+        'startedAt', to_char(ub.starts at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+        'endedAt', to_char(ub.ends at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+        'metrics', ${usageSummary(null, { starts: sql`ub.starts`, ends: sql`ub.ends` })}
+      ) order by ub.starts), '[]'::jsonb) from buckets ub) as buckets,
+      (select complete from history) as complete,
+      (select coverage from turn_quality) as turn_coverage`,
+    startedAt,
+    granularity,
+  ).query;
+}
+
+export const usageDataQuality = (
+  complete: boolean | undefined,
+  turnCoverage: unknown = "unavailable",
+) => ({
   sessionHistory: complete ? "complete" : "partial",
   messageHistory: complete ? "complete" : "partial",
+  turnTraffic:
+    turnCoverage === "authoritative"
+      ? "authoritative"
+      : turnCoverage === "partial"
+        ? "partial"
+        : "unavailable",
 });
+
+export function createUsageAggregationQuery(
+  scope: UsageReportScope,
+  startedAt: Date,
+  endedAt: Date,
+) {
+  return createUsageReportQuery(
+    scope,
+    "24h",
+    endedAt,
+    undefined,
+    sql`select ${usageSummary(null)} as metrics, (select complete from history) as complete, (select coverage from turn_quality) as turn_coverage`,
+    startedAt,
+  ).query;
+}

@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -24,6 +25,7 @@ export const usageEvent = pgTable(
     roomId: text("room_id"),
     region: text("region"),
     metric: text("metric").notNull(),
+    source: text("source").notNull().default("legacy"),
     value: doublePrecision("value").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -51,6 +53,8 @@ export const usageAggregate = pgTable(
     windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
     windowEndedAt: timestamp("window_ended_at", { withTimezone: true }).notNull(),
     metrics: jsonb("metrics").$type<Record<string, number>>().default({}).notNull(),
+    sourceThroughAt: timestamp("source_through_at", { withTimezone: true }),
+    dataQuality: jsonb("data_quality").$type<Record<string, string>>().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -62,6 +66,15 @@ export const usageAggregate = pgTable(
       table.granularity,
       table.windowStartedAt,
     ),
+    unique("usage_aggregate_canonical_scope_idx")
+      .on(
+        table.organizationId,
+        table.projectId,
+        table.environmentId,
+        table.granularity,
+        table.windowStartedAt,
+      )
+      .nullsNotDistinct(),
     index("usage_aggregate_organization_window_idx").on(
       table.organizationId,
       table.granularity,

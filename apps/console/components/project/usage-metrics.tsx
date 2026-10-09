@@ -27,11 +27,12 @@ export function UsageMetrics({ summary, dataQuality, period }: Pick<ProjectUsage
       <section aria-labelledby={`${id}-network`} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <h2 id={`${id}-network`} className="text-xl font-normal tracking-tight">Network traffic</h2>
-          <p className="text-sm text-muted-foreground">{formatBytes(network.reduce((total, [, bytes]) => total + bytes, 0), 2)} transferred over {period}</p>
+          <p className="text-sm text-muted-foreground">SFU and TURN traffic over {period}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {network.map(([label, bytes]) => <StatCard key={label} label={label} value={formatBytes(bytes, 2)} hint={period} />)}
         </div>
+        <p className="text-xs text-muted-foreground">TURN figures are estimates. Relayed traffic can appear in both SFU and TURN totals.</p>
       </section>
       <section aria-labelledby={`${id}-breakdown`} className="flex flex-col gap-4">
         <h2 id={`${id}-breakdown`} className="text-xl font-normal tracking-tight">Breakdown</h2>

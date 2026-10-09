@@ -155,6 +155,34 @@
       "when": 1791583200008,
       "tag": "0021_media_room_runtime",
       "breakpoints": false
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791583200009,
+      "tag": "0022_media_usage_samples",
+      "breakpoints": false
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791583200010,
+      "tag": "0023_signaling_lifecycle",
+      "breakpoints": false
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791583200011,
+      "tag": "0024_incremental_usage_aggregation",
+      "breakpoints": false
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791583200012,
+      "tag": "0025_turn_allocation_accounting",
+      "breakpoints": false
     }
   ]
 }

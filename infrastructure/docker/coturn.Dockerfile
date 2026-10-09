@@ -13,11 +13,16 @@ FROM coturn/coturn:4.18.0-alpine
 USER root
 
 RUN mkdir -p /etc/coturn/tls \
+  && mkdir -p /var/log/relayrtc-turn \
+  && chown 65534:65533 /var/log/relayrtc-turn \
+  && chmod 0755 /var/log/relayrtc-turn \
   && chown 65534:65533 /etc/coturn/tls \
   && chmod 0755 /etc/coturn/tls
 
 COPY infrastructure/coturn/turnserver.conf /etc/coturn/turnserver.conf
+COPY --chmod=0555 infrastructure/coturn/start.sh /usr/local/bin/relayrtc-turn
 COPY --from=certificates --chown=65534:65533 --chmod=0444 /certificates/tls.crt /etc/coturn/tls/tls.crt
 COPY --from=certificates --chown=65534:65533 --chmod=0400 /certificates/tls.key /etc/coturn/tls/tls.key
 
 USER nobody:nogroup
+ENTRYPOINT ["/usr/local/bin/relayrtc-turn"]

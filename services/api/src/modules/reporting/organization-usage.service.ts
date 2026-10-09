@@ -20,13 +20,13 @@ export async function getOrganizationUsage(
   );
   const result = await database.execute(query);
   const row = result[0] as
-    { summary: unknown; projects: unknown; total: string | number; complete: boolean } | undefined;
+    { summary: unknown; projects: unknown; total: string | number; complete: boolean; turn_coverage?: unknown } | undefined;
   return organizationUsageResponseSchema.parse({
     organizationId,
     window,
     summary: row?.summary,
     projects: row?.projects,
     pagination: { limit: options.limit, offset: options.offset, total: Number(row?.total) },
-    dataQuality: usageDataQuality(row?.complete),
+    dataQuality: usageDataQuality(row?.complete, row?.turn_coverage),
   });
 }
