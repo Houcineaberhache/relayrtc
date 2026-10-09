@@ -1,3 +1,4 @@
+import { persistUsageSample } from "../usage/usage-sample-batch.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type { RoomRuntimeStore } from "./room-runtime-store.js";
 import { randomUUID } from "node:crypto";
@@ -161,6 +162,8 @@ export class MediasoupWorkerPool implements MediaEngine {
   readonly #quality: MediaQualityOptions;
   readonly #pendingRooms = new Map<string, Promise<void>>();
   readonly #rooms = new Map<string, RoomState>();
+  readonly #terminalOperations = new Map<string, Promise<void>>();
+  readonly #retiredSamples = new Map<UsageSampleState, string>();
   readonly #workers: WorkerSlot[] = [];
   readonly #recoveryAbort = new AbortController();
   readonly #replacements = new Map<number, Promise<void>>();
@@ -278,7 +281,7 @@ export class MediasoupWorkerPool implements MediaEngine {
   }
 
   async close(): Promise<void> {
-    if (this.#closed) return;
+    if (this.#closed && this.#workers.length === 0) return;
     this.#closed = true;
     this.#recoveryAbort.abort();
     clearTimeout(this.#failureTimer);
@@ -287,10 +290,13 @@ export class MediasoupWorkerPool implements MediaEngine {
     if (this.#usageFlush) await this.#usageFlush;
     for (const room of this.#rooms.values())
       for (const producer of room.producers.values()) room.durationMeter?.stop(producer.id);
-    await this.flushUsage();
+    await Promise.all([...this.#rooms.keys()].map((roomId) => this.closeRoom({ roomId })));
     await Promise.allSettled(this.#pendingRooms.values());
     await this.#flushFailures();
     for (const room of this.#rooms.values()) room.router.close();
+    await this.#retryRetiredSamples();
+    if (this.#retiredSamples.size > 0)
+      throw new Error("Media usage checkpoints remain pending during shutdown");
     this.#rooms.clear();
     for (const slot of this.#workers) {
       slot.alive = false;
@@ -373,7 +379,11 @@ export class MediasoupWorkerPool implements MediaEngine {
     });
   }
 
-  async closeRoom(request: MediaRoomRequest): Promise<void> {
+  closeRoom(request: MediaRoomRequest): Promise<void> {
+    return this.#serializeTerminal(request.roomId, () => this.#closeRoom(request));
+  }
+
+  async #closeRoom(request: MediaRoomRequest): Promise<void> {
     const room = this.#rooms.get(request.roomId);
     if (!room) return;
     room.closing = true;
@@ -550,6 +560,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     producer.observer.once("close", () => {
       room.durationMeter?.stop(producer.id);
       room.producers.delete(producer.id);
+      this.#retireSample(request.roomId, room.producerUsage.get(producer.id));
       room.producerUsage.delete(producer.id);
     });
     return {
@@ -625,6 +636,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     consumer.observer.once("close", () => {
       clearTimeout(room.consumers.get(consumer.id)?.negotiationTimer);
       room.consumers.delete(consumer.id);
+      this.#retireSample(request.roomId, room.consumerUsage.get(consumer.id));
       room.consumerUsage.delete(consumer.id);
     });
     try {
@@ -678,7 +690,11 @@ export class MediasoupWorkerPool implements MediaEngine {
     }
   }
 
-  async removeSubscription(request: ResumeSubscriptionRequest): Promise<void> {
+  removeSubscription(request: ResumeSubscriptionRequest): Promise<void> {
+    return this.#serializeTerminal(request.roomId, () => this.#removeSubscription(request));
+  }
+
+  async #removeSubscription(request: ResumeSubscriptionRequest): Promise<void> {
     const room = this.#rooms.get(request.roomId);
     const state = room?.consumers.get(request.subscriptionId);
     if (!room || !state) return;
@@ -810,7 +826,11 @@ export class MediasoupWorkerPool implements MediaEngine {
     );
   }
 
-  async removeTrack(request: RemoveTrackRequest): Promise<void> {
+  removeTrack(request: RemoveTrackRequest): Promise<void> {
+    return this.#serializeTerminal(request.roomId, () => this.#removeTrack(request));
+  }
+
+  async #removeTrack(request: RemoveTrackRequest): Promise<void> {
     const room = this.#getRoom(request.roomId);
     const producer = room.producers.get(request.trackId);
     if (!producer) return;
@@ -835,7 +855,11 @@ export class MediasoupWorkerPool implements MediaEngine {
     room.producers.delete(producer.id);
   }
 
-  async removeParticipant(request: RemoveParticipantRequest): Promise<void> {
+  removeParticipant(request: RemoveParticipantRequest): Promise<void> {
+    return this.#serializeTerminal(request.roomId, () => this.#removeParticipant(request));
+  }
+
+  async #removeParticipant(request: RemoveParticipantRequest): Promise<void> {
     const room = this.#rooms.get(request.roomId);
     if (!room) return;
     room.closingParticipants.add(request.participantId);
@@ -926,25 +950,13 @@ export class MediasoupWorkerPool implements MediaEngine {
             },
           };
           const pending = state.pending;
-          if (store.recordBatch)
-            await store.recordBatch(
-              request.roomId,
-              pending.id,
-              pending.metrics,
-              pending.occurredAt,
-            );
-          else {
-            await store.record(
-              request.roomId,
-              "turnIngressBytes",
-              pending.metrics.turnIngressBytes ?? 0,
-            );
-            await store.record(
-              request.roomId,
-              "turnEgressBytes",
-              pending.metrics.turnEgressBytes ?? 0,
-            );
-          }
+          await persistUsageSample(
+            store,
+            request.roomId,
+            pending.id,
+            pending.metrics,
+            pending.occurredAt,
+          );
           state.stats = pending.stats;
           delete state.pending;
           if (pending.stats === request.stats) return;
@@ -969,28 +981,76 @@ export class MediasoupWorkerPool implements MediaEngine {
   ): Promise<void> {
     const store = this.#quality.usageMetricsStore;
     if (!store || !sample) return;
-    if (sample.recording) return sample.recording;
-    sample.recording = (async () => {
-      try {
-        sample.pending ??= { id: randomUUID(), ...(await collect()) };
-        const pending = sample.pending;
-        if (store.recordBatch) {
-          await store.recordBatch(roomId, pending.id, pending.metrics, new Date(pending.sampledAt));
-        } else {
-          for (const [metric, value] of Object.entries(pending.metrics)) {
-            await store.record(roomId, metric as MediaUsageMetric, value);
+    const operation = (sample.recording ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          if (sample.pending) await this.#persistSample(roomId, sample);
+          let collected;
+          try {
+            collected = await collect();
+          } catch (error) {
+            this.#quality.onUsageError?.(error);
+            return;
           }
+          sample.pending = { id: randomUUID(), ...collected };
+          await this.#persistSample(roomId, sample);
+        } catch (error) {
+          this.#quality.onUsageError?.(error);
+          throw error;
         }
-        sample.bytes = pending.bytes;
-        sample.sampledAt = pending.sampledAt;
-        delete sample.pending;
-      } catch (error) {
-        this.#quality.onUsageError?.(error);
-      }
-    })().finally(() => {
-      sample.recording = undefined;
+      });
+    sample.recording = operation;
+    try {
+      await operation;
+    } finally {
+      if (sample.recording === operation) sample.recording = undefined;
+    }
+  }
+
+  async #persistSample(roomId: string, sample: UsageSampleState): Promise<void> {
+    const pending = sample.pending;
+    const store = this.#quality.usageMetricsStore;
+    if (!pending || !store) return;
+    await persistUsageSample(
+      store,
+      roomId,
+      pending.id,
+      pending.metrics,
+      new Date(pending.sampledAt),
+    );
+    sample.bytes = pending.bytes;
+    sample.sampledAt = pending.sampledAt;
+    delete sample.pending;
+  }
+
+  #serializeTerminal(roomId: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.#terminalOperations.get(roomId);
+    const operation = previous ? previous.catch(() => undefined).then(work) : work();
+    this.#terminalOperations.set(roomId, operation);
+    return operation.finally(() => {
+      if (this.#terminalOperations.get(roomId) === operation)
+        this.#terminalOperations.delete(roomId);
     });
-    return sample.recording;
+  }
+
+  #retireSample(roomId: string, sample: UsageSampleState | undefined): void {
+    if (sample && (sample.pending || sample.recording)) this.#retiredSamples.set(sample, roomId);
+  }
+
+  async #retryRetiredSamples(): Promise<void> {
+    await Promise.allSettled(
+      [...this.#retiredSamples].map(async ([sample, roomId]) => {
+        try {
+          await sample.recording?.catch(() => undefined);
+          await this.#persistSample(roomId, sample);
+          this.#retiredSamples.delete(sample);
+        } catch (error) {
+          this.#quality.onUsageError?.(error);
+          throw error;
+        }
+      }),
+    );
   }
 
   async #recordProducerUsage(
@@ -1005,14 +1065,16 @@ export class MediasoupWorkerPool implements MediaEngine {
         0,
       );
       const sampledAt = Date.now();
-      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : bytes;
+      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : 0;
       const trackType = String(producer.appData.trackType);
       return {
         bytes,
         sampledAt,
         metrics: {
           sfuIngressBytes: delta,
-          ...(trackType === "screen_video" ? { screenShareIngressBytes: delta } : {}),
+          ...(trackType === "screen_video" || trackType === "screen_audio"
+            ? { screenShareIngressBytes: delta }
+            : {}),
         },
       };
     });
@@ -1029,14 +1091,15 @@ export class MediasoupWorkerPool implements MediaEngine {
         (total, entry) => total + ("byteCount" in entry ? entry.byteCount : 0),
         0,
       );
-      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : bytes;
+      const delta = bytes >= (sample?.bytes ?? 0) ? bytes - (sample?.bytes ?? 0) : 0;
       const producer = this.#rooms.get(roomId)?.producers.get(consumer.producerId);
       return {
         bytes,
         sampledAt: Date.now(),
         metrics: {
           sfuEgressBytes: delta,
-          ...(producer?.appData.trackType === "screen_video"
+          ...(producer?.appData.trackType === "screen_video" ||
+          producer?.appData.trackType === "screen_audio"
             ? { screenShareEgressBytes: delta }
             : {}),
         },
@@ -1060,6 +1123,7 @@ export class MediasoupWorkerPool implements MediaEngine {
           await this.#recordTurnUsage(room, { roomId, participantId, stats: state.pending.stats });
         } catch (error) {
           this.#quality.onUsageError?.(error);
+          throw error;
         }
       }),
     );
@@ -1067,14 +1131,16 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   async #flushDurations(roomId: string, room: RoomState): Promise<void> {
     try {
-      await room.durationMeter?.flush(roomId);
+      await room.durationMeter?.flush(roomId, Date.now(), true);
     } catch (error) {
       this.#quality.onUsageError?.(error);
+      throw error;
     }
   }
 
   async #flushUsage(): Promise<void> {
-    await Promise.all(
+    await this.#retryRetiredSamples();
+    await Promise.allSettled(
       [...this.#rooms.entries()].flatMap(([roomId, room]) => [
         this.#flushDurations(roomId, room),
         this.#flushTurnUsage(roomId, room),
@@ -1265,7 +1331,7 @@ export class MediasoupWorkerPool implements MediaEngine {
       try {
         await this.#quality.roomRuntimeStore?.failed(pending.map(([roomId]) => roomId));
         for (const [roomId, failure] of pending) {
-          await failure.room?.durationMeter?.flush(roomId);
+          await failure.room?.durationMeter?.flush(roomId, Date.now(), true);
           if (this.#failedRooms.get(roomId) === failure) this.#failedRooms.delete(roomId);
         }
       } catch (error) {
