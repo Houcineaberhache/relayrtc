@@ -78,7 +78,7 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 			return Command{}, ErrInvalidRequest
 		}
 	}
-	if scope.MediaParticipantID != scope.SessionID || !identifier(request.RequestID, 256) {
+	if scope.MediaParticipantID != scope.SessionID || !identifier(request.RequestID, 128) {
 		return Command{}, ErrInvalidRequest
 	}
 	var payload map[string]any
@@ -98,6 +98,7 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		"rtc.track.subscribe":     {"transportId", "trackId", "rtpCapabilities"},
 		"rtc.track.control":       {"trackId", "action"},
 		"rtc.subscription.resume": {"subscriptionId"},
+		"rtc.subscription.close":  {"subscriptionId"},
 	}
 	keys, supported := fields[request.Type]
 	if !supported {
@@ -146,13 +147,17 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		command.Request = Operation{Operation: "track.remove"}
 		return command, nil
 	}
-	if request.Type == "rtc.subscription.resume" {
+	if request.Type == "rtc.subscription.resume" || request.Type == "rtc.subscription.close" {
 		subscription := resources.Subscription
 		if subscription == nil || subscription.ID != valueString(payload, "subscriptionId") || subscription.RoomID != scope.RoomID || subscription.SessionID != scope.SessionID || subscription.MediaNodeID != scope.MediaNodeID || subscription.Generation != scope.Generation || !identifier(subscription.MediaID, 256) {
 			return Command{}, ErrForbidden
 		}
 		command.Method, command.Path, command.ResponseType = "PATCH", base+"/subscriptions/"+url.PathEscape(subscription.MediaID)+"/resume", "rtc.subscription.resumed"
 		command.Request.Operation = "subscription.resume"
+		if request.Type == "rtc.subscription.close" {
+			command.Method, command.Path, command.ResponseType = "DELETE", base+"/subscriptions/"+url.PathEscape(subscription.MediaID), "rtc.subscription.close.accepted"
+			command.Request.Operation = "subscription.remove"
+		}
 		return command, nil
 	}
 	transport := resources.Transport

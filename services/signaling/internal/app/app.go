@@ -36,6 +36,7 @@ func Run(ctx context.Context) error {
 	}
 	defer mediaHTTP.Close()
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
+	connectionOptions.Shutdown = runtimeContext
 	runtimeDone := runRTCReconciliation(runtimeContext, mediaAdapter)
 	defer func() { cancelRuntime(); <-runtimeDone }()
 	cleanupContext, cleanupCancel := context.WithTimeout(ctx, 10*time.Second)

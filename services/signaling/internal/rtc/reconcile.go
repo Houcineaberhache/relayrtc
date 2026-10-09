@@ -33,6 +33,9 @@ func (adapter *Adapter) Reconcile(ctx context.Context) error {
 				return ErrUnavailable
 			}
 			scope.MediaNodeID, scope.Generation = state.MediaNodeID, state.Generation
+			if err := room.Save(ctx, state); err != nil {
+				return err
+			}
 			if lifecycle, ok := room.(roomLifecycle); ok {
 				ended, err := lifecycle.Ended(ctx)
 				if err != nil {
@@ -56,11 +59,15 @@ func (adapter *Adapter) Reconcile(ctx context.Context) error {
 				if _, err := adapter.media.Execute(ctx, command); err != nil && !missing(err) {
 					return err
 				}
-				state.Ready, state.Allocating, state.Generation, state.Sessions = false, false, "", map[string]*SessionState{}
+				resetRuntime(state)
+				state.Ready, state.Allocating, state.Generation = false, false, ""
 				return room.Save(ctx, state)
 			}
 			if state.Allocating {
 				return adapter.releaseAllocation(ctx, room, scope, state)
+			}
+			if err := adapter.cleanupInactiveSessions(ctx, room, scope, state); err != nil {
+				return err
 			}
 			for sessionID, session := range state.Sessions {
 				if !session.Pending {
@@ -71,7 +78,12 @@ func (adapter *Adapter) Reconcile(ctx context.Context) error {
 					return err
 				}
 			}
-			return nil
+			if state.Ready {
+				if err := adapter.syncTracks(ctx, room, scope, state); err != nil {
+					return err
+				}
+			}
+			return adapter.expireSubscriptions(ctx, room, scope, state)
 		})
 		if err != nil {
 			failures = append(failures, err)

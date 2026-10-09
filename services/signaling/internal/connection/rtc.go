@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
+	"github.com/relayrtc/relayrtc/services/signaling/internal/rtc"
 )
 
 var ErrRTCNotAvailable = errors.New("RTC media service is not available")
@@ -19,6 +20,7 @@ var rtcResponseTypes = map[string]string{
 	"rtc.track.control":       "rtc.track.control.accepted",
 	"rtc.track.subscribe":     "rtc.track.subscribe.accepted",
 	"rtc.subscription.resume": "rtc.subscription.resumed",
+	"rtc.subscription.close":  "rtc.subscription.close.accepted",
 }
 
 type RTCSignalRequest struct {
@@ -42,6 +44,11 @@ type RTCSignalService interface {
 type RTCSessionLifecycle interface {
 	RemoveSession(context.Context, string, string, string) error
 	CloseRoom(context.Context, string) error
+}
+
+type RTCTrackDiscovery interface {
+	Discover(context.Context, auth.Claims, string) ([]any, uint64, error)
+	Events(context.Context, string, uint64) ([]rtc.RuntimeEvent, uint64, error)
 }
 
 type rtcSessionScope struct {

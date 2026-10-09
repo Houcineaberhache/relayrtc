@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"time"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
 )
@@ -30,12 +31,24 @@ type SessionState struct {
 }
 
 type RoomState struct {
+	Sequence    uint64
+	Events      []RuntimeEvent
 	MediaNodeID string
 	Generation  string
 	Allocating  bool
 	Ready       bool
 	Closing     bool
 	Sessions    map[string]*SessionState
+}
+
+type RuntimeEvent struct {
+	Sequence  uint64
+	ID        string
+	SessionID string
+	RequestID string
+	Type      string
+	Payload   map[string]any
+	SentAt    time.Time
 }
 
 type LockedRoom interface {

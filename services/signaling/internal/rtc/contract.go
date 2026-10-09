@@ -65,6 +65,10 @@ type Resources struct {
 }
 
 type SubscriptionBinding struct {
+	TrackID     string
+	TransportID string
+	CreatedAt   time.Time
+	Resumed     bool
 	Generation  string
 	ID          string
 	MediaID     string
@@ -102,7 +106,7 @@ type PlacementRepository interface {
 func (command Command) Authority() map[string]string {
 	scope := command.Scope
 	switch command.Request.Operation {
-	case "room.create", "room.close":
+	case "room.create", "room.close", "tracks.list":
 		return map[string]string{"kind": "room", "roomId": scope.RoomID}
 	case "participant.remove":
 		return map[string]string{"kind": "participant-cleanup", "roomId": scope.RoomID, "participantId": scope.MediaParticipantID}
