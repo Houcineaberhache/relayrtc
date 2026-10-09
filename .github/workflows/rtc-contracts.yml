@@ -28,3 +28,38 @@ jobs:
           cache-dependency-path: services/signaling/go.sum
       - run: go test ./internal/rtc ./internal/connection
         working-directory: services/signaling
+
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: relayrtc_usage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d relayrtc_usage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RELAYRTC_TEST_DATABASE_URL: postgresql://postgres:ci-only@127.0.0.1:5432/relayrtc_usage_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter @relayrtc/media... build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/signaling/go.mod
+          cache-dependency-path: services/signaling/go.sum
+      - run: pnpm exec tsc -p tests/tsconfig.json
+      - run: node tests/rtc-runtime-smoke.mts
