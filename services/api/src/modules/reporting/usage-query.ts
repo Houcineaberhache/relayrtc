@@ -82,6 +82,7 @@ export function createUsageReportQuery(
   endedAt = new Date(),
   pagination = { limit: 50, offset: 0 },
   projection?: SQL,
+  windowStartedAt?: Date,
 ) {
   const duration = {
     live: 900_000,
@@ -90,7 +91,13 @@ export function createUsageReportQuery(
     "14d": 14 * 86_400_000,
     "30d": 30 * 86_400_000,
   }[range];
-  const startedAt = new Date(endedAt.getTime() - duration);
+  const startedAt = windowStartedAt ?? new Date(endedAt.getTime() - duration);
+  if (
+    !Number.isFinite(startedAt.getTime()) ||
+    !Number.isFinite(endedAt.getTime()) ||
+    startedAt >= endedAt
+  )
+    throw new Error("A positive usage window is required");
   const granularity = range === "live" ? "minute" : range === "24h" ? "hour" : "day";
   const query = sql`
     with bounds as (
@@ -229,3 +236,18 @@ export const usageDataQuality = (complete: boolean | undefined) => ({
   sessionHistory: complete ? "complete" : "partial",
   messageHistory: complete ? "complete" : "partial",
 });
+
+export function createUsageAggregationQuery(
+  scope: UsageReportScope,
+  startedAt: Date,
+  endedAt: Date,
+) {
+  return createUsageReportQuery(
+    scope,
+    "24h",
+    endedAt,
+    undefined,
+    sql`select ${usageSummary(null)} as metrics, (select complete from history) as complete`,
+    startedAt,
+  ).query;
+}
