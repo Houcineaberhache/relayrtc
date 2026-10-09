@@ -1,0 +1,55 @@
+import type { RelayKitDatabase } from "@relayrtc/database";
+import { sql } from "drizzle-orm";
+
+export const DEFAULT_USAGE_RETENTION_DAYS = 365;
+
+export function readUsageRetentionDays(source: Readonly<Record<string, string | undefined>>) {
+  const value = source.USAGE_RETENTION_DAYS ?? String(DEFAULT_USAGE_RETENTION_DAYS);
+  if (!/^\d+$/.test(value) || Number(value) < 30 || Number(value) > 3650)
+    throw new Error("USAGE_RETENTION_DAYS must be an integer between 30 and 3650");
+  return Number(value);
+}
+
+export async function expireUsageHistory(
+  database: RelayKitDatabase,
+  retentionDays = DEFAULT_USAGE_RETENTION_DAYS,
+  now = new Date(),
+) {
+  readUsageRetentionDays({ USAGE_RETENTION_DAYS: String(retentionDays) });
+  if (!Number.isFinite(now.getTime())) throw new Error("A valid retention time is required");
+  const cutoff = new Date(now.getTime() - retentionDays * 86400_000).toISOString();
+  return database.transaction(async (transaction) => {
+    const [lock] = await transaction.execute(sql`select pg_try_advisory_xact_lock(hashtextextended('relayrtc:usage-retention', 0)) as acquired`);
+    if (lock?.acquired !== true) return { status: "busy" as const, cutoff };
+    await transaction.execute(sql`delete from usage_event where occurred_at < ${cutoff}::timestamptz`);
+    await transaction.execute(sql`delete from usage_aggregate where window_ended_at < ${cutoff}::timestamptz`);
+    await transaction.execute(sql`delete from usage_history_interval where ended_at < ${cutoff}::timestamptz`);
+    await transaction.execute(sql`
+      with expired as (
+        select s.id from usage_history_session s left join usage_history_room r on r.id = s.room_id
+        where least(s.left_at, r.ended_at, s.deleted_at,
+          case when s.connection_state in ('disconnected', 'failed') then s.disconnected_at end) < ${cutoff}::timestamptz
+      ), removed_intervals as (
+        delete from usage_history_interval where session_id in (select id from expired) returning id
+      )
+      delete from usage_history_session where id in (select id from expired)
+    `);
+    await transaction.execute(sql`delete from usage_history_room r where coalesce(r.ended_at, r.deleted_at) < ${cutoff}::timestamptz
+      and not exists (select 1 from usage_history_session s where s.room_id = r.id)
+      and not exists (select 1 from usage_event e where e.room_id = r.id)`);
+    await transaction.execute(sql`delete from usage_history_environment e where e.deleted_at < ${cutoff}::timestamptz
+      and not exists (select 1 from usage_history_room r where r.environment_id = e.id)
+      and not exists (select 1 from usage_event u where u.environment_id = e.id)
+      and not exists (select 1 from usage_aggregate a where a.environment_id = e.id)`);
+    await transaction.execute(sql`delete from usage_history_project p where p.deleted_at < ${cutoff}::timestamptz
+      and not exists (select 1 from usage_history_environment e where e.project_id = p.id)
+      and not exists (select 1 from usage_history_room r where r.project_id = p.id)
+      and not exists (select 1 from usage_event u where u.project_id = p.id)
+      and not exists (select 1 from usage_aggregate a where a.project_id = p.id)`);
+    await transaction.execute(sql`delete from usage_history_organization o where o.deleted_at < ${cutoff}::timestamptz
+      and not exists (select 1 from usage_history_project p where p.organization_id = o.id)
+      and not exists (select 1 from usage_event e where e.organization_id = o.id)
+      and not exists (select 1 from usage_aggregate a where a.organization_id = o.id)`);
+    return { status: "expired" as const, cutoff };
+  });
+}

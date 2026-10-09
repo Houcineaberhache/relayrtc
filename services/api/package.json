@@ -10,6 +10,7 @@
     "clean": "rimraf dist coverage",
     "lint": "eslint .",
     "usage:aggregate": "node --env-file-if-exists=../../.env dist/modules/reporting/refresh-usage.js",
+    "usage:expire": "node --env-file-if-exists=../../.env dist/modules/reporting/expire-usage.js",
     "start": "node --enable-source-maps dist/server.js",
     "test": "vitest run --pool=threads --exclude dist/**",
     "typecheck": "tsc --project tsconfig.json --noEmit"

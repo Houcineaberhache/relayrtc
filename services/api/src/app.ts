@@ -12,11 +12,13 @@ import { createTurnCredentialService } from "./modules/turn-credentials/turn-cre
 import { healthRoutes } from "./routes/health.js";
 import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
+import { registerUsageRetention } from "./modules/reporting/usage-retention-worker.js";
 
 interface BuildAppOptions {
   closeDatabase?: () => Promise<void>;
   config: ApiConfig;
   database: RelayKitDatabase;
+  usageRetentionDays?: number;
 }
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/u;
@@ -71,9 +73,12 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
     reply.header("x-request-id", request.id);
   });
 
-  if (options.closeDatabase) {
-    app.addHook("onClose", async () => options.closeDatabase?.());
-  }
+  const stopUsageRetention = options.usageRetentionDays === undefined ? undefined
+    : registerUsageRetention(app, options.database, options.usageRetentionDays);
+  app.addHook("onClose", async () => {
+    await stopUsageRetention?.();
+    await options.closeDatabase?.();
+  });
 
   void app.register(healthRoutes, { database: options.database });
   void app.register(reportingRoutes, {
