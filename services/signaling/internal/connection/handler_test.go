@@ -380,7 +380,7 @@ func TestHandlerJoinsDiscoversAndLeavesRoom(t *testing.T) {
 	}
 	select {
 	case request := <-rtcService.requests:
-		if request.RoomID != "room_123" || request.SessionID != "session_123" ||
+		if request.RequestID != "request_capabilities" || request.RoomID != "room_123" || request.SessionID != "session_123" ||
 			request.ParticipantID != "participant_123" {
 			t.Fatalf("RTC request scope = %+v", request)
 		}

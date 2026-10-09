@@ -47,7 +47,7 @@ const iceCandidateSchema = z
   })
   .strict();
 
-const dtlsParametersSchema = z
+export const dtlsParametersSchema = z
   .object({
     role: z.enum(["auto", "client", "server"]),
     fingerprints: z
@@ -255,3 +255,11 @@ export const rtcTrackSubscribedResponseSchema = protocolResponseSchema(
     })
     .strict(),
 );
+
+export interface RtcSubscriptionResumePayload extends RtcSessionScope {
+  readonly subscriptionId: string;
+}
+export type RtcSubscriptionResumeRequest = ProtocolRequest<"rtc.subscription.resume", RtcSubscriptionResumePayload>;
+export type RtcSubscriptionResumedResponse = ProtocolResponse<"rtc.subscription.resumed", RtcSubscriptionResumePayload>;
+export const rtcSubscriptionResumeRequestSchema = protocolRequestSchema("rtc.subscription.resume", rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict());
+export const rtcSubscriptionResumedResponseSchema = protocolResponseSchema("rtc.subscription.resumed", rtcSessionScopeSchema.extend({ subscriptionId: rtcIdentifierSchema }).strict());

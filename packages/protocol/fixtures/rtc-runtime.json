@@ -1,0 +1,1171 @@
+[
+  {
+    "name": "capabilities",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_capabilities",
+      "type": "rtc.capabilities.get",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_capabilities",
+      "method": "GET",
+      "path": "/internal/v1/rooms/room_rtc/capabilities",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.capabilities",
+      "request": {
+        "operation": "capabilities.get",
+        "body": null
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "transport",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_transport",
+      "type": "rtc.transport.create",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "direction": "send"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_transport",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/transports",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.transport.created",
+      "request": {
+        "operation": "transport.create",
+        "body": {
+          "participantId": "session_rtc",
+          "direction": "send"
+        }
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "connect",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_connect",
+      "type": "rtc.transport.connect",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "dtlsParameters": {
+          "role": "auto",
+          "fingerprints": [
+            {
+              "algorithm": "sha-256",
+              "value": "AA:BB"
+            }
+          ]
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_connect",
+      "method": "PATCH",
+      "path": "/internal/v1/rooms/room_rtc/transports/transport_media",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.transport.connected",
+      "request": {
+        "operation": "transport.connect",
+        "body": {
+          "participantId": "session_rtc",
+          "dtlsParameters": {
+            "role": "auto",
+            "fingerprints": [
+              {
+                "algorithm": "sha-256",
+                "value": "AA:BB"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "restart",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_restart",
+      "type": "rtc.ice.restart",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_restart",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/transports/transport_media/restart-ice",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.ice.restarted",
+      "request": {
+        "operation": "ice.restart",
+        "body": {
+          "participantId": "session_rtc"
+        }
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "subscribe",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_subscribe",
+      "type": "rtc.track.subscribe",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "trackId": "track_public",
+        "rtpCapabilities": {
+          "codecs": []
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "receive",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_peer",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_subscribe",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/subscriptions",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.subscribe.accepted",
+      "request": {
+        "operation": "track.subscribe",
+        "body": {
+          "participantId": "session_rtc",
+          "transportId": "transport_media",
+          "trackId": "producer_media",
+          "rtpCapabilities": {
+            "codecs": []
+          }
+        }
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "unpublish",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_unpublish",
+      "type": "rtc.track.control",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "trackId": "track_public",
+        "action": "unpublish"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_unpublish",
+      "method": "DELETE",
+      "path": "/internal/v1/rooms/room_rtc/participants/session_rtc/tracks/producer_media",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.control.accepted",
+      "request": {
+        "operation": "track.remove",
+        "body": null
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "consumer-ready",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_consumer-ready",
+      "type": "rtc.subscription.resume",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "subscriptionId": "subscription_public"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_consumer-ready",
+      "method": "PATCH",
+      "path": "/internal/v1/rooms/room_rtc/subscriptions/consumer_media/resume",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.subscription.resumed",
+      "request": {
+        "operation": "subscription.resume",
+        "body": {
+          "participantId": "session_rtc"
+        }
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "publish-audio",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_publish-audio",
+      "type": "rtc.track.publish",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "trackType": "audio",
+        "rtpParameters": {
+          "codecs": []
+        },
+        "metadata": {
+          "source": "client"
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_publish-audio",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/tracks",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.publish.accepted",
+      "request": {
+        "operation": "track.publish",
+        "body": {
+          "participantId": "session_rtc",
+          "transportId": "transport_media",
+          "trackType": "audio",
+          "kind": "audio",
+          "rtpParameters": {
+            "codecs": []
+          }
+        }
+      },
+      "metadata": {
+        "source": "client"
+      }
+    }
+  },
+  {
+    "name": "publish-camera_video",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_publish-camera_video",
+      "type": "rtc.track.publish",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "trackType": "camera_video",
+        "rtpParameters": {
+          "codecs": []
+        },
+        "metadata": {
+          "source": "client"
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_publish-camera_video",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/tracks",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.publish.accepted",
+      "request": {
+        "operation": "track.publish",
+        "body": {
+          "participantId": "session_rtc",
+          "transportId": "transport_media",
+          "trackType": "camera_video",
+          "kind": "video",
+          "rtpParameters": {
+            "codecs": []
+          }
+        }
+      },
+      "metadata": {
+        "source": "client"
+      }
+    }
+  },
+  {
+    "name": "publish-screen_audio",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_publish-screen_audio",
+      "type": "rtc.track.publish",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "trackType": "screen_audio",
+        "rtpParameters": {
+          "codecs": []
+        },
+        "metadata": {
+          "source": "client"
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_publish-screen_audio",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/tracks",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.publish.accepted",
+      "request": {
+        "operation": "track.publish",
+        "body": {
+          "participantId": "session_rtc",
+          "transportId": "transport_media",
+          "trackType": "screen_audio",
+          "kind": "audio",
+          "rtpParameters": {
+            "codecs": []
+          }
+        }
+      },
+      "metadata": {
+        "source": "client"
+      }
+    }
+  },
+  {
+    "name": "publish-screen_video",
+    "lifecycle": false,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_publish-screen_video",
+      "type": "rtc.track.publish",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc",
+        "transportId": "transport_public",
+        "trackType": "screen_video",
+        "rtpParameters": {
+          "codecs": []
+        },
+        "metadata": {
+          "source": "client"
+        }
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_publish-screen_video",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc/tracks",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "rtc.track.publish.accepted",
+      "request": {
+        "operation": "track.publish",
+        "body": {
+          "participantId": "session_rtc",
+          "transportId": "transport_media",
+          "trackType": "screen_video",
+          "kind": "video",
+          "rtpParameters": {
+            "codecs": []
+          }
+        }
+      },
+      "metadata": {
+        "source": "client"
+      }
+    }
+  },
+  {
+    "name": "room.create",
+    "lifecycle": true,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "mediaNodeId": "media_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_room.create",
+      "type": "room.create",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_room.create",
+      "method": "POST",
+      "path": "/internal/v1/rooms/room_rtc",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "mediaNodeId": "media_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "",
+      "request": {
+        "operation": "room.create",
+        "body": null
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "room.close",
+    "lifecycle": true,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "mediaNodeId": "media_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_room.close",
+      "type": "room.close",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_room.close",
+      "method": "DELETE",
+      "path": "/internal/v1/rooms/room_rtc",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "mediaNodeId": "media_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "",
+      "request": {
+        "operation": "room.close",
+        "body": null
+      },
+      "metadata": {}
+    }
+  },
+  {
+    "name": "participant.remove",
+    "lifecycle": true,
+    "scope": {
+      "projectId": "project_rtc",
+      "environmentId": "env_rtc",
+      "roomId": "room_rtc",
+      "participantId": "participant_rtc",
+      "sessionId": "session_rtc",
+      "mediaNodeId": "media_rtc",
+      "mediaParticipantId": "session_rtc",
+      "generation": "generation_rtc"
+    },
+    "permissions": [
+      "room:join",
+      "audio:publish",
+      "video:publish",
+      "screen:publish"
+    ],
+    "request": {
+      "requestId": "request_participant.remove",
+      "type": "participant.remove",
+      "payload": {
+        "roomId": "room_rtc",
+        "sessionId": "session_rtc"
+      }
+    },
+    "resources": {
+      "Transport": {
+        "ID": "transport_public",
+        "MediaID": "transport_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Direction": "send",
+        "Generation": "generation_rtc"
+      },
+      "Track": {
+        "ID": "track_public",
+        "MediaID": "producer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      },
+      "Subscription": {
+        "ID": "subscription_public",
+        "MediaID": "consumer_media",
+        "RoomID": "room_rtc",
+        "SessionID": "session_rtc",
+        "MediaNodeID": "media_rtc",
+        "Generation": "generation_rtc"
+      }
+    },
+    "expected": {
+      "requestId": "request_participant.remove",
+      "method": "DELETE",
+      "path": "/internal/v1/rooms/room_rtc/participants/session_rtc",
+      "scope": {
+        "projectId": "project_rtc",
+        "environmentId": "env_rtc",
+        "roomId": "room_rtc",
+        "participantId": "participant_rtc",
+        "sessionId": "session_rtc",
+        "mediaNodeId": "media_rtc",
+        "mediaParticipantId": "session_rtc",
+        "generation": "generation_rtc"
+      },
+      "responseType": "",
+      "request": {
+        "operation": "participant.remove",
+        "body": null
+      },
+      "metadata": {}
+    }
+  }
+]
