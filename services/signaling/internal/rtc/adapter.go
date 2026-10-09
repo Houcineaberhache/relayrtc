@@ -298,6 +298,9 @@ func (adapter *Adapter) RemoveSession(ctx context.Context, roomID, participantID
 func (adapter *Adapter) CloseRoom(ctx context.Context, roomID string) error {
 	return adapter.store.WithRoom(ctx, roomID, func(room LockedRoom) error {
 		scope, state, err := room.Load(ctx)
+		if errors.Is(err, ErrForbidden) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
