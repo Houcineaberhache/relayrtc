@@ -1,90 +1,43 @@
-"use client";
+'use client'
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import type { OrganizationQuotaResponse, ProjectUsageResponse } from "@relayrtc/validation";
-import type { ConsoleEnvironment } from "@/lib/console-types";
-import { Panel, PanelTitle } from "@/components/page/panel";
-import { StatCard } from "@/components/page/stat-card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { ReportingFilters } from "./reporting-filters";
-import { UsageMetrics } from "./usage-metrics";
+import { Download } from 'lucide-react'
+import type { OrganizationQuotaResponse, ProjectUsageResponse } from '@relayrtc/validation'
+import type { ConsoleEnvironment } from '@/lib/console-types'
+import { StatCard } from '@/components/page/stat-card'
+import { Button } from '@/components/ui/button'
+import { downloadCsv } from '@/lib/csv'
+import { ReportingFilters } from './reporting-filters'
+import { UsageChart } from './usage-chart'
+import { UsageMetrics } from './usage-metrics'
 
-export function ProjectUsageDashboard({
-  data,
-  quota,
-  environments,
-  environment,
-}: {
-  data: ProjectUsageResponse;
-  quota: OrganizationQuotaResponse;
-  environments: readonly ConsoleEnvironment[];
-  environment: string;
+export function ProjectUsageDashboard({ data, quota, environments, environment }: {
+  data: ProjectUsageResponse
+  quota: OrganizationQuotaResponse
+  environments: readonly ConsoleEnvironment[]
+  environment: string
 }) {
   const chart = data.buckets.map((bucket) => ({
     ...bucket,
-    label: new Intl.DateTimeFormat("en-US", {
-      timeZone: "UTC",
-      ...(data.window.range === "24h"
-        ? ({ hour: "2-digit", minute: "2-digit", hour12: false } as const)
-        : ({ month: "short", day: "numeric" } as const)),
-    }).format(new Date(bucket.startedAt)),
-    minutes: bucket.participantSeconds / 60,
-  }));
-  function download() {
-    const csv = [
-      "started_at,ended_at,participant_minutes,rooms_created",
-      ...chart.map(
-        (bucket) =>
-          `${bucket.startedAt},${bucket.endedAt},${bucket.minutes},${bucket.roomsCreated}`,
-      ),
-    ].join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "project-usage.csv";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
+    label: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...(data.window.range === '24h' ? { hour: '2-digit', minute: '2-digit', hour12: false } as const : { month: 'short', day: 'numeric' } as const) }).format(new Date(bucket.startedAt)),
+    value: bucket.participantSeconds / 60,
+  }))
   return (
     <div className="flex flex-col gap-6">
-      <ReportingFilters
-        range={data.window.range}
-        environment={environment}
-        environments={environments}
-      />
-      <StatCard
-        label="Organization quota"
-        value={quota.status === "unconfigured" ? "Not configured" : "Unavailable"}
-        hint="No usage limit configured"
-      />
-      <UsageMetrics summary={data.summary} dataQuality={data.dataQuality} />
-      <Panel>
-        <PanelTitle
-          title="Participant minutes"
-          description="Activity in the selected range. Bucket times are UTC; the first and last buckets may cover partial periods."
-        />
-        {data.summary.participantSeconds === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            No participant activity in this period.
-          </p>
-        ) : (
-          <ChartContainer
-            config={{ minutes: { label: "Participant minutes", color: "var(--chart-1)" } }}
-            className="mt-4 h-64 w-full"
-          >
-            <BarChart data={chart}>
-              <CartesianGrid vertical={false} />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="minutes" fill="var(--color-minutes)" />
-            </BarChart>
-          </ChartContainer>
-        )}
-        <button type="button" onClick={download} className="mt-4 text-sm underline">
-          Download CSV
-        </button>
-      </Panel>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ReportingFilters range={data.window.range} environment={environment} environments={environments} />
+        <Button variant="ghost" size="icon-sm" aria-label="Download CSV" onClick={() => downloadCsv('project-usage.csv', ['started_at', 'ended_at', 'participant_minutes', 'rooms_created'], chart.map((bucket) => [bucket.startedAt, bucket.endedAt, bucket.value, bucket.roomsCreated]))}><Download /></Button>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <UsageChart title="Participant minutes" total={data.summary.participantSeconds / 60} period={data.window.range} points={chart} description="Activity over time · UTC" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <UsageChart title="Rooms created" total={data.summary.roomsCreated} period={data.window.range} compact points={chart.map((bucket) => ({ label: bucket.label, value: bucket.roomsCreated }))} />
+          <StatCard label="Peak participants" value={data.summary.peakConcurrentParticipants} hint={data.window.range}>
+            <p className="mt-2 text-sm text-muted-foreground">{data.summary.peakConcurrentRooms} peak concurrent rooms</p>
+          </StatCard>
+        </div>
+      </div>
+      <UsageMetrics summary={data.summary} dataQuality={data.dataQuality} period={data.window.range} />
+      <p className="text-xs text-muted-foreground">{quota.status === 'unconfigured' ? 'Organization usage limits are not configured.' : 'Organization quota unavailable.'}</p>
     </div>
-  );
+  )
 }
