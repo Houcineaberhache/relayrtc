@@ -38,6 +38,11 @@ export async function expireUsageHistory(
     await transaction.execute(
       sql`delete from usage_lifecycle_event where occurred_at < ${sourceBoundary}::timestamptz`,
     );
+    await transaction.execute(sql`delete from turn_observation where occurred_at < ${sourceBoundary}::timestamptz`);
+    await transaction.execute(sql`delete from turn_allocation t where coalesce(t.ended_at, t.expires_at) < ${sourceBoundary}::timestamptz
+      and not exists (select 1 from turn_observation o where o.allocation_id = t.id)`);
+    await transaction.execute(sql`delete from turn_credential c where c.expires_at < ${sourceBoundary}::timestamptz
+      and not exists (select 1 from turn_allocation t where t.username = c.username)`);
     await transaction.execute(
       sql`delete from usage_aggregate where (date_trunc('month', window_started_at at time zone 'UTC') + interval '1 month') at time zone 'UTC' < ${cutoff}::timestamptz`,
     );
@@ -56,11 +61,15 @@ export async function expireUsageHistory(
     `);
     await transaction.execute(sql`delete from usage_history_room r where coalesce(r.ended_at, r.deleted_at) < ${cutoff}::timestamptz
       and not exists (select 1 from usage_history_session s where s.room_id = r.id)
-      and not exists (select 1 from usage_event e where e.room_id = r.id)`);
+      and not exists (select 1 from usage_event e where e.room_id = r.id)
+      and not exists (select 1 from turn_allocation t where t.room_id = r.id)
+      and not exists (select 1 from turn_credential c where c.room_id = r.id)`);
     await transaction.execute(sql`delete from usage_history_environment e where e.deleted_at < ${cutoff}::timestamptz
       and not exists (select 1 from usage_history_room r where r.environment_id = e.id)
       and not exists (select 1 from usage_event u where u.environment_id = e.id)
-      and not exists (select 1 from usage_aggregate a where a.environment_id = e.id)`);
+      and not exists (select 1 from usage_aggregate a where a.environment_id = e.id)
+      and not exists (select 1 from turn_allocation t where t.environment_id = e.id)
+      and not exists (select 1 from turn_credential c where c.environment_id = e.id)`);
     await transaction.execute(sql`delete from usage_history_project p where p.deleted_at < ${cutoff}::timestamptz
       and not exists (select 1 from usage_history_environment e where e.project_id = p.id)
       and not exists (select 1 from usage_history_room r where r.project_id = p.id)
