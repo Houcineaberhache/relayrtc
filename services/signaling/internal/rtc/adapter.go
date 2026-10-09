@@ -61,7 +61,8 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 			probe := capabilitiesCommand(scope)
 			result, err := adapter.media.Execute(ctx, probe)
 			if missing(err) {
-				state.Ready, state.Generation, state.Sessions = false, newID(), map[string]*SessionState{}
+				resetRuntime(state)
+				state.Ready, state.Generation = false, newID()
 				if err := room.Save(ctx, state); err != nil {
 					return err
 				}
@@ -84,6 +85,9 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 				return err
 			}
 			session = state.Sessions[sessionID]
+		}
+		if err := adapter.expireSubscriptions(ctx, room, scope, state); err != nil {
+			return err
 		}
 		fingerprint, err := RequestFingerprint(scope, request)
 		if err != nil {
@@ -157,7 +161,7 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 				if missing(probeError) {
 					state.Ready = false
 					state.Generation = newID()
-					state.Sessions = map[string]*SessionState{}
+					resetRuntime(state)
 					if err := room.Save(ctx, state); err != nil {
 						return err
 					}
@@ -179,6 +183,14 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 			return callError
 		}
 		session.Pending = false
+		switch command.Request.Operation {
+		case "track.publish":
+			appendEvent(state, "", request.RequestID, "track.published", map[string]any{"track": response.Payload["track"]})
+		case "track.remove":
+			retireTrack(state, *resources.Track, request.RequestID, "track_unpublished")
+		case "subscription.remove":
+			retireSubscription(state, session, *resources.Subscription, request.RequestID, "cancelled")
+		}
 		session.Receipts[request.RequestID] = Receipt{Fingerprint: fingerprint, Response: &response}
 		if err := room.Save(ctx, state); err != nil {
 			return err
@@ -203,6 +215,9 @@ func sessionResources(state *RoomState, session *SessionState, request SignalReq
 		resources.Subscription = &binding
 	}
 	for _, owner := range state.Sessions {
+		if owner.Ended || owner.Pending {
+			continue
+		}
 		if binding, ok := owner.Tracks[valueString(payload, "trackId")]; ok {
 			resources.Track = &binding
 			break
@@ -212,6 +227,16 @@ func sessionResources(state *RoomState, session *SessionState, request SignalReq
 }
 
 func (adapter *Adapter) cleanup(ctx context.Context, room LockedRoom, scope Scope, state *RoomState) error {
+	if session := state.Sessions[scope.SessionID]; session != nil {
+		reason := "runtime_reset"
+		if session.Ended {
+			reason = "owner_left"
+		}
+		retireSession(state, session, "", reason)
+		if err := room.Save(ctx, state); err != nil {
+			return err
+		}
+	}
 	if err := adapter.checkCleanupNode(ctx, scope); err != nil {
 		return err
 	}
@@ -297,7 +322,7 @@ func (adapter *Adapter) CloseRoom(ctx context.Context, roomID string) error {
 		state.Ready = false
 		state.Allocating = false
 		state.Generation = ""
-		state.Sessions = map[string]*SessionState{}
+		resetRuntime(state)
 		return room.Save(ctx, state)
 	})
 }
@@ -322,6 +347,6 @@ func (adapter *Adapter) releaseAllocation(ctx context.Context, room LockedRoom, 
 		return ErrUnavailable
 	}
 	state.Ready, state.Allocating, state.Generation, state.MediaNodeID = false, false, "", ""
-	state.Sessions = map[string]*SessionState{}
+	resetRuntime(state)
 	return room.Save(ctx, state)
 }

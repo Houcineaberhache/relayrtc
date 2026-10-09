@@ -82,7 +82,7 @@ func (media *MediaHTTP) Execute(ctx context.Context, command Command) (map[strin
 	switch command.Request.Operation {
 	case "room.create", "transport.create", "track.publish", "track.subscribe":
 		status = http.StatusCreated
-	case "capabilities.get", "ice.restart", "node.ready", "node.health":
+	case "capabilities.get", "tracks.list", "ice.restart", "node.ready", "node.health":
 		status = http.StatusOK
 	}
 	if response.StatusCode != status {
