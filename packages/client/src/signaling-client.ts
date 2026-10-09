@@ -1,6 +1,7 @@
 import {
   protocolMessageSchema,
   protocolRequestTypes,
+  protocolEventTypes,
   type ClientProtocolMessage,
   type ProtocolResponseMessage,
   type ServerProtocolMessage,
@@ -185,6 +186,10 @@ export class SignalingClient {
       return;
     }
     const message = parsed.data as ServerProtocolMessage;
+    if (protocolEventTypes.some((type) => type === message.type)) {
+      this.onMessage(message);
+      return;
+    }
     if ("requestId" in message && message.requestId) {
       const pending = this.#pending.get(message.requestId);
       if (!pending) return;
@@ -205,6 +210,7 @@ export class SignalingClient {
         );
       } else {
         pending.resolve(message);
+        if (message.type === "session.resume.accepted") this.onMessage(message);
       }
       return;
     }

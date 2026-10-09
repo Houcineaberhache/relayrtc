@@ -17,6 +17,19 @@ export interface LocalPublication {
   dispose(): void;
 }
 
+export interface RemoteSubscription {
+  readonly id: string;
+  readonly track: MediaStreamTrack;
+  setPaused(paused: boolean): void;
+  close(): Promise<void>;
+  dispose(): void;
+}
+
+interface PendingSubscription {
+  cancelled: boolean;
+  cancel?: () => void;
+}
+
 interface PublicationData extends types.AppData {
   trackType: RoomLocalTrackType;
   publication?: Track;
@@ -26,10 +39,19 @@ export class RoomRtc {
   readonly #transports: types.Transport[] = [];
   #closed = false;
   #sendTransport: types.Transport | undefined;
+  #receiveTransport: types.Transport | undefined;
+  #device: Device | undefined;
+  #timeoutMs = 10_000;
   #scope: RtcSessionScope | undefined;
   #signaling: SignalingClient | undefined;
   #onFailure: ((error: RoomError) => void) | undefined;
   readonly #publications = new Set<LocalPublication>();
+  readonly #subscriptions = new Map<
+    string,
+    { subscription: RemoteSubscription; onClosed: (error: RoomError) => void }
+  >();
+  readonly #pendingSubscriptions = new Map<string, PendingSubscription>();
+  readonly #closedSubscriptions = new Set<string>();
 
   async initialize(
     signaling: SignalingClient,
@@ -40,12 +62,14 @@ export class RoomRtc {
     this.#scope = scope;
     this.#signaling = signaling;
     this.#onFailure = onFailure;
+    this.#timeoutMs = options.requestTimeoutMs ?? 10_000;
     const capabilities = await signaling.request("rtc.capabilities.get", scope, "rtc.capabilities");
     this.#assertOpen();
     const device = new Device();
     await device.load({
       routerRtpCapabilities: capabilities.routerCapabilities,
     });
+    this.#device = device;
     this.#assertOpen();
     for (const direction of ["send", "receive"] as const) {
       const response = await signaling.request(
@@ -73,6 +97,7 @@ export class RoomRtc {
           ? device.createSendTransport(transportOptions)
           : device.createRecvTransport(transportOptions);
       this.#transports.push(transport);
+      if (direction === "receive") this.#receiveTransport = transport;
       if (direction === "send") {
         this.#sendTransport = transport;
         transport.on("produce", ({ rtpParameters, appData }, callback, errback) => {
@@ -162,6 +187,232 @@ export class RoomRtc {
           );
         }
       });
+    }
+  }
+
+  async consume(info: Track, onClosed: (error: RoomError) => void): Promise<RemoteSubscription> {
+    this.#assertOpen();
+    const transport = this.#receiveTransport;
+    const device = this.#device;
+    const signaling = this.#signaling;
+    const scope = this.#scope;
+    if (!transport || !device || !signaling || !scope)
+      throw new RoomError("NOT_CONNECTED", "The receive transport is unavailable");
+    if (info.type === "data")
+      throw new RoomError(
+        "MEDIA_SUBSCRIBE_FAILED",
+        "Data tracks cannot be received as browser media",
+      );
+    let id: string | undefined;
+    let consumer: types.Consumer | undefined;
+    let subscription: RemoteSubscription | undefined;
+    const pending: PendingSubscription = { cancelled: false };
+    try {
+      const response = await signaling.request(
+        "rtc.track.subscribe",
+        {
+          ...scope,
+          transportId: transport.id,
+          trackId: info.id,
+          rtpCapabilities: device.recvRtpCapabilities,
+        },
+        "rtc.track.subscribe.accepted",
+      );
+      this.#checkScope(response, scope);
+      id = response.subscriptionId;
+      if (response.trackId !== info.id || response.trackType !== info.type)
+        throw new RoomError("PROTOCOL_ERROR", "The subscription does not match the remote track");
+      this.#pendingSubscriptions.set(id, pending);
+      this.#assertOpen();
+      if (this.#closedSubscriptions.has(id))
+        throw new RoomError(
+          "MEDIA_SUBSCRIBE_FAILED",
+          "The server closed the remote subscription during setup",
+        );
+      consumer = await this.#createConsumer(
+        transport,
+        {
+          id,
+          producerId: info.id,
+          kind: info.type === "audio" || info.type === "screen_audio" ? "audio" : "video",
+          rtpParameters: response.rtpParameters as unknown as types.RtpParameters,
+          streamId: info.sessionId,
+        },
+        pending,
+      );
+      this.#assertOpen();
+      const receiver = consumer;
+      const subscriptionId = id;
+      let disposed = false;
+      let closing: Promise<void> | undefined;
+      subscription = {
+        id,
+        track: receiver.track,
+        setPaused: (paused) => {
+          if (!disposed) {
+            if (paused) receiver.pause();
+            else receiver.resume();
+          }
+        },
+        dispose: () => {
+          if (disposed) return;
+          disposed = true;
+          this.#subscriptions.delete(subscriptionId);
+          receiver.close();
+        },
+        close: () => {
+          if (closing) return closing;
+          subscription?.dispose();
+          closing = this.#closeSubscription(subscriptionId);
+          return closing;
+        },
+      };
+      const active = subscription;
+      this.#subscriptions.set(id, { subscription: active, onClosed });
+      const lost = (): void => {
+        if (disposed || this.#closed) return;
+        active.dispose();
+        onClosed(
+          new RoomError(
+            "MEDIA_SUBSCRIBE_FAILED",
+            "The remote media track stopped unexpectedly",
+            true,
+          ),
+        );
+        void this.#closeSubscription(subscriptionId).catch(() => undefined);
+      };
+      receiver.on("trackended", lost);
+      receiver.on("transportclose", lost);
+      const resumed = await signaling.request(
+        "rtc.subscription.resume",
+        { ...scope, subscriptionId: id },
+        "rtc.subscription.resumed",
+      );
+      this.#checkScope(resumed, scope);
+      if (resumed.subscriptionId !== id)
+        throw new RoomError(
+          "PROTOCOL_ERROR",
+          "The resumed subscription does not match the remote track",
+        );
+      this.#assertOpen();
+      if (pending.cancelled || receiver.closed || receiver.track.readyState === "ended")
+        throw new RoomError("MEDIA_SUBSCRIBE_FAILED", "The remote subscription ended during setup");
+      active.setPaused(info.state === "paused");
+      return active;
+    } catch (error) {
+      pending.cancelled = true;
+      subscription?.dispose();
+      consumer?.close();
+      if (id) await this.#closeSubscription(id).catch(() => undefined);
+      const failure =
+        error instanceof RoomError
+          ? error
+          : new RoomError("MEDIA_SUBSCRIBE_FAILED", "The remote track could not be received");
+      if (failure.code === "PROTOCOL_ERROR" || (failure.code === "REQUEST_TIMEOUT" && !id))
+        this.#reportCleanupFailure(failure);
+      throw failure;
+    } finally {
+      if (id) this.#pendingSubscriptions.delete(id);
+    }
+  }
+
+  subscriptionClosed(id: string, reason: string): void {
+    this.#closedSubscriptions.add(id);
+    if (this.#closedSubscriptions.size > 4096) {
+      const oldest = this.#closedSubscriptions.values().next().value;
+      if (oldest) this.#closedSubscriptions.delete(oldest);
+    }
+    const pending = this.#pendingSubscriptions.get(id);
+    if (pending) {
+      pending.cancelled = true;
+      pending.cancel?.();
+    }
+    const active = this.#subscriptions.get(id);
+    if (active) {
+      active.subscription.dispose();
+      active.onClosed(
+        new RoomError(
+          reason === "track_unpublished" || reason === "owner_left" || reason === "cancelled"
+            ? "MEDIA_OPERATION_CANCELLED"
+            : "MEDIA_SUBSCRIBE_FAILED",
+          `The server closed the remote subscription: ${reason}`,
+          reason === "runtime_reset" || reason === "negotiation_timeout",
+        ),
+      );
+    }
+  }
+
+  #createConsumer(
+    transport: types.Transport,
+    options: types.ConsumerOptions,
+    pending: PendingSubscription,
+  ): Promise<types.Consumer> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const cancel = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new RoomError("MEDIA_SUBSCRIBE_FAILED", "Remote media setup was cancelled"));
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new RoomError("REQUEST_TIMEOUT", "Remote media setup timed out", true));
+      }, this.#timeoutMs);
+      pending.cancel = cancel;
+      if (pending.cancelled || this.#closed) {
+        cancel();
+        return;
+      }
+      void transport.consume(options).then(
+        (consumer) => {
+          if (settled || pending.cancelled || this.#closed) {
+            consumer.close();
+            cancel();
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          resolve(consumer);
+        },
+        (error: unknown) => {
+          settled = true;
+          clearTimeout(timer);
+          reject(
+            error instanceof Error
+              ? error
+              : new RoomError("MEDIA_SUBSCRIBE_FAILED", "The receive transport rejected the track"),
+          );
+        },
+      );
+    });
+  }
+
+  async #closeSubscription(id: string): Promise<void> {
+    const scope = this.#scope;
+    const signaling = this.#signaling;
+    if (this.#closed || this.#closedSubscriptions.has(id) || !scope || !signaling) return;
+    try {
+      const response = await signaling.request(
+        "rtc.subscription.close",
+        { ...scope, subscriptionId: id },
+        "rtc.subscription.close.accepted",
+      );
+      this.#checkScope(response, scope);
+      if (response.subscriptionId !== id)
+        throw new RoomError(
+          "PROTOCOL_ERROR",
+          "The closed subscription does not match the remote track",
+        );
+    } catch (error) {
+      if (this.#closedSubscriptions.has(id)) return;
+      const failure =
+        error instanceof RoomError
+          ? error
+          : new RoomError("MEDIA_SUBSCRIBE_FAILED", "The remote subscription could not be removed");
+      this.#reportCleanupFailure(failure);
+      throw failure;
     }
   }
 
@@ -268,6 +519,14 @@ export class RoomRtc {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    for (const pending of this.#pendingSubscriptions.values()) {
+      pending.cancelled = true;
+      pending.cancel?.();
+    }
+    this.#pendingSubscriptions.clear();
+    for (const active of this.#subscriptions.values()) active.subscription.dispose();
+    this.#subscriptions.clear();
+    this.#closedSubscriptions.clear();
     for (const publication of this.#publications) publication.dispose();
     this.#publications.clear();
     for (const transport of this.#transports) transport.close();
