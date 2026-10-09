@@ -590,6 +590,7 @@ describe.skipIf(!databaseUrl)("project usage against PostgreSQL", () => {
     ).toBe(30 * 86400);
   });
   it("backfills legacy sessions without inventing reconnect or message history", async () => {
+    await query("DROP TRIGGER zz_retained_usage_session ON participant_session");
     await query("DROP TRIGGER participant_session_usage_history ON participant_session");
     await query("DROP FUNCTION record_participant_session_usage()");
     await query("DROP TABLE participant_connection_interval");
@@ -610,6 +611,11 @@ describe.skipIf(!databaseUrl)("project usage against PostgreSQL", () => {
       "utf8",
     );
     for (const statement of migration.split("--> statement-breakpoint")) await query(statement);
+    await query(`INSERT INTO usage_history_session
+      SELECT s.id, s.participant_id, p.room_id, s.country, s.connection_state, s.joined_at,
+        s.disconnected_at, s.metering_started_at, p.left_at, NULL
+      FROM participant_session s JOIN participant p ON p.id = s.participant_id;
+      INSERT INTO usage_history_interval SELECT id, session_id, started_at, ended_at FROM participant_connection_interval;`);
     const result = await getProjectUsage(database.db, scope, "7d", now);
     expect(result.summary.participantSeconds).toBe(600);
     expect(result.summary.messagesIn).toBe(0);

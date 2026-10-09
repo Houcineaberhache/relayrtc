@@ -81,18 +81,18 @@ export function createUsageReportQuery(
       select ${startedAt.toISOString()}::timestamptz as starts,
         ${endedAt.toISOString()}::timestamptz as ends
     ), scoped_projects as (
-      select pr.id from project pr where pr.organization_id = ${scope.organizationId}
+      select pr.id from usage_history_project pr where pr.organization_id = ${scope.organizationId}
         ${scope.projectId === null ? sql`` : sql`and pr.id = ${scope.projectId}`}
     ), scoped_rooms as (
-      select r.* from room r
+      select r.*, coalesce(live.name, r.id) as name from usage_history_room r
+      left join room live on live.id = r.id
       join scoped_projects pr on pr.id = r.project_id
       where true
         ${scope.environmentId === null ? sql`` : sql`and r.environment_id = ${scope.environmentId}`}
     ), scoped_sessions as (
-      select s.*, p.left_at, p.id as scoped_participant_id, r.ended_at as room_ended_at, r.project_id
-      from participant_session s
-      join participant p on p.id = s.participant_id
-      join scoped_rooms r on r.id = p.room_id
+      select s.*, s.participant_id as scoped_participant_id, r.ended_at as room_ended_at, r.project_id
+      from usage_history_session s
+      join scoped_rooms r on r.id = s.room_id
     ), clipped_connections as (
       select s.id as session_id, s.scoped_participant_id as participant_id, s.project_id,
         greatest(i.started_at, s.joined_at, b.starts) as starts,
@@ -102,7 +102,7 @@ export function createUsageReportQuery(
             i.started_at),
           s.left_at, s.room_ended_at, b.ends
         ) as ends
-      from participant_connection_interval i
+      from usage_history_interval i
       join scoped_sessions s on s.id = i.session_id
       cross join bounds b
       where i.started_at < b.ends and coalesce(i.ended_at, b.ends) > b.starts

@@ -37,7 +37,15 @@ func TestUsageSamplesAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM organization WHERE id = 'org_go_xp6'`); err != nil {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM organization WHERE id = 'org_go_xp6';
+ DELETE FROM usage_history_interval WHERE session_id = 'session_go_xp6';
+ DELETE FROM usage_history_session WHERE id = 'session_go_xp6';
+ DELETE FROM usage_history_room WHERE organization_id = 'org_go_xp6';
+ DELETE FROM usage_event WHERE organization_id = 'org_go_xp6';
+ DELETE FROM usage_aggregate WHERE organization_id = 'org_go_xp6';
+ DELETE FROM usage_history_environment WHERE project_id = 'project_go_xp6';
+ DELETE FROM usage_history_project WHERE organization_id = 'org_go_xp6';
+ DELETE FROM usage_history_organization WHERE id = 'org_go_xp6';`); err != nil {
 			t.Error(err)
 		}
 	}()

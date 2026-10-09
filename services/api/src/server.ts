@@ -2,14 +2,17 @@ import { createDatabase } from "@relayrtc/database";
 
 import { buildApp } from "./app.js";
 import { readApiEnvironment } from "./config/environment.js";
+import { readUsageRetentionDays } from "./modules/reporting/usage-retention.service.js";
 
 const start = async (): Promise<void> => {
   const config = readApiEnvironment(process.env);
+  const usageRetentionDays = readUsageRetentionDays(process.env);
   const database = createDatabase(config.databaseUrl);
   const app = buildApp({
     closeDatabase: database.close,
     config,
     database: database.db,
+    usageRetentionDays,
   });
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {

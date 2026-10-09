@@ -83,7 +83,7 @@ export async function getProjectAnalytics(
     'participantSeconds', seconds) order by seconds desc, id), '[]'::jsonb) from (
       select r.id, r.name, count(distinct p.participant_id) participants,
         sum(extract(epoch from p.ends - p.starts)) seconds
-      from participant_intervals p join participant participant on participant.id = p.participant_id
+      from participant_intervals p join (select distinct participant_id, room_id from scoped_sessions) participant on participant.participant_id = p.participant_id
       join scoped_rooms r on r.id = participant.room_id
       group by r.id, r.name order by seconds desc, r.id limit 10
     ) busiest) "topRooms",

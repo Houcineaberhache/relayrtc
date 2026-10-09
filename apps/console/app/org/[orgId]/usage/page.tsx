@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/page/page-header";
 import { Panel } from "@/components/page/panel";
 import { ReportingFilters } from "@/components/project/reporting-filters";
 import { UsageMetrics } from "@/components/project/usage-metrics";
+import { UsageChart } from "@/components/project/usage-chart";
+import { StatCard } from "@/components/page/stat-card";
 import { requireOrganization, getOrganizationProjects } from "@/lib/console-data";
 import { getOrganizationUsage, getOrganizationQuota, usageRange } from "@/lib/reporting/client";
 import { routes } from "@/lib/routes";
@@ -37,47 +39,63 @@ export default async function OrganizationUsagePage({
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Organization usage"
-        description="Combined activity across this organization's projects, including historical usage from suspended projects."
+        description="Participant minutes and network consumption across your projects."
       />
       <ReportingFilters range={range} />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <UsageChart
+          title="Participant minutes"
+          total={data.summary.participantSeconds / 60}
+          period={range}
+          horizontal
+          description="All projects total · Up to 8 highest usage projects on this page"
+          points={[...data.projects].sort((left, right) => right.summary.participantSeconds - left.summary.participantSeconds).slice(0, 8).map((project) => ({
+            label: projects.find((item) => item.id === project.projectId)?.name ?? project.projectId,
+            value: project.summary.participantSeconds / 60,
+          }))}
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <StatCard label="Rooms created" value={data.summary.roomsCreated} hint={range} />
+          <StatCard label="Peak participants" value={data.summary.peakConcurrentParticipants} hint={range}>
+            <p className="mt-2 text-sm text-muted-foreground">{data.summary.peakConcurrentRooms} peak concurrent rooms</p>
+          </StatCard>
+        </div>
+      </div>
+      <UsageMetrics summary={data.summary} dataQuality={data.dataQuality} period={range} />
       <Panel>
-        <h2 className="font-medium">Organization quota</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {quota.status === "unconfigured" ? "No usage limits configured." : "Quota unavailable."}
-        </p>
-      </Panel>
-      <UsageMetrics summary={data.summary} dataQuality={data.dataQuality} />
-      <Panel>
-        <h2 className="mb-4 font-medium">Usage by project</h2>
+        <h2 className="mb-4 text-base font-medium">Usage by project</h2>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full whitespace-nowrap text-sm">
             <thead>
-              <tr>
-                <th className="p-2">Project</th>
-                <th className="p-2">Participant minutes</th>
-                <th className="p-2">Rooms created</th>
-                <th className="p-2">History</th>
+              <tr className="border-b text-muted-foreground">
+                <th scope="col" className="pb-2 text-left font-normal">Project</th>
+                <th scope="col" className="pb-2 pl-4 text-right font-normal">Participant minutes</th>
+                <th scope="col" className="pb-2 pl-4 text-right font-normal">Rooms created</th>
+                <th scope="col" className="pb-2 pl-4 text-right font-normal">History</th>
               </tr>
             </thead>
             <tbody>
               {data.projects.map((project) => (
-                <tr key={project.projectId} className="border-t">
-                  <td className="p-2">
-                    <Link
-                      className="underline"
+                <tr key={project.projectId} className="border-b last:border-0">
+                  <td className="py-3">
+                    {projects.some((item) => item.id === project.projectId && item.status === "active") ? <Link
+                      className="transition-colors hover:text-primary"
                       href={routes.projectPage(orgId, project.projectId, "usage")}
                     >
                       {projects.find((item) => item.id === project.projectId)?.name ??
                         project.projectId}
-                    </Link>
+                    </Link> : <div className="flex flex-col gap-0.5">
+                      <span>{projects.find((item) => item.id === project.projectId)?.name ?? "Deleted project"}</span>
+                      <span className="text-xs text-muted-foreground">{project.projectId}</span>
+                    </div>}
                   </td>
-                  <td className="p-2">
+                  <td className="py-3 pl-4 text-right tabular-nums">
                     {new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(
                       project.summary.participantSeconds / 60,
                     )}
                   </td>
-                  <td className="p-2">{project.summary.roomsCreated}</td>
-                  <td className="p-2">
+                  <td className="py-3 pl-4 text-right tabular-nums">{project.summary.roomsCreated}</td>
+                  <td className="py-3 pl-4 text-right text-muted-foreground">
                     {project.dataQuality.sessionHistory === "partial" ||
                     project.dataQuality.messageHistory === "partial"
                       ? "Incomplete"
@@ -98,19 +116,22 @@ export default async function OrganizationUsagePage({
         <nav aria-label="Project usage pages" className="mt-4 flex gap-4 text-sm">
           {offset > 0 && (
             <Link
-              className="underline"
+              className="rounded-full bg-muted px-4 py-2 transition-colors hover:bg-muted/70"
               href={pageLink(Math.max(0, offset - data.pagination.limit))}
             >
               Previous
             </Link>
           )}
           {offset + data.pagination.limit < data.pagination.total && (
-            <Link className="underline" href={pageLink(offset + data.pagination.limit)}>
+            <Link className="rounded-full bg-muted px-4 py-2 transition-colors hover:bg-muted/70" href={pageLink(offset + data.pagination.limit)}>
               Next
             </Link>
           )}
         </nav>
       </Panel>
+      <p className="text-xs text-muted-foreground">
+        {quota.status === "unconfigured" ? "Organization usage limits are not configured." : "Organization quota unavailable."}
+      </p>
     </div>
   );
 }

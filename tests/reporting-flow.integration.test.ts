@@ -64,6 +64,14 @@ describe.skipIf(!databaseUrl)("persisted metering through Fastify and console re
     await query(
       `DELETE FROM organization WHERE id IN ('org_xp6', 'org_xp6_other'); DELETE FROM "user" WHERE id = 'user_xp6'; SET TIME ZONE 'UTC';`,
     );
+    await query(`DELETE FROM usage_history_interval WHERE session_id IN (SELECT s.id FROM usage_history_session s JOIN usage_history_room r ON r.id = s.room_id WHERE r.organization_id IN ('org_xp6', 'org_xp6_other'));
+      DELETE FROM usage_history_session WHERE room_id IN (SELECT id FROM usage_history_room WHERE organization_id IN ('org_xp6', 'org_xp6_other'));
+      DELETE FROM usage_history_room WHERE organization_id IN ('org_xp6', 'org_xp6_other');
+      DELETE FROM usage_event WHERE organization_id IN ('org_xp6', 'org_xp6_other');
+      DELETE FROM usage_aggregate WHERE organization_id IN ('org_xp6', 'org_xp6_other');
+      DELETE FROM usage_history_environment WHERE project_id IN (SELECT id FROM usage_history_project WHERE organization_id IN ('org_xp6', 'org_xp6_other'));
+      DELETE FROM usage_history_project WHERE organization_id IN ('org_xp6', 'org_xp6_other');
+      DELETE FROM usage_history_organization WHERE id IN ('org_xp6', 'org_xp6_other');`);
   });
   afterAll(async () => {
     await app.close();
