@@ -11,6 +11,7 @@ import { SignalingClient } from "./signaling-client.js";
 import { RoomMessaging } from "./room-messaging.js";
 import { LocalParticipantView } from "./room-local-participant.js";
 import type { RoomPresenceSnapshot } from "./room-messaging-types.js";
+import { SessionRefresh } from "./session-refresh.js";
 
 export class RoomSession extends RoomEventEmitter implements Room {
   #state: RoomConnectionState = "connecting";
@@ -30,6 +31,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   readonly #remote: RemoteRoomRegistry;
   readonly #messaging: RoomMessaging;
   readonly #localParticipant: RoomLocalParticipant;
+  readonly #refresh: SessionRefresh;
 
   constructor(
     readonly options: RelayClientOptions,
@@ -104,6 +106,19 @@ export class RoomSession extends RoomEventEmitter implements Room {
       this.#localMedia,
       (metadata) => this.#messaging.updateMetadata(metadata),
     );
+    this.#refresh = new SessionRefresh(
+      options,
+      this.#signaling,
+      this.#rtc,
+      (error) => {
+        this.#credentialFailure(error);
+      },
+      (snapshot) => {
+        if (this.#ended || this.#exiting) return;
+        this.emit("credentialsRefreshed", snapshot);
+        this.clientEvents.emit("credentialsRefreshed", snapshot);
+      },
+    );
   }
 
   get connectionState(): RoomConnectionState {
@@ -153,6 +168,14 @@ export class RoomSession extends RoomEventEmitter implements Room {
     return this.#requireJoined().session;
   }
 
+  refreshCredentials(): Promise<void> {
+    if (this.#ended || this.#exiting || this.#state !== "connected")
+      return Promise.reject(
+        new RoomError("NOT_CONNECTED", "Join the room before renewing credentials"),
+      );
+    return this.#refresh.refresh();
+  }
+
   async start(
     token: string,
     scope: { roomId: string; participantId: string },
@@ -196,14 +219,20 @@ export class RoomSession extends RoomEventEmitter implements Room {
         sessionId: joined.session.id,
       });
       this.#refreshPresence();
-      await this.#initializeRtc({
-        roomId: joined.room.id,
-        sessionId: joined.session.id,
-      });
+      const iceServers = await this.#refresh.prepare(token, joined);
+      this.#assertOpen();
+      await this.#initializeRtc(
+        {
+          roomId: joined.room.id,
+          sessionId: joined.session.id,
+        },
+        iceServers,
+      );
       this.#assertOpen();
       this.#setState("connected");
       this.#assertOpen();
       this.#remote.ready();
+      this.#refresh.start();
     } catch (error) {
       const failure =
         error instanceof RoomError
@@ -226,6 +255,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
     if (this.#leaving) return this.#leaving;
     if (this.#ended || this.#exiting) return Promise.resolve();
     this.#exiting = true;
+    this.#refresh.dispose();
     this.#messaging.dispose();
     this.#localMedia.dispose();
     this.#remote.dispose();
@@ -256,10 +286,13 @@ export class RoomSession extends RoomEventEmitter implements Room {
     return this.#leaving;
   }
 
-  async #initializeRtc(scope: {
-    roomId: ParticipantJoinAcceptedPayload["room"]["id"];
-    sessionId: ParticipantJoinAcceptedPayload["session"]["id"];
-  }): Promise<void> {
+  async #initializeRtc(
+    scope: {
+      roomId: ParticipantJoinAcceptedPayload["room"]["id"];
+      sessionId: ParticipantJoinAcceptedPayload["session"]["id"];
+    },
+    iceServers?: readonly RTCIceServer[],
+  ): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await new Promise<void>((resolve, reject) => {
@@ -268,9 +301,14 @@ export class RoomSession extends RoomEventEmitter implements Room {
           reject(new RoomError("REQUEST_TIMEOUT", "Browser media setup timed out", true));
         }, this.options.requestTimeoutMs ?? 10_000);
         void this.#rtc
-          .initialize(this.#signaling, scope, this.options, (error) => {
-            this.#fail(error);
-          })
+          .initialize(
+            this.#signaling,
+            scope,
+            { ...this.options, ...(iceServers ? { iceServers } : {}) },
+            (error) => {
+              this.#fail(error);
+            },
+          )
           .then(resolve, reject);
       });
     } finally {
@@ -305,9 +343,29 @@ export class RoomSession extends RoomEventEmitter implements Room {
     this.#finish("failed", error, true);
   }
 
+  #credentialFailure(error: RoomError): void {
+    if (this.#ended || this.#exiting) return;
+    this.#exiting = true;
+    this.#refresh.dispose();
+    this.#messaging.dispose();
+    this.#localMedia.dispose();
+    this.#remote.dispose();
+    this.#rtc.close();
+    this.#refreshPresence();
+    this.emit("error", error);
+    this.clientEvents.emit("error", error);
+    this.#setState("failed");
+    this.#leaving = this.#leaveRemote()
+      .catch(() => undefined)
+      .finally(() => {
+        this.#finish("failed", error);
+      });
+  }
+
   #finish(state: RoomConnectionState, error?: RoomError, reportError = false): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#refresh.dispose();
     this.#messaging.dispose();
     this.#localMedia.dispose();
     this.#remote.dispose();

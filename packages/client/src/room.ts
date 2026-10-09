@@ -2,6 +2,7 @@ import type { ParticipantSession, Room as RoomInfo } from "@relayrtc/types";
 import type { RoomError } from "./room-errors.js";
 import type { RoomLocalMedia, RoomLocalParticipant } from "./room-media.js";
 import type { RoomRemoteParticipant, RoomRemoteTrack } from "./room-remote.js";
+import type { RoomCredentialOptions, RoomCredentialSnapshot } from "./room-credentials.js";
 import type {
   RoomCustomEvent,
   RoomCustomEvents,
@@ -21,6 +22,7 @@ export interface RoomEvents {
   readonly customEventSent: RoomCustomEvent;
   readonly localParticipantUpdated: RoomLocalParticipant;
   readonly presenceChanged: RoomPresenceSnapshot;
+  readonly credentialsRefreshed: RoomCredentialSnapshot;
   readonly participantJoined: RoomRemoteParticipant;
   readonly participantLeft: RoomRemoteParticipant;
   readonly participantUpdated: RoomRemoteParticipant;
@@ -47,6 +49,7 @@ export interface Room extends RoomLocalMedia {
   readonly messages: RoomMessages;
   readonly events: RoomCustomEvents;
   readonly presence: RoomPresenceSnapshot;
+  refreshCredentials(): Promise<void>;
   on<Event extends keyof RoomEvents>(
     event: Event,
     listener: (value: RoomEvents[Event]) => void,
@@ -54,7 +57,7 @@ export interface Room extends RoomLocalMedia {
   leave(): Promise<void>;
 }
 
-export interface RelayClientOptions {
+export interface RelayClientOptions extends RoomCredentialOptions {
   readonly signalingUrl: string;
   readonly requestTimeoutMs?: number;
   readonly iceServers?: readonly RTCIceServer[];

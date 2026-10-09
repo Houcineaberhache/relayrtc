@@ -12,6 +12,7 @@ export class RoomEventEmitter {
     customEventSent: new Set(),
     localParticipantUpdated: new Set(),
     presenceChanged: new Set(),
+    credentialsRefreshed: new Set(),
     participantJoined: new Set(),
     participantLeft: new Set(),
     participantUpdated: new Set(),

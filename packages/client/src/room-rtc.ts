@@ -52,6 +52,7 @@ export class RoomRtc {
   >();
   readonly #pendingSubscriptions = new Map<string, PendingSubscription>();
   readonly #closedSubscriptions = new Set<string>();
+  readonly #renewingIce = new Set<types.Transport>();
 
   async initialize(
     signaling: SignalingClient,
@@ -181,13 +182,82 @@ export class RoomRtc {
           });
       });
       transport.on("connectionstatechange", (state) => {
-        if (!this.#closed && (state === "failed" || state === "disconnected")) {
+        if (
+          !this.#closed &&
+          (state === "failed" || (state === "disconnected" && !this.#renewingIce.has(transport)))
+        ) {
           onFailure(
             new RoomError("RTC_SETUP_FAILED", "The media transport lost connectivity", true),
           );
         }
       });
     }
+  }
+
+  async renewIceServers(iceServers: readonly RTCIceServer[]): Promise<void> {
+    this.#assertOpen();
+    const signaling = this.#signaling;
+    const scope = this.#scope;
+    if (!signaling || !scope)
+      throw new RoomError("NOT_CONNECTED", "The media transports are unavailable");
+    for (const transport of this.#transports) {
+      this.#renewingIce.add(transport);
+      try {
+        await transport.updateIceServers({ iceServers: structuredClone([...iceServers]) });
+        this.#assertOpen();
+        if (transport.connectionState === "new") continue;
+        const response = await signaling.request(
+          "rtc.ice.restart",
+          { ...scope, transportId: transport.id },
+          "rtc.ice.restarted",
+        );
+        this.#checkScope(response, scope);
+        if (response.transportId !== transport.id)
+          throw new RoomError(
+            "PROTOCOL_ERROR",
+            "The renewed ICE transport does not match the request",
+          );
+        this.#assertOpen();
+        await transport.restartIce({
+          iceParameters: response.iceParameters as unknown as types.IceParameters,
+        });
+        this.#assertOpen();
+        await this.#waitForIce(transport);
+      } finally {
+        this.#renewingIce.delete(transport);
+      }
+    }
+  }
+
+  #waitForIce(transport: types.Transport): Promise<void> {
+    if (transport.connectionState === "connected") return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const finish = (error?: RoomError): void => {
+        clearTimeout(timer);
+        transport.off("connectionstatechange", changed);
+        transport.observer.off("close", closed);
+        if (error) reject(error);
+        else resolve();
+      };
+      const changed = (state: types.ConnectionState): void => {
+        if (state === "connected") finish();
+        else if (state === "failed" || state === "closed")
+          finish(
+            new RoomError("TURN_REFRESH_FAILED", "The renewed ICE transport could not connect"),
+          );
+      };
+      const closed = (): void => {
+        finish(
+          new RoomError("NOT_CONNECTED", "The media transport closed during credential renewal"),
+        );
+      };
+      const timer = setTimeout(() => {
+        finish(new RoomError("TURN_REFRESH_FAILED", "The renewed ICE transport timed out"));
+      }, this.#timeoutMs);
+      transport.on("connectionstatechange", changed);
+      transport.observer.on("close", closed);
+      if (transport.closed) closed();
+    });
   }
 
   async consume(info: Track, onClosed: (error: RoomError) => void): Promise<RemoteSubscription> {

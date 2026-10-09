@@ -165,11 +165,13 @@ export class SignalingClient {
           ? "ROOM_ENDED"
           : event.code === 4003
             ? "RTC_STATE_CHANGED"
-            : event.code === 4004
-              ? "PARTICIPANT_REMOVED"
-              : event.code === 1008
-                ? "POLICY_VIOLATION"
-                : "CONNECTION_CLOSED";
+            : event.code === 4005
+              ? "CREDENTIALS_REVOKED"
+              : event.code === 4004
+                ? "PARTICIPANT_REMOVED"
+                : event.code === 1008
+                  ? "POLICY_VIOLATION"
+                  : "CONNECTION_CLOSED";
     this.#fail(
       new RoomError(
         code,
