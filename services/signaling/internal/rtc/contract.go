@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/relayrtc/relayrtc/services/signaling/internal/auth"
@@ -12,6 +13,7 @@ var ErrForbidden = errors.New("RTC resource does not belong to this session")
 var ErrInvalidRequest = errors.New("invalid RTC request")
 var ErrUnsupported = errors.New("unsupported RTC operation")
 var ErrUnavailable = errors.New("RTC allocation unavailable")
+var ErrCapacityExceeded = fmt.Errorf("%w: resource capacity exhausted", ErrUnavailable)
 var ErrRequestConflict = errors.New("RTC request ID was reused with a different payload")
 
 type Scope struct {
