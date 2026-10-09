@@ -17,12 +17,12 @@ export async function getProjectUsage(
 ): Promise<ProjectUsageResponse> {
   const { query, window } = createUsageReportQuery(scope, range, endedAt);
   const result = await database.execute(query);
-  const row = result[0] as { summary: unknown; buckets: unknown; complete: boolean } | undefined;
+  const row = result[0] as { summary: unknown; buckets: unknown; complete: boolean; turn_coverage?: unknown } | undefined;
   return projectUsageResponseSchema.parse({
     scope,
     window,
     summary: row?.summary,
     buckets: row?.buckets,
-    dataQuality: usageDataQuality(row?.complete),
+    dataQuality: usageDataQuality(row?.complete, row?.turn_coverage),
   });
 }

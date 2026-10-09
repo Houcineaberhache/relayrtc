@@ -81,6 +81,8 @@ async function rollup(
       from source cross join lateral jsonb_each_text(metrics) where key not in ('averageConcurrentParticipants', 'participantMinutesDerived') group by key
     ) select coalesce((select jsonb_object_agg(key, total) from totals), '{}'::jsonb) as metrics,
       coalesce((select bool_and(coalesce(data_quality->>'sessionHistory', 'partial') = 'complete') from source), true) as complete,
+      (select case when bool_and(data_quality->>'turnTraffic' = 'authoritative') then 'authoritative'
+        when bool_or(data_quality->>'turnTraffic' in ('authoritative', 'partial')) then 'partial' else 'unavailable' end from source) as turn_coverage,
       exists (select 1 from usage_aggregation_dirty where organization_id = ${scope.organizationId}
         and hour_started_at >= ${starts.toISOString()}::timestamptz and hour_started_at < ${through.toISOString()}::timestamptz) as pending
   `);
@@ -91,7 +93,7 @@ async function rollup(
   await writeAggregate(database, scope, granularity, starts, through, metrics, {
     ...usageDataQuality(row?.complete === true),
     aggregation: row?.pending === true ? "pending" : "complete",
-    turnTraffic: "estimated",
+    turnTraffic: usageDataQuality(true, row?.turn_coverage).turnTraffic,
     mediaDurations: "observation_time",
   });
 }
@@ -188,7 +190,7 @@ export async function processUsageAggregation(
         await writeAggregate(transaction, scope, "hour", starts, through, metrics, {
           ...usageDataQuality(row?.complete === true),
           aggregation: "complete",
-          turnTraffic: "estimated",
+          turnTraffic: usageDataQuality(true, row?.turn_coverage).turnTraffic,
           mediaDurations: "observation_time",
         });
         for (const granularity of ["day", "month"] as const) {
