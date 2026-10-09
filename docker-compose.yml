@@ -31,6 +31,8 @@ services:
       RELAYRTC_MEDIA_INTERNAL_URL: http://media:8082/internal/v1
       RELAYRTC_SIGNALING_INTERNAL_URL: http://signaling:8081/internal/v1
       TURN_CREDENTIAL_TTL_SECONDS: ${TURN_CREDENTIAL_TTL_SECONDS:-600}
+      TURN_ACCOUNTING_LOG_DIRECTORY: /var/log/relayrtc-turn
+      TURN_ACCOUNTING_METRICS_URL: http://coturn:9641/metrics
       TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?TURN_SHARED_SECRET must be set in .env}
       TURN_STUN_URLS: ${TURN_STUN_URLS:-stun:localhost:3478}
       TURN_URLS: ${TURN_URLS:-turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp,turns:localhost:5349?transport=tcp}
@@ -39,6 +41,8 @@ services:
         condition: service_completed_successfully
     ports:
       - 127.0.0.1:${API_PORT:-8080}:8080
+    volumes:
+      - turn-accounting:/var/log/relayrtc-turn:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -311,6 +315,8 @@ services:
       context: .
       dockerfile: infrastructure/docker/coturn.Dockerfile
     restart: unless-stopped
+    volumes:
+      - turn-accounting:/var/log/relayrtc-turn
     command:
       - -c
       - /etc/coturn/turnserver.conf
@@ -419,6 +425,7 @@ networks:
         - subnet: 172.30.0.0/24
 
 volumes:
+  turn-accounting:
   postgres-data:
   prometheus-data:
   grafana-data:

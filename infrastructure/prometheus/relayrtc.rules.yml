@@ -6,8 +6,6 @@ groups:
         expr: sum(turn_total_allocations)
       - record: relayrtc_turn_allocations_by_transport
         expr: sum by (type) (turn_total_allocations)
-      - record: relayrtc_turn_sessions
-        expr: sum(turn_total_allocations)
       - record: relayrtc_turn_ingress_bytes_total
         expr: sum(turn_total_traffic_rcvb) + sum(turn_total_traffic_peer_rcvb)
       - record: relayrtc_turn_egress_bytes_total

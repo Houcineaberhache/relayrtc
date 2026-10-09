@@ -28,6 +28,10 @@ ENV API_HOST=0.0.0.0
 ENV API_PORT=8080
 ENV NODE_ENV=production
 
+RUN mkdir -p /var/log/relayrtc-turn \
+  && chown 65534:65533 /var/log/relayrtc-turn \
+  && chmod 0755 /var/log/relayrtc-turn
+
 COPY --from=builder --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=builder --chown=node:node /workspace/packages/auth/package.json ./packages/auth/package.json
 COPY --from=builder --chown=node:node /workspace/packages/auth/dist ./packages/auth/dist
