@@ -247,6 +247,8 @@ export const usageMetricAliases = {
 } as const satisfies Record<string, UsageMetricName>;
 
 export const usageReportingCompatibility = {
+  legacyBytes:
+    "Historical reporting accepts previously stored fractional byte quantities without flooring or rewriting them. New authoritative SFU samples require whole bytes; legacy numeric acceptance does not certify measurement authority.",
   messageNames:
     "Existing reporting responses retain messagesIn/messagesOut; these alias signalingMessagesIn/signalingMessagesOut without changing their units or values.",
   connectionCount:

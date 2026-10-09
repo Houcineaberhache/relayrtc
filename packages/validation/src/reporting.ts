@@ -52,12 +52,12 @@ export const reportingUsageMetricsSchema = z
     audioParticipantSeconds: usageMetricValueSchema("audioParticipantSeconds"),
     videoParticipantSeconds: usageMetricValueSchema("videoParticipantSeconds"),
     screenShareSeconds: usageMetricValueSchema("screenShareSeconds"),
-    screenShareIngressBytes: usageMetricValueSchema("screenShareIngressBytes"),
-    screenShareEgressBytes: usageMetricValueSchema("screenShareEgressBytes"),
-    sfuIngressBytes: usageMetricValueSchema("sfuIngressBytes"),
-    sfuEgressBytes: usageMetricValueSchema("sfuEgressBytes"),
-    turnIngressBytes: usageMetricValueSchema("turnIngressBytes"),
-    turnEgressBytes: usageMetricValueSchema("turnEgressBytes"),
+    screenShareIngressBytes: quantity,
+    screenShareEgressBytes: quantity,
+    sfuIngressBytes: quantity,
+    sfuEgressBytes: quantity,
+    turnIngressBytes: quantity,
+    turnEgressBytes: quantity,
     roomsCreated: usageMetricValueSchema("roomsCreated"),
     peakConcurrentParticipants: usageMetricValueSchema("peakConcurrentParticipants"),
     peakConcurrentRooms: usageMetricValueSchema("peakConcurrentRooms"),
@@ -123,10 +123,10 @@ export const organizationQuotaResponseSchema = z
 const seriesPoint = { startedAt: timestamp, endedAt: timestamp };
 const network = z
   .object({
-    sfuIngressBytes: usageMetricValueSchema("sfuIngressBytes"),
-    sfuEgressBytes: usageMetricValueSchema("sfuEgressBytes"),
-    turnIngressBytes: usageMetricValueSchema("turnIngressBytes"),
-    turnEgressBytes: usageMetricValueSchema("turnEgressBytes"),
+    sfuIngressBytes: quantity,
+    sfuEgressBytes: quantity,
+    turnIngressBytes: quantity,
+    turnEgressBytes: quantity,
   })
   .strict();
 export const projectAnalyticsResponseSchema = z
