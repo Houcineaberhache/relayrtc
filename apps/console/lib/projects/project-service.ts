@@ -11,8 +11,8 @@ import type {
 import { generateResourceSlug } from "@relayrtc/auth"
 import {
   getResourceDeletionImpact,
-  readRoomTerminationConfig,
-  terminateResourceRooms,
+  getRuntimeOperation,
+  type RuntimeOperationView,
   type ResourceDeletionImpact,
 } from "@relayrtc/auth"
 import { and, asc, desc, eq } from "drizzle-orm"
@@ -74,6 +74,9 @@ const getLockedMembership = async (
   organizationId: string,
   userId: string
 ) => {
+  const [organization] = await transaction.select({ status: schema.organization.status })
+    .from(schema.organization).where(eq(schema.organization.id, organizationId)).for("share")
+  if (organization?.status !== "active") return undefined
   const [membership] = await transaction
     .select({ role: schema.member.role })
     .from(schema.member)
@@ -92,6 +95,12 @@ const getLockedProject = async (
   transaction: RelayKitTransaction,
   projectId: string
 ) => {
+  const [parent] = await transaction.select({ organizationId: schema.project.organizationId })
+    .from(schema.project).where(eq(schema.project.id, projectId))
+  if (!parent) return undefined
+  const [organization] = await transaction.select({ status: schema.organization.status })
+    .from(schema.organization).where(eq(schema.organization.id, parent.organizationId)).for("share")
+  if (organization?.status !== "active") return undefined
   const [project] = await transaction
     .select()
     .from(schema.project)
@@ -263,9 +272,8 @@ export const updateProject = async (
 export const deleteProject = async (
   { database, userId }: ProjectServiceContext,
   input: DeleteProjectInput
-): Promise<ProjectResult<{ projectId: string }>> => {
+): Promise<ProjectResult<{ projectId: string; operation: RuntimeOperationView | null }>> => {
   try {
-    const config = readRoomTerminationConfig(process.env)
     const authorization = await database.transaction(async (transaction) => {
       const project = await getLockedProject(transaction, input.projectId)
 
@@ -291,17 +299,9 @@ export const deleteProject = async (
         .where(eq(schema.project.id, project.id))
       return success({ projectId: project.id })
     })
-    if (authorization.error) return authorization
+    if (authorization.error) return failure(authorization.error.code)
 
-    await terminateResourceRooms(database, [input.projectId], config)
-
-    await database.transaction(async (transaction) => {
-      const project = await getLockedProject(transaction, input.projectId)
-      if (!project) throw new Error("Project disappeared during deletion")
-      await transaction.delete(schema.project).where(eq(schema.project.id, project.id))
-    })
-
-    return success({ projectId: input.projectId })
+    return success({ projectId: input.projectId, operation: await getRuntimeOperation(database, `project.delete:${input.projectId}`) })
   } catch {
     return failure("PROJECT_DELETION_FAILED")
   }
@@ -475,17 +475,10 @@ export const deleteEnvironment = async (
         return failure("ENVIRONMENT_PROTECTED")
       }
 
-      await transaction
-        .delete(schema.apiKey)
-        .where(eq(schema.apiKey.environmentId, environment.id))
-      const [deleted] = await transaction
-        .delete(schema.environment)
+      await transaction.update(schema.environment)
+        .set({ status: "deleting", updatedAt: new Date() })
         .where(eq(schema.environment.id, environment.id))
-        .returning({ id: schema.environment.id })
-
-      return deleted
-        ? success({ environmentId: deleted.id, projectId: project.id })
-        : failure("ENVIRONMENT_DELETION_FAILED")
+      return success({ environmentId: environment.id, projectId: project.id })
     })
   } catch {
     return failure("ENVIRONMENT_DELETION_FAILED")

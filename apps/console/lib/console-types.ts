@@ -17,6 +17,7 @@ export interface ConsoleProject {
 }
 
 export interface ConsoleEnvironment {
+  status?: string
   id: string
   projectId: string
   name: string

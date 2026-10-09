@@ -343,6 +343,7 @@ export function EnvironmentsManager({
                     {environment.type}
                   </Badge>
 
+                  {environment.status === 'deleting' ? <Badge variant="outline">Deletion Pending...</Badge> : null}
                   {deletionProtected ? (
                     <Badge variant="outline">
                       <Lock data-icon="inline-start" />
@@ -370,7 +371,7 @@ export function EnvironmentsManager({
                 </div>
               </div>
 
-              {canManage ? (
+              {canManage && environment.status !== 'deleting' ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label={`Actions for ${environment.name}`}

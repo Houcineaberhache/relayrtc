@@ -5,10 +5,8 @@ import { schema } from "@relayrtc/database"
 import {
   authError,
   generateResourceSlug,
-  getDeletionProjectIds,
   getResourceDeletionImpact,
-  readRoomTerminationConfig,
-  terminateResourceRooms,
+  getRuntimeOperation,
   toAuthError,
   transferOrganizationOwnership,
   type TransferOrganizationOwnershipResult,
@@ -66,28 +64,19 @@ export async function deleteOrganizationAction(input: unknown) {
   try {
     const { organizationId, confirmationName } = validation.data
     const owned = await ownedOrganization(organizationId)
-    if (owned.error || !owned.organization || !owned.userId) return { data: null, error: owned.error }
+    if (owned.error) return { data: null, error: owned.error }
     if (confirmationName !== owned.organization.name) {
       return { data: null, error: authError("ORGANIZATION_CONFIRMATION_MISMATCH") }
     }
 
     const database = owned.runtime.database
-    const projectIds = await getDeletionProjectIds(database, { organizationId })
-    if (projectIds.length > 0) {
-      const terminationConfig = readRoomTerminationConfig(process.env)
-      await database.update(schema.project)
-        .set({ status: "deleting", updatedAt: new Date() })
-        .where(eq(schema.project.organizationId, organizationId))
-      await terminateResourceRooms(database, projectIds, terminationConfig)
-    }
-
     await database.transaction(async (transaction) => {
       const [organization] = await transaction
         .select({ name: schema.organization.name })
         .from(schema.organization)
         .where(eq(schema.organization.id, organizationId))
         .for("update")
-      if (!organization || organization.name !== confirmationName) {
+      if (organization?.name !== confirmationName) {
         throw new Error("Organization changed during deletion")
       }
       const [membership] = await transaction
@@ -101,11 +90,11 @@ export async function deleteOrganizationAction(input: unknown) {
       if (!membership?.role.split(",").some((role) => role.trim() === "owner")) {
         throw new Error("Organization owner changed during deletion")
       }
-      await transaction.delete(schema.organization).where(eq(schema.organization.id, organizationId))
+      await transaction.update(schema.organization).set({ status: "deleting", updatedAt: new Date() }).where(eq(schema.organization.id, organizationId))
     })
 
     revalidatePath("/", "layout")
-    return { data: { organizationId }, error: null }
+    return { data: { organizationId, operation: await getRuntimeOperation(database, `organization.delete:${organizationId}`) }, error: null }
   } catch {
     return { data: null, error: authError("ORGANIZATION_DELETION_FAILED") }
   }
