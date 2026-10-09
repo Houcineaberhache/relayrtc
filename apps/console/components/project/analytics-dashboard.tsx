@@ -3,6 +3,7 @@
 import {
   useEffect,
   useId,
+  useTransition,
 } from 'react'
 import {
   usePathname,
@@ -37,7 +38,7 @@ import {
 import type {
   AnalyticsRange,
   ProjectAnalyticsData,
-} from '@/lib/analytics/project-analytics-service'
+} from '@/lib/reporting/analytics-view'
 import type { ConsoleEnvironment } from '@/lib/console-types'
 import {
   formatDuration,
@@ -69,7 +70,7 @@ const ranges: {
 
 const trafficConfig = {
   participants: {
-    label: 'Active participants',
+    label: 'Peak concurrent participants',
     color: 'var(--chart-1)',
   },
   sessions: {
@@ -177,6 +178,7 @@ export function AnalyticsDashboard({
   data: ProjectAnalyticsData
 }) {
   const router = useRouter()
+  const [pending, startTransition] = useTransition()
   const pathname = usePathname()
   const searchParams =
     useSearchParams()
@@ -184,13 +186,13 @@ export function AnalyticsDashboard({
     useId()
 
   useEffect(() => {
-    if (range !== 'live') {
+    if (range !== 'live' || pending) {
       return
     }
 
     const interval =
       window.setInterval(() => {
-        router.refresh()
+        if (!document.hidden) startTransition(() => router.refresh())
       }, 1000)
 
     return () => {
@@ -198,7 +200,7 @@ export function AnalyticsDashboard({
         interval,
       )
     }
-  }, [range, router])
+  }, [range, router, startTransition, pending])
 
   const environmentOptions = [
     {
@@ -259,16 +261,19 @@ export function AnalyticsDashboard({
       )
     }
 
-    router.replace(
+    startTransition(() => router.replace(
       `${pathname}?${params.toString()}`,
       {
         scroll: false,
       },
-    )
+    ))
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" aria-busy={pending}>
+      {pending && <span role="status" className="text-sm text-muted-foreground">Refreshing analytics...</span>}
+      {(data.dataQuality.sessionHistory === 'partial' || data.dataQuality.messageHistory === 'partial') && <p role="status" className="text-sm text-muted-foreground">Some historical activity is unavailable. These totals may be incomplete.</p>}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div
           role="radiogroup"
@@ -388,27 +393,22 @@ export function AnalyticsDashboard({
 
         <StatCard
           label="Participant minutes"
-          value={formatDuration(
-            data.summary
-              .participantSeconds,
-          )}
+          value={formatNumber(data.summary.participantSeconds / 60)}
         />
 
         <StatCard
           label="Connection success"
-          value={`${data.summary.connectionSuccessRate.toFixed(
-            1,
-          )}%`}
+          value={data.summary.totalSessions === 0 ? 'No sessions' : `${data.summary.connectionSuccessRate.toFixed(1)}%`}
         />
       </div>
 
       <Panel>
         <PanelTitle
           title="Traffic"
-          description="Active participants and sessions started"
+          description="Peak concurrent participants and sessions overlapping each bucket (UTC)"
         />
 
-        {data.traffic.length >
+        {data.summary.totalSessions >
         0 ? (
           <ChartContainer
             config={
@@ -767,6 +767,7 @@ export function AnalyticsDashboard({
             description="Average latency between client and SFU"
           />
 
+          {data.quality.some(point => point.sampleCount > 0) ? (
           <ChartContainer
             config={
               rttConfig
@@ -823,6 +824,7 @@ export function AnalyticsDashboard({
               />
             </LineChart>
           </ChartContainer>
+          ) : <AnalyticsEmptyState>No connection quality samples in this period.</AnalyticsEmptyState>}
         </Panel>
 
         <Panel>
@@ -831,6 +833,7 @@ export function AnalyticsDashboard({
             description="Network health across RTC sessions"
           />
 
+          {data.quality.some(point => point.sampleCount > 0) ? (
           <ChartContainer
             config={
               lossConfig
@@ -897,6 +900,7 @@ export function AnalyticsDashboard({
               />
             </LineChart>
           </ChartContainer>
+          ) : <AnalyticsEmptyState>No connection quality samples in this period.</AnalyticsEmptyState>}
         </Panel>
       </div>
 
@@ -1116,9 +1120,7 @@ export function AnalyticsDashboard({
 
                       <td className="py-3 text-right tabular-nums">
                         {formatNumber(
-                          Math.round(
-                            room.minutes,
-                          ),
+                          room.minutes,
                         )}
                       </td>
                     </tr>

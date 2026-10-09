@@ -13,6 +13,7 @@ import {
   Server,
   Settings,
   Settings2,
+  ChartPie,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -63,7 +64,8 @@ function ProjectSidebar({ orgId, projectId, organizations, projects, user, canMa
     { label: 'API keys', href: `${base}/api-keys`, icon: KeyRound },
     { label: 'Environments', href: `${base}/environments`, icon: Layers },
     { label: 'Usage', href: `${base}/usage`, icon: ChartLine },
-    { label: 'Project settings', href: `${base}/settings`, icon: Settings2 },
+    { label: 'Analytics', href: `${base}/analytics`, icon: ChartPie },
+    { label: 'Project Settings', href: `${base}/settings`, icon: Settings2 },
   ]
 
   async function signOut() {
