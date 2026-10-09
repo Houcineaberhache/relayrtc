@@ -42,6 +42,12 @@ export class SignalingClient {
   #opening: { resolve: () => void; reject: (error: RoomError) => void } | undefined;
   #openTimer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
+  #disposed = false;
+  #heartbeat: ReturnType<typeof setInterval> | undefined;
+
+  get connected(): boolean {
+    return !this.#closed && this.#socket?.readyState === 1;
+  }
 
   constructor(
     readonly url: string,
@@ -51,6 +57,13 @@ export class SignalingClient {
   ) {}
 
   connect(token: string): Promise<void> {
+    if (this.#disposed)
+      return Promise.reject(new RoomError("NOT_CONNECTED", "The signaling client has closed"));
+    if (this.#socket)
+      return Promise.reject(
+        new RoomError("SESSION_CONFLICT", "A signaling connection is already active"),
+      );
+    this.#closed = false;
     return new Promise((resolve, reject) => {
       this.#opening = { resolve, reject };
       this.#openTimer = setTimeout(() => {
@@ -107,15 +120,29 @@ export class SignalingClient {
       } catch {
         clearTimeout(timer);
         this.#pending.delete(id);
-        reject(new RoomError("CONNECTION_FAILED", "The signaling request could not be sent", true));
+        const error = new RoomError(
+          "CONNECTION_FAILED",
+          "The signaling request could not be sent",
+          true,
+        );
+        reject(error);
+        this.#fail(error);
       }
     });
     return message.payload as ResponsePayloads[Type];
   }
 
   close(error = new RoomError("CONNECTION_CLOSED", "The signaling connection was closed")): void {
-    if (this.#closed) return;
+    this.#disposed = true;
+    this.disconnect(error);
+  }
+
+  disconnect(
+    error = new RoomError("CONNECTION_CLOSED", "The signaling connection was interrupted", true),
+  ): void {
     this.#closed = true;
+    clearInterval(this.#heartbeat);
+    this.#heartbeat = undefined;
     clearTimeout(this.#openTimer);
     this.#opening?.reject(error);
     this.#opening = undefined;
@@ -137,12 +164,13 @@ export class SignalingClient {
 
   #fail(error: RoomError): void {
     if (this.#closed) return;
-    this.close(error);
+    this.disconnect(error);
     this.onFailure(error);
   }
 
-  readonly #onOpen = (): void => {
-    if (this.#socket?.protocol !== "relayrtc.v1") {
+  readonly #onOpen = (event: Event): void => {
+    if (event.currentTarget !== this.#socket) return;
+    if (this.#socket.protocol !== "relayrtc.v1") {
       this.#fail(
         new RoomError("PROTOCOL_ERROR", "The server did not negotiate RelayRTC protocol v1"),
       );
@@ -151,13 +179,40 @@ export class SignalingClient {
     clearTimeout(this.#openTimer);
     this.#opening?.resolve();
     this.#opening = undefined;
+    const socket = this.#socket;
+    let pinging = false;
+    this.#heartbeat = setInterval(() => {
+      if (pinging || socket !== this.#socket || !this.connected) return;
+      pinging = true;
+      const nonce = crypto.randomUUID();
+      void this.request("heartbeat.ping", { nonce }, "heartbeat.pong")
+        .then((response) => {
+          if (response.nonce !== nonce && socket === this.#socket)
+            this.#fail(
+              new RoomError("PROTOCOL_ERROR", "The heartbeat response does not match the request"),
+            );
+        })
+        .catch((error: unknown) => {
+          if (socket === this.#socket)
+            this.#fail(
+              error instanceof RoomError
+                ? error
+                : new RoomError("CONNECTION_FAILED", "The signaling heartbeat failed", true),
+            );
+        })
+        .finally(() => {
+          pinging = false;
+        });
+    }, 5000);
   };
 
-  readonly #onError = (): void => {
+  readonly #onError = (event: Event): void => {
+    if (event.currentTarget !== this.#socket) return;
     this.#fail(new RoomError("CONNECTION_FAILED", "The signaling connection failed", true));
   };
 
   readonly #onClose = (event: CloseEvent): void => {
+    if (event.currentTarget !== this.#socket) return;
     const code =
       event.code === 4001
         ? "TOKEN_EXPIRED"
@@ -182,6 +237,7 @@ export class SignalingClient {
   };
 
   readonly #onMessage = (event: MessageEvent<unknown>): void => {
+    if (event.currentTarget !== this.#socket) return;
     let input: unknown;
     try {
       if (typeof event.data !== "string" || event.data.length > 1_048_576) throw new Error();
@@ -226,7 +282,6 @@ export class SignalingClient {
         );
       } else {
         pending.resolve(message);
-        if (message.type === "session.resume.accepted") this.onMessage(message);
       }
       return;
     }

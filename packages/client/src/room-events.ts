@@ -13,6 +13,8 @@ export class RoomEventEmitter {
     localParticipantUpdated: new Set(),
     presenceChanged: new Set(),
     credentialsRefreshed: new Set(),
+    reconnectAttempt: new Set(),
+    reconnected: new Set(),
     participantJoined: new Set(),
     participantLeft: new Set(),
     participantUpdated: new Set(),

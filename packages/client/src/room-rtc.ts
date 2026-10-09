@@ -53,6 +53,10 @@ export class RoomRtc {
   readonly #pendingSubscriptions = new Map<string, PendingSubscription>();
   readonly #closedSubscriptions = new Set<string>();
   readonly #renewingIce = new Set<types.Transport>();
+  #suspended = false;
+  #iceOperation = Promise.resolve();
+  readonly #deferredTracks = new Map<string, Track>();
+  readonly #deferredSubscriptions = new Set<string>();
 
   async initialize(
     signaling: SignalingClient,
@@ -184,17 +188,62 @@ export class RoomRtc {
       transport.on("connectionstatechange", (state) => {
         if (
           !this.#closed &&
-          (state === "failed" || (state === "disconnected" && !this.#renewingIce.has(transport)))
+          !this.#renewingIce.has(transport) &&
+          (state === "failed" || state === "disconnected")
         ) {
           onFailure(
-            new RoomError("RTC_SETUP_FAILED", "The media transport lost connectivity", true),
+            new RoomError("ICE_CONNECTION_LOST", "The media transport lost connectivity", true),
           );
         }
       });
     }
   }
 
-  async renewIceServers(iceServers: readonly RTCIceServer[]): Promise<void> {
+  suspend(): void {
+    this.#suspended = true;
+  }
+
+  async resume(tracks: readonly Track[], participantId: string): Promise<void> {
+    this.#assertOpen();
+    this.#suspended = false;
+    const local = tracks.filter(
+      (track) => track.participantId === participantId && track.state !== "unpublished",
+    );
+    const activeIds = new Set([...this.#publications].map((publication) => publication.info.id));
+    if ([...activeIds].some((id) => !local.some((track) => track.id === id)))
+      throw new RoomError(
+        "RTC_STATE_CHANGED",
+        "The media runtime no longer owns the local publications",
+      );
+    for (const track of local)
+      if (!activeIds.has(track.id)) this.#deferredTracks.set(track.id, track);
+    for (const id of [...this.#deferredSubscriptions]) {
+      this.#deferredSubscriptions.delete(id);
+      await this.#closeSubscription(id);
+    }
+    for (const [id, info] of [...this.#deferredTracks]) {
+      this.#deferredTracks.delete(id);
+      if (local.some((track) => track.id === id)) await this.#unpublish(info);
+    }
+  }
+
+  recoverIce(): Promise<void> {
+    return this.#queueIce();
+  }
+
+  renewIceServers(iceServers: readonly RTCIceServer[]): Promise<void> {
+    return this.#queueIce(iceServers);
+  }
+
+  #queueIce(iceServers?: readonly RTCIceServer[]): Promise<void> {
+    const operation = this.#iceOperation
+      .catch(() => undefined)
+      .then(() => this.#restartIce(iceServers));
+    this.#iceOperation = operation;
+    return operation;
+  }
+
+  async #restartIce(iceServers?: readonly RTCIceServer[]): Promise<void> {
     this.#assertOpen();
     const signaling = this.#signaling;
     const scope = this.#scope;
@@ -203,9 +252,10 @@ export class RoomRtc {
     for (const transport of this.#transports) {
       this.#renewingIce.add(transport);
       try {
-        await transport.updateIceServers({ iceServers: structuredClone([...iceServers]) });
+        if (iceServers)
+          await transport.updateIceServers({ iceServers: structuredClone([...iceServers]) });
         this.#assertOpen();
-        if (transport.connectionState === "new") continue;
+        const unused = transport.connectionState === "new";
         const response = await signaling.request(
           "rtc.ice.restart",
           { ...scope, transportId: transport.id },
@@ -222,7 +272,7 @@ export class RoomRtc {
           iceParameters: response.iceParameters as unknown as types.IceParameters,
         });
         this.#assertOpen();
-        await this.#waitForIce(transport);
+        if (!unused) await this.#waitForIce(transport);
       } finally {
         this.#renewingIce.delete(transport);
       }
@@ -243,7 +293,11 @@ export class RoomRtc {
         if (state === "connected") finish();
         else if (state === "failed" || state === "closed")
           finish(
-            new RoomError("TURN_REFRESH_FAILED", "The renewed ICE transport could not connect"),
+            new RoomError(
+              "ICE_RECOVERY_FAILED",
+              "The renewed ICE transport could not connect",
+              true,
+            ),
           );
       };
       const closed = (): void => {
@@ -252,7 +306,7 @@ export class RoomRtc {
         );
       };
       const timer = setTimeout(() => {
-        finish(new RoomError("TURN_REFRESH_FAILED", "The renewed ICE transport timed out"));
+        finish(new RoomError("ICE_RECOVERY_FAILED", "The renewed ICE transport timed out", true));
       }, this.#timeoutMs);
       transport.on("connectionstatechange", changed);
       transport.observer.on("close", closed);
@@ -463,6 +517,10 @@ export class RoomRtc {
     const scope = this.#scope;
     const signaling = this.#signaling;
     if (this.#closed || this.#closedSubscriptions.has(id) || !scope || !signaling) return;
+    if (this.#suspended) {
+      this.#deferredSubscriptions.add(id);
+      return;
+    }
     try {
       const response = await signaling.request(
         "rtc.subscription.close",
@@ -477,6 +535,11 @@ export class RoomRtc {
         );
     } catch (error) {
       if (this.#closedSubscriptions.has(id)) return;
+      if (this.#isSuspended()) {
+        this.#deferredSubscriptions.add(id);
+        return;
+      }
+      if (error instanceof RoomError && error.code === "RESOURCE_NOT_FOUND") return;
       const failure =
         error instanceof RoomError
           ? error
@@ -560,6 +623,10 @@ export class RoomRtc {
     const scope = this.#scope;
     const signaling = this.#signaling;
     if (!scope || !signaling || this.#closed) return;
+    if (this.#suspended) {
+      this.#deferredTracks.set(info.id, info);
+      return;
+    }
     try {
       const response = await signaling.request(
         "rtc.track.control",
@@ -573,6 +640,11 @@ export class RoomRtc {
           "The removed publication does not match the local track",
         );
     } catch (error) {
+      if (this.#isSuspended()) {
+        this.#deferredTracks.set(info.id, info);
+        return;
+      }
+      if (error instanceof RoomError && error.code === "RESOURCE_NOT_FOUND") return;
       const failure =
         error instanceof RoomError
           ? error
@@ -586,9 +658,15 @@ export class RoomRtc {
     if (!this.#closed) this.#onFailure?.(error);
   }
 
+  #isSuspended(): boolean {
+    return this.#suspended;
+  }
+
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#deferredTracks.clear();
+    this.#deferredSubscriptions.clear();
     for (const pending of this.#pendingSubscriptions.values()) {
       pending.cancelled = true;
       pending.cancel?.();

@@ -2,6 +2,7 @@ import { RoomError } from "./room-errors.js";
 import { RoomEventEmitter } from "./room-events.js";
 import { RoomSession } from "./room-session.js";
 import { readParticipantToken } from "./participant-token.js";
+import { recoveryOptions } from "./room-recovery.js";
 import type {
   JoinOptions,
   RelayClientOptions,
@@ -31,6 +32,7 @@ export class RelayClient {
       )
         throw new Error();
       const timeout = options.requestTimeoutMs ?? 10_000;
+      recoveryOptions(options.reconnect);
       const margin = options.credentialRefreshMarginMs ?? 60_000;
       if (!Number.isInteger(margin) || margin < 1000 || margin > 300_000) throw new Error();
       if (options.refreshToken !== undefined && typeof options.refreshToken !== "function")
@@ -47,6 +49,7 @@ export class RelayClient {
         throw new Error();
       this.#options = {
         ...options,
+        ...(options.reconnect ? { reconnect: { ...options.reconnect } } : {}),
         signalingUrl: url.href,
         ...(options.iceServers ? { iceServers: structuredClone(options.iceServers) } : {}),
         ...(options.turnCredentials

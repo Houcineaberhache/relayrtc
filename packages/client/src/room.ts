@@ -11,7 +11,15 @@ import type {
   RoomTextMessage,
 } from "./room-messaging-types.js";
 
-export type RoomConnectionState = "connecting" | "connected" | "disconnected" | "failed";
+export type RoomConnectionState =
+  "connecting" | "connected" | "reconnecting" | "disconnected" | "failed";
+
+export interface RoomReconnectOptions {
+  readonly maxAttempts?: number;
+  readonly timeoutMs?: number;
+  readonly initialDelayMs?: number;
+  readonly maxDelayMs?: number;
+}
 
 export interface RoomEvents {
   readonly connectionStateChanged: RoomConnectionState;
@@ -23,6 +31,12 @@ export interface RoomEvents {
   readonly localParticipantUpdated: RoomLocalParticipant;
   readonly presenceChanged: RoomPresenceSnapshot;
   readonly credentialsRefreshed: RoomCredentialSnapshot;
+  readonly reconnectAttempt: {
+    readonly attempt: number;
+    readonly delayMs: number;
+    readonly error: RoomError;
+  };
+  readonly reconnected: { readonly attempts: number; readonly session: ParticipantSession };
   readonly participantJoined: RoomRemoteParticipant;
   readonly participantLeft: RoomRemoteParticipant;
   readonly participantUpdated: RoomRemoteParticipant;
@@ -63,6 +77,7 @@ export interface RelayClientOptions extends RoomCredentialOptions {
   readonly iceServers?: readonly RTCIceServer[];
   readonly iceTransportPolicy?: RTCIceTransportPolicy;
   readonly autoSubscribe?: boolean;
+  readonly reconnect?: false | RoomReconnectOptions;
 }
 
 export interface JoinOptions {

@@ -14,6 +14,11 @@ interface IceCredentials {
 
 export class SessionRefresh {
   #closed = false;
+  #paused = false;
+  #pauseVersion = 0;
+  #rawToken = "";
+  #candidate: { token: string; info: ParticipantTokenInfo } | undefined;
+  #candidateTurn: IceCredentials | undefined;
   #scope: ParticipantJoinAcceptedPayload | undefined;
   #token: ParticipantTokenInfo | undefined;
   #turn: IceCredentials | undefined;
@@ -34,6 +39,7 @@ export class SessionRefresh {
     scope: ParticipantJoinAcceptedPayload,
   ): Promise<readonly RTCIceServer[] | undefined> {
     this.#scope = scope;
+    this.#rawToken = token;
     this.#token = readParticipantToken(token);
     this.#schedule("token", this.#token.expiresAt, !!this.options.refreshToken);
     const turnProvider = this.options.refreshTurnCredentials;
@@ -89,6 +95,52 @@ export class SessionRefresh {
     if (this.options.refreshTurnCredentials) await this.#renew("turn", "manual");
   }
 
+  pause(): void {
+    this.#paused = true;
+    this.#pauseVersion++;
+    for (const kind of ["token", "turn"]) {
+      clearTimeout(this.#timers.get(`${kind}:renew`));
+      this.#timers.delete(`${kind}:renew`);
+    }
+  }
+
+  async resumeToken(): Promise<string> {
+    await this.#pending.get("token")?.catch(() => undefined);
+    this.#assertOpen();
+    const token = this.#candidate?.token ?? this.#rawToken;
+    readParticipantToken(token);
+    return token;
+  }
+
+  async resumed(): Promise<void> {
+    const version = this.#pauseVersion;
+    await this.#pending.get("turn")?.catch(() => undefined);
+    this.#assertOpen();
+    if (version !== this.#pauseVersion)
+      throw new RoomError("NOT_CONNECTED", "Credential recovery was interrupted");
+    if (this.#candidate) {
+      this.#token = this.#candidate.info;
+      this.#rawToken = this.#candidate.token;
+      this.#candidate = undefined;
+    }
+    if (this.#candidateTurn) {
+      const next = this.#candidateTurn;
+      await this.#bounded(
+        () => this.rtc.renewIceServers([...(this.options.iceServers ?? []), ...next.iceServers]),
+        "TURN_REFRESH_FAILED",
+      );
+      this.#assertOpen();
+      if (version !== this.#pauseVersion)
+        throw new RoomError("NOT_CONNECTED", "Credential recovery was interrupted");
+      this.#turn = next;
+      this.#candidateTurn = undefined;
+    }
+    this.#paused = false;
+    if (this.#token) this.#schedule("token", this.#token.expiresAt, !!this.options.refreshToken);
+    if (this.#turn)
+      this.#schedule("turn", this.#turn.expiresAt, !!this.options.refreshTurnCredentials);
+  }
+
   #context(
     kind: CredentialKind,
     reason: CredentialRefreshContext["reason"],
@@ -117,6 +169,12 @@ export class SessionRefresh {
       `${kind}:expiry`,
       setTimeout(
         () => {
+          const replacement =
+            kind === "token" ? this.#candidate?.info.expiresAt : this.#candidateTurn?.expiresAt;
+          if (this.#paused && replacement !== undefined && replacement > Date.now()) {
+            this.#schedule(kind, replacement, false);
+            return;
+          }
           if (!this.#closed)
             this.onFailure(
               new RoomError(
@@ -128,7 +186,7 @@ export class SessionRefresh {
         Math.max(0, Math.min(remaining, 2_147_483_647)),
       ),
     );
-    if (renewable) {
+    if (renewable && !this.#paused) {
       const margin = Math.min(
         this.options.credentialRefreshMarginMs ?? 60_000,
         Math.max(250, remaining / 2),
@@ -146,6 +204,10 @@ export class SessionRefresh {
   }
 
   #renew(kind: CredentialKind, reason: "manual" | "expiring"): Promise<void> {
+    if (this.#paused)
+      return Promise.reject(
+        new RoomError("NOT_CONNECTED", "Credential renewal is paused during room recovery"),
+      );
     const existing = this.#pending.get(kind);
     if (existing) return existing;
     const operation = this.#performRenewal(kind, reason).catch((error: unknown) => {
@@ -156,7 +218,16 @@ export class SessionRefresh {
               kind === "token" ? "TOKEN_REFRESH_FAILED" : "TURN_REFRESH_FAILED",
               "The application could not renew room credentials",
             );
-      if (!this.#closed) this.onFailure(failure);
+      const interrupted =
+        this.#paused &&
+        [
+          "CONNECTION_FAILED",
+          "CONNECTION_CLOSED",
+          "NOT_CONNECTED",
+          "REQUEST_TIMEOUT",
+          "ICE_RECOVERY_FAILED",
+        ].includes(failure.code);
+      if (!this.#closed && !interrupted) this.onFailure(failure);
       throw failure;
     });
     this.#pending.set(kind, operation);
@@ -202,6 +273,8 @@ export class SessionRefresh {
         );
       if (next.expiresAt <= current.expiresAt)
         throw new RoomError("TOKEN_REFRESH_FAILED", "The replacement token must extend expiration");
+      this.#candidate = { token, info: next };
+      if (this.#paused) return;
       try {
         const response = await this.signaling.request(
           "session.refresh",
@@ -230,6 +303,8 @@ export class SessionRefresh {
         throw error;
       }
       this.#token = next;
+      this.#rawToken = token;
+      this.#candidate = undefined;
       this.#schedule("token", next.expiresAt, true);
     } else {
       const provider = this.options.refreshTurnCredentials;
@@ -248,12 +323,15 @@ export class SessionRefresh {
           "TURN_REFRESH_FAILED",
           "The replacement TURN credentials must extend expiration",
         );
+      this.#candidateTurn = next;
+      if (this.#paused) return;
       await this.#bounded(
         () => this.rtc.renewIceServers([...(this.options.iceServers ?? []), ...next.iceServers]),
         "TURN_REFRESH_FAILED",
       );
       this.#assertOpen();
       this.#turn = next;
+      this.#candidateTurn = undefined;
       this.#schedule("turn", next.expiresAt, true);
     }
     const token = this.#token;
