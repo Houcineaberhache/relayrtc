@@ -1,4 +1,6 @@
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { roomIdSchema, sessionIdSchema } from "@relayrtc/validation";
 
 import { requireApiKeyScope } from "../../authentication/authentication-plugin.js";
 import { ApiError } from "../../http/errors/api-error.js";
@@ -56,7 +58,30 @@ export const turnCredentialRoutes: FastifyPluginCallback<TurnCredentialRoutesOpt
       preHandler: requireApiKeyScope("tokens:create"),
       schema: { response: { 201: responseSchema } },
     },
-    (request, reply) => reply.status(201).send(options.issuer.issue(requestScope(request))),
+    async (request, reply) => {
+      const parsed = z
+        .object({ roomId: roomIdSchema.optional(), sessionId: sessionIdSchema.optional() })
+        .strict()
+        .refine(
+          (value) => (value.roomId === undefined) === (value.sessionId === undefined),
+          "Provide roomId and sessionId together",
+        )
+        .safeParse(request.body ?? {});
+      if (!parsed.success)
+        throw new ApiError(
+          400,
+          "INVALID_REQUEST",
+          "Provide valid roomId and sessionId together, or an empty body",
+        );
+      const body = parsed.data;
+      const credentials = await options.issuer.issue({
+        ...requestScope(request),
+        ...(body.roomId && body.sessionId
+          ? { roomId: body.roomId, sessionId: body.sessionId }
+          : {}),
+      });
+      return reply.status(201).send(credentials);
+    },
   );
   done();
 };
