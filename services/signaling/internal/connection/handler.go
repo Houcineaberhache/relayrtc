@@ -465,7 +465,8 @@ func (handler *Handler) handleRTCMessage(client *client, claims auth.Claims, joi
 
 	operationContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	response, err := handler.rtcService.Handle(operationContext, claims, RTCSignalRequest{
-		Type: request.Type, RoomID: scope.RoomID, SessionID: scope.SessionID,
+		RequestID: request.ID,
+		Type:      request.Type, RoomID: scope.RoomID, SessionID: scope.SessionID,
 		ParticipantID: claims.ParticipantID, Payload: request.Payload,
 	})
 	cancel()
