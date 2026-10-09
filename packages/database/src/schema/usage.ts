@@ -18,16 +18,10 @@ export const usageEvent = pgTable(
   "usage_event",
   {
     id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => project.id, { onDelete: "cascade" }),
-    environmentId: text("environment_id")
-      .notNull()
-      .references(() => environment.id, { onDelete: "cascade" }),
-    roomId: text("room_id").references(() => room.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id").notNull(),
+    projectId: text("project_id").notNull(),
+    environmentId: text("environment_id").notNull(),
+    roomId: text("room_id"),
     region: text("region"),
     metric: text("metric").notNull(),
     value: doublePrecision("value").notNull(),
@@ -41,6 +35,7 @@ export const usageEvent = pgTable(
       table.occurredAt,
     ),
     index("usage_event_room_time_idx").on(table.roomId, table.occurredAt),
+    index("usage_event_retention_idx").on(table.occurredAt),
     check("usage_event_value_check", sql`${table.value} >= 0`),
   ],
 );
@@ -49,13 +44,9 @@ export const usageAggregate = pgTable(
   "usage_aggregate",
   {
     id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    projectId: text("project_id").references(() => project.id, { onDelete: "cascade" }),
-    environmentId: text("environment_id").references(() => environment.id, {
-      onDelete: "cascade",
-    }),
+    organizationId: text("organization_id").notNull(),
+    projectId: text("project_id"),
+    environmentId: text("environment_id"),
     granularity: text("granularity").notNull(),
     windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
     windowEndedAt: timestamp("window_ended_at", { withTimezone: true }).notNull(),
@@ -76,6 +67,7 @@ export const usageAggregate = pgTable(
       table.granularity,
       table.windowStartedAt,
     ),
+    index("usage_aggregate_retention_idx").on(table.windowEndedAt),
     check(
       "usage_aggregate_granularity_check",
       sql`${table.granularity} in ('hour', 'day', 'month')`,

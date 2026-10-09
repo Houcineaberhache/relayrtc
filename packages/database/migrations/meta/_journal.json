@@ -99,6 +99,13 @@
       "when": 1791583200000,
       "tag": "0013_signaling_usage_samples",
       "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791583200001,
+      "tag": "0014_retained_usage_history",
+      "breakpoints": false
     }
   ]
 }
