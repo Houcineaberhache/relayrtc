@@ -17,6 +17,12 @@ const start = async (): Promise<void> => {
     }),
     metricsStore: createQualityMetricsStore(database.db),
     usageMetricsStore: createMediaUsageMetricsStore(database.db),
+    onUsageError: (error) => {
+      console.error(
+        "Media usage persistence failed",
+        error instanceof Error ? error.name : "UnknownError",
+      );
+    },
   });
   await engine.start();
   const usageTimer = setInterval(() => void engine.flushUsage(), 2_000);
@@ -24,7 +30,7 @@ const start = async (): Promise<void> => {
   const app = buildApp({ config, engine });
   app.addHook("onClose", async () => {
     clearInterval(usageTimer);
-    await engine.flushUsage();
+    await engine.close();
     await database.close();
   });
 

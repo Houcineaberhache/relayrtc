@@ -17,13 +17,27 @@ export type MediaUsageMetric =
 
 export interface MediaUsageMetricsStore {
   record(roomId: string, metric: MediaUsageMetric, value: number): Promise<void>;
+  recordBatch?(
+    roomId: string,
+    sampleId: string,
+    metrics: Partial<Record<MediaUsageMetric, number>>,
+    occurredAt: Date,
+  ): Promise<void>;
 }
 
 export const createMediaUsageMetricsStore = (
   database: RelayKitDatabase,
-): MediaUsageMetricsStore => ({
-  async record(roomId, metric, value) {
-    if (!Number.isFinite(value) || value <= 0) return;
+): Required<MediaUsageMetricsStore> => {
+  const recordBatch = async (
+    roomId: string,
+    sampleId: string,
+    metrics: Partial<Record<MediaUsageMetric, number>>,
+    occurredAt: Date,
+  ) => {
+    const values = Object.entries(metrics).filter(
+      ([, value]) => Number.isFinite(value) && value > 0,
+    );
+    if (values.length === 0) return;
     const [scope] = await database
       .select({
         environmentId: schema.room.environmentId,
@@ -35,12 +49,23 @@ export const createMediaUsageMetricsStore = (
       .where(eq(schema.room.id, roomId))
       .limit(1);
     if (!scope) return;
-    await database.insert(schema.usageEvent).values({
-      id: `usage_event_${randomUUID()}`,
-      metric,
-      roomId,
-      value: Math.floor(value),
-      ...scope,
-    });
-  },
-});
+    await database
+      .insert(schema.usageEvent)
+      .values(
+        values.map(([metric, value]) => ({
+          id: `usage_event_${sampleId}_${metric}`,
+          metric,
+          roomId,
+          value,
+          occurredAt,
+          ...scope,
+        })),
+      )
+      .onConflictDoNothing();
+  };
+  return {
+    recordBatch,
+    record: (roomId, metric, value) =>
+      recordBatch(roomId, randomUUID(), { [metric]: value }, new Date()),
+  };
+};
