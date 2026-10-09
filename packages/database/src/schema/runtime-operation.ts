@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 export const runtimeOperation = pgTable(
   "runtime_operation",
@@ -31,8 +40,35 @@ export const runtimeOperation = pgTable(
     ),
     check(
       "runtime_operation_kind_check",
-      sql`${table.kind} in ('room.end', 'project.delete', 'organization.delete', 'environment.delete')`,
+      sql`${table.kind} in ('room.end', 'participant.remove', 'project.delete', 'organization.delete', 'environment.delete')`,
     ),
     check("runtime_operation_attempts_check", sql`${table.attempts} >= 0`),
+  ],
+);
+
+export const participantRemovalTarget = pgTable(
+  "participant_removal_target",
+  {
+    operationId: text("operation_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    participantId: text("participant_id").notNull(),
+    roomId: text("room_id").notNull(),
+    signalingNodeId: text("signaling_node_id").notNull(),
+    status: text("status").default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.operationId, table.sessionId] }),
+    index("participant_removal_target_due_idx").on(
+      table.signalingNodeId,
+      table.status,
+      table.availableAt,
+    ),
+    check(
+      "participant_removal_target_status_check",
+      sql`${table.status} in ('pending', 'failed', 'completed')`,
+    ),
   ],
 );

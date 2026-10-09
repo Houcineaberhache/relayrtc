@@ -120,6 +120,41 @@
       "when": 1791583200003,
       "tag": "0016_runtime_operations",
       "breakpoints": false
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791583200004,
+      "tag": "0017_participant_removal",
+      "breakpoints": false
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791583200005,
+      "tag": "0018_room_cleanup_coordination",
+      "breakpoints": false
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791583200006,
+      "tag": "0019_environment_deletion_guard",
+      "breakpoints": false
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791583200007,
+      "tag": "0020_signaling_owner_lease",
+      "breakpoints": false
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791583200008,
+      "tag": "0021_media_room_runtime",
+      "breakpoints": false
     }
   ]
 }
