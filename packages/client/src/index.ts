@@ -12,3 +12,6 @@ export * from "./rtc-errors.js";
 export * from "./rtc-types.js";
 export * from "./screen-share.js";
 export * from "./types.js";
+export * from "./relay-client.js";
+export * from "./room.js";
+export * from "./room-errors.js";
