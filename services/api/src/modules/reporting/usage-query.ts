@@ -42,10 +42,17 @@ const usageSummary = (projectId: SQL | null): SQL => {
       from participant_intervals p where ${projectFilter("p", projectId)}), 0),
     'roomsCreated', (select count(*) from scoped_rooms r, bounds b
       where r.created_at >= b.starts and r.created_at < b.ends and ${projectFilter("r", projectId)}),
+    'roomsStarted', (select count(*) from scoped_rooms r, bounds b
+      where r.started_at >= b.starts and r.started_at < b.ends and ${projectFilter("r", projectId)}),
+    'roomSeconds', coalesce((select sum(extract(epoch from ends - starts))
+      from room_intervals r where ${projectFilter("r", projectId)}), 0),
+    'averageConcurrentParticipants', coalesce((select sum(extract(epoch from ends - starts))
+      from participant_intervals p where ${projectFilter("p", projectId)}), 0)
+      / (select extract(epoch from ends - starts) from bounds),
     'peakConcurrentParticipants', ${peak("participant_events")},
     'peakConcurrentRooms', ${peak("room_events")},
-    'signalingConnections', (select count(*) from scoped_sessions s, bounds b
-      where s.joined_at >= b.starts and s.joined_at < b.ends and ${projectFilter("s", projectId)}),
+    'signalingConnections', (select count(*) from scoped_lifecycle_events s
+      where s.event_type = 'connection.opened' and ${projectFilter("s", projectId)}),
     'signalingConnectionSeconds', coalesce((select sum(extract(epoch from ends - starts))
       from connections c where ${projectFilter("c", projectId)}), 0),
     ${sql.join(pairs, sql`, `)}
@@ -58,6 +65,15 @@ const historyComplete = (projectId: SQL | null): SQL => sql`not exists (
     and s.joined_at < b.ends
     and coalesce(s.disconnected_at, s.left_at, s.room_ended_at, b.ends) > b.starts
     and ${projectFilter("s", projectId)}
+) and not exists (
+  select 1 from connections c join scoped_sessions s on s.id = c.session_id
+  where c.ends = s.owner_expires_at and ${projectFilter("c", projectId)}
+) and not exists (
+  select 1 from scoped_lifecycle_events e where e.boundary = 'lease_bound'
+    and ${projectFilter("e", projectId)}
+) and not exists (
+  select 1 from room_intervals r where r.ends = r.owner_expires_at
+    and ${projectFilter("r", projectId)}
 )`;
 
 export function createUsageReportQuery(
@@ -100,7 +116,7 @@ export function createUsageReportQuery(
           coalesce(i.ended_at,
             case when s.connection_state = 'connected' then b.ends else s.disconnected_at end,
             i.started_at),
-          s.left_at, s.room_ended_at, b.ends
+          s.left_at, s.room_ended_at, s.owner_expires_at, b.ends
         ) as ends
       from usage_history_interval i
       join scoped_sessions s on s.id = i.session_id
@@ -124,10 +140,10 @@ export function createUsageReportQuery(
       select project_id, starts as at, 1 as delta from participant_intervals
       union all select project_id, ends as at, -1 as delta from participant_intervals
     ), clipped_rooms as (
-      select r.project_id, greatest(coalesce(r.started_at, r.created_at), b.starts) as starts,
+      select r.project_id, r.owner_expires_at, greatest(coalesce(r.started_at, r.created_at), b.starts) as starts,
         least(coalesce(r.ended_at,
           case when r.status in ('active', 'ending') then b.ends else r.started_at end,
-          r.created_at), b.ends) as ends
+          r.created_at), r.owner_expires_at, b.ends) as ends
       from scoped_rooms r cross join bounds b
       where r.started_at is not null or r.status in ('active', 'ending')
     ), room_intervals as (
@@ -135,6 +151,9 @@ export function createUsageReportQuery(
     ), room_events as (
       select project_id, starts as at, 1 as delta from room_intervals
       union all select project_id, ends as at, -1 as delta from room_intervals
+    ), scoped_lifecycle_events as (
+      select e.* from usage_lifecycle_event e join scoped_rooms r on r.id = e.room_id
+      cross join bounds b where e.occurred_at >= b.starts and e.occurred_at < b.ends
     ), scoped_usage_events as (
       select ue.* from usage_event ue
       join scoped_projects pr on pr.id = ue.project_id cross join bounds b
@@ -160,7 +179,7 @@ export function createUsageReportQuery(
       where at at time zone 'UTC' < b.ends
     ), history as (
       select ${historyComplete(null)} as complete
-    )
+)
     ${
       projection ??
       sql`select ${usageSummary(null)} as summary,
