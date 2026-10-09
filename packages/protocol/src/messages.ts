@@ -90,8 +90,18 @@ import {
   rtcTransportCreatedResponseSchema,
   rtcTransportCreateRequestSchema,
 } from "./rtc.js";
-import type { SessionResumeAcceptedResponse, SessionResumeRequest } from "./session.js";
-import { sessionResumeAcceptedResponseSchema, sessionResumeRequestSchema } from "./session.js";
+import type {
+  SessionResumeAcceptedResponse,
+  SessionResumeRequest,
+  SessionRefreshRequest,
+  SessionRefreshAcceptedResponse,
+} from "./session.js";
+import {
+  sessionResumeAcceptedResponseSchema,
+  sessionResumeRequestSchema,
+  sessionRefreshRequestSchema,
+  sessionRefreshAcceptedResponseSchema,
+} from "./session.js";
 import type {
   TrackPausedEvent,
   TrackPublishedEvent,
@@ -122,6 +132,7 @@ export const protocolRequestTypes = [
   "rtc.subscription.resume",
   "rtc.subscription.close",
   "session.resume",
+  "session.refresh",
 ] as const;
 
 export const protocolResponseTypes = [
@@ -141,6 +152,7 @@ export const protocolResponseTypes = [
   "rtc.subscription.resumed",
   "rtc.subscription.close.accepted",
   "session.resume.accepted",
+  "session.refresh.accepted",
 ] as const;
 
 export const protocolEventTypes = [
@@ -176,7 +188,8 @@ export type ProtocolRequestMessage =
   | RtcTrackPublishRequest
   | RtcTrackControlRequest
   | RtcTrackSubscribeRequest
-  | SessionResumeRequest;
+  | SessionResumeRequest
+  | SessionRefreshRequest;
 
 export type ProtocolResponseMessage =
   | HeartbeatPongResponse
@@ -194,7 +207,8 @@ export type ProtocolResponseMessage =
   | RtcTrackSubscribedResponse
   | RtcSubscriptionResumedResponse
   | RtcSubscriptionCloseAcceptedResponse
-  | SessionResumeAcceptedResponse;
+  | SessionResumeAcceptedResponse
+  | SessionRefreshAcceptedResponse;
 
 export type ProtocolEventMessage =
   | RoomEndedEvent
@@ -230,6 +244,8 @@ export const protocolMessageTypes = [
 ] as const satisfies readonly ProtocolMessageType[];
 
 export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminatedUnion("type", [
+  sessionRefreshRequestSchema,
+  sessionRefreshAcceptedResponseSchema,
   heartbeatPingRequestSchema,
   heartbeatPongResponseSchema,
   textMessageSendRequestSchema,

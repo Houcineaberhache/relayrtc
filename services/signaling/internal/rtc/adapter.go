@@ -108,6 +108,13 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 		if err != nil {
 			return err
 		}
+		if command.Request.Operation == "subscription.already-removed" {
+			response = Response{Type: command.ResponseType, Payload: map[string]any{
+				"roomId": scope.RoomID, "sessionId": scope.SessionID,
+				"subscriptionId": command.Metadata["subscriptionId"],
+			}}
+			return nil
+		}
 		if len(session.Receipts) >= 4096 || (command.Request.Operation == "transport.create" && len(session.Transports) >= 128) || (command.Request.Operation == "track.publish" && len(session.Tracks) >= 256) || (command.Request.Operation == "track.subscribe" && len(session.Subscriptions) >= 512) {
 			return ErrUnavailable
 		}
