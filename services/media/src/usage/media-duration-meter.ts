@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { persistUsageSample } from "./usage-sample-batch.js";
 import { usageMediaDurationMetrics } from "@relayrtc/types";
 import type { MediaUsageMetricsStore } from "./usage-metrics-store.js";
 
@@ -52,29 +53,39 @@ export class MediaDurationMeter {
     group.sampledAt = Math.max(at, group.sampledAt);
   }
 
-  async flush(roomId: string, at = Date.now()) {
+  async flush(roomId: string, at = Date.now(), terminal = false) {
     await Promise.all(
       [...this.#groups.entries()].map(async ([key, group]) => {
         this.#accrue(group, at);
-        if (group.recording) return group.recording;
+        if (group.recording) {
+          if (!terminal) return group.recording;
+          await group.recording.catch(() => undefined);
+        }
         if (!group.pending && group.seconds <= 0) {
           if (group.tracks.size === 0) this.#groups.delete(key);
           return;
         }
-        group.pending ??= { id: randomUUID(), seconds: group.seconds, occurredAt: new Date(at) };
-        const pending = group.pending;
         group.recording = (async () => {
-          if (this.store.recordBatch)
-            await this.store.recordBatch(
+          for (let attempt = 0; attempt < (terminal ? 2 : 1); attempt++) {
+            if (!group.pending && group.seconds <= 0) break;
+            group.pending ??= {
+              id: randomUUID(),
+              seconds: group.seconds,
+              occurredAt: new Date(at),
+            };
+            const pending = group.pending;
+            await persistUsageSample(
+              this.store,
               roomId,
               pending.id,
               { [group.metric]: pending.seconds },
               pending.occurredAt,
             );
-          else await this.store.record(roomId, group.metric, pending.seconds);
-          group.seconds = Math.max(0, group.seconds - pending.seconds);
-          delete group.pending;
-          if (group.tracks.size === 0 && group.seconds === 0) this.#groups.delete(key);
+            group.seconds = Math.max(0, group.seconds - pending.seconds);
+            delete group.pending;
+          }
+          if (group.tracks.size === 0 && group.seconds === 0 && this.#groups.get(key) === group)
+            this.#groups.delete(key);
         })().finally(() => {
           group.recording = undefined;
         });
