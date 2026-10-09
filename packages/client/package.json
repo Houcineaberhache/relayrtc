@@ -25,5 +25,10 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@relayrtc/protocol": "workspace:*",
+    "@relayrtc/types": "workspace:*",
+    "mediasoup-client": "^3.24.5"
   }
 }
