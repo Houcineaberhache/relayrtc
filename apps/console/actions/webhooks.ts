@@ -9,7 +9,7 @@ import {
 } from '@relayrtc/validation'
 import { z } from 'zod'
 import { requestWebhooks, WebhookApiError } from '@/lib/webhooks/client'
-import { unavailableWebhookError, webhookSignatureInfoSchema, type WebhookResult } from '@/lib/webhooks/contracts'
+import { unavailableWebhookError, type WebhookResult } from '@/lib/webhooks/contracts'
 
 const scopeSchema = z.object({ projectId: projectIdSchema, environmentId: environmentIdSchema }).strict()
 const endpointSchema = scopeSchema.extend({ endpointId: webhookEndpointIdSchema })
@@ -61,8 +61,4 @@ export async function replayWebhookDeliveryAction(input: unknown) {
   return perform(deliverySchema.extend({ replay: replayWebhookDeliveryInputSchema }), input,
     ({ projectId, environmentId, endpointId, deliveryId, replay }) => requestWebhooks(projectId, environmentId,
       `/${encodeURIComponent(endpointId)}/deliveries/${encodeURIComponent(deliveryId)}/replay`, webhookDeliveryRecordSchema, { method: 'POST', body: replay }), true)
-}
-export async function getWebhookSignatureInfoAction(input: unknown) {
-  return perform(scopeSchema, input, ({ projectId, environmentId }) =>
-    requestWebhooks(projectId, environmentId, '/signature-contract', webhookSignatureInfoSchema))
 }

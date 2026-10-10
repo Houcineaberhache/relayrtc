@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Edit3, List, LoaderCircle, MoreHorizontal, Pause, Play, Plus, RotateCw, Search, ShieldCheck, Trash2, Webhook } from 'lucide-react'
+import { Edit3, List, LoaderCircle, MoreHorizontal, Pause, Play, Plus, RotateCw, Search, Trash2, Webhook } from 'lucide-react'
 import { webhookConfigurationSchema } from '@relayrtc/validation'
 import { deleteWebhookEndpointAction, listWebhookEndpointsAction, rotateWebhookSecretAction, updateWebhookEndpointAction } from '@/actions/webhooks'
 import { AuthErrorMessage } from '@/components/auth/auth-error-message'
@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { EndpointForm } from '@/components/webhooks/endpoint-form'
 import { WebhookDeliveries } from '@/components/webhooks/deliveries'
-import { SigningInfo } from '@/components/webhooks/signing-info'
 import type { ConsoleEnvironment } from '@/lib/console-types'
 import { eventGroups, unavailableWebhookError, type WebhookConfiguration, type WebhookError } from '@/lib/webhooks/contracts'
 
@@ -47,7 +46,6 @@ export function WebhooksManager({ projectId, environmentId, environments, endpoi
   const [actionError, setActionError] = useState<WebhookError | null>(null)
   const [secret, setSecret] = useState<string | null>(null)
   const [deliveryEndpoint, setDeliveryEndpoint] = useState<WebhookConfiguration | null>(null)
-  const [signingOpen, setSigningOpen] = useState(false)
   const environment = environments.find((candidate) => candidate.id === environmentId)
   const busy = formPending || actionPending
   const visible = rows.filter((endpoint) => `${endpoint.url} ${endpoint.id} ${endpoint.eventTypes.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -138,7 +136,6 @@ export function WebhooksManager({ projectId, environmentId, environments, endpoi
         }} /> : null}
       <div className="flex items-center gap-2 sm:ml-auto">
         {!canManage ? <Badge variant="outline">Read only</Badge> : null}
-        <Button variant="ghost" disabled={!environment || busy} onClick={() => setSigningOpen(true)}><ShieldCheck />Signing & retries</Button>
         <Button variant="outline" size="icon" aria-label="Refresh endpoints" disabled={!environment || refreshing || busy} onClick={() => { void refresh() }}><RotateCw className={refreshing ? 'animate-spin' : ''} /></Button>
       </div>
     </div>
@@ -206,6 +203,5 @@ export function WebhooksManager({ projectId, environmentId, environments, endpoi
         <DialogFooter><Button onClick={() => setSecret(null)}>Done</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-    <Dialog open={signingOpen} onOpenChange={setSigningOpen}><DialogContent className="sm:max-w-lg"><SigningInfo projectId={projectId} environmentId={environmentId} /></DialogContent></Dialog>
   </div>
 }

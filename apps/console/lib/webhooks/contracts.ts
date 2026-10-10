@@ -30,20 +30,3 @@ export const eventGroups: readonly { label: string; events: readonly { value: We
     { value: 'connection.recovered', label: 'Connection recovered' },
   ] },
 ]
-export const webhookSignatureInfoSchema = z.object({
-  algorithm: z.string(),
-  signatureHeader: z.string(),
-  deliveryIdHeader: z.string(),
-  replayCountHeader: z.string(),
-  secretVersionHeader: z.string(),
-  signedContent: z.string(),
-  signatureFormat: z.string(),
-  secretEncoding: z.string(),
-  toleranceSeconds: z.number().int().positive(),
-  attemptsPerRun: z.number().int().positive(),
-  maximumExplicitReplays: z.number().int().positive(),
-  maximumRunAgeDays: z.number().int().positive(),
-  terminalRetentionDays: z.number().int().positive(),
-  backoffSeconds: z.array(z.number().int().positive()),
-})
-export type WebhookSignatureInfo = z.infer<typeof webhookSignatureInfoSchema>
