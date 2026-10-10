@@ -183,6 +183,13 @@
       "when": 1791583200012,
       "tag": "0025_turn_allocation_accounting",
       "breakpoints": false
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791583200013,
+      "tag": "0026_webhook_configuration",
+      "breakpoints": false
     }
   ]
 }

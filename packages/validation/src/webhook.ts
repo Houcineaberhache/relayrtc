@@ -26,8 +26,14 @@ export const webhookDeliveryStatusSchema = z.enum(webhookDeliveryStatuses);
 
 export const webhookUrlSchema = z.url().refine(
   (value) => {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username &&
+      !url.password &&
+      !url.hash &&
+      value.length <= 2048
+    );
   },
   { message: "Webhook URL must use HTTP or HTTPS" },
 );
@@ -56,9 +62,59 @@ export const webhookEndpointSchema: z.ZodType<WebhookEndpoint> = z
 export const storedWebhookEndpointSchema: z.ZodType<StoredWebhookEndpoint> = z
   .object({
     ...webhookEndpointShape,
-    hashedSigningSecret: z.string().min(32).max(512),
+    encryptedSigningSecret: z.string().min(32).max(512),
+    signingSecretVersion: z.number().int().positive(),
   })
   .strict();
+
+export const createWebhookInputSchema = z
+  .object({
+    url: webhookUrlSchema,
+    eventTypes: webhookEndpointShape.eventTypes,
+    status: webhookEndpointStatusSchema.default("enabled"),
+  })
+  .strict();
+export const updateWebhookInputSchema = z
+  .object({
+    url: webhookUrlSchema.optional(),
+    eventTypes: webhookEndpointShape.eventTypes.optional(),
+    status: webhookEndpointStatusSchema.optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: "Provide a configuration change" });
+export const webhookParamsSchema = z.object({ endpointId: webhookEndpointIdSchema }).strict();
+export const webhookScopeQuerySchema = z
+  .object({ projectId: projectIdSchema.optional(), environmentId: environmentIdSchema.optional() })
+  .strict();
+export const listWebhookQuerySchema = webhookScopeQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+});
+export const webhookConfigurationSchema = z
+  .object({
+    ...webhookEndpointShape,
+    signingSecretVersion: z.number().int().positive(),
+    signingSecretRotatedAt: isoDateTimeSchema,
+  })
+  .strict();
+export const revealedWebhookConfigurationSchema = webhookConfigurationSchema.extend({
+  signingSecret: z.string().regex(/^whsec_[A-Za-z0-9_-]{43}$/u),
+  rotationPolicy: z.literal("immediate replacement"),
+});
+export const webhookConfigurationListSchema = z
+  .object({
+    endpoints: z.array(webhookConfigurationSchema),
+    pagination: z
+      .object({
+        limit: z.number().int().positive(),
+        offset: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+export type CreateWebhookInput = z.infer<typeof createWebhookInputSchema>;
+export type UpdateWebhookInput = z.infer<typeof updateWebhookInputSchema>;
 
 export const webhookEventSchema: z.ZodType<WebhookEvent> = z
   .object({

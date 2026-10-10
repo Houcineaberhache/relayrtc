@@ -49,7 +49,8 @@ export interface WebhookEndpoint {
 }
 
 export interface StoredWebhookEndpoint extends WebhookEndpoint {
-  readonly hashedSigningSecret: string;
+  readonly encryptedSigningSecret: string;
+  readonly signingSecretVersion: number;
 }
 
 export interface WebhookEvent {
