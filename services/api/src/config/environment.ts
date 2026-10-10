@@ -1,6 +1,7 @@
 import { readRequestLimits, type RequestLimits } from "../resource-limits.js";
 import { isIP } from "node:net";
 import { enforceCredentialPolicy, readInternalSecret } from "@relayrtc/protocol/credential-policy";
+import { webhookEncryptionKeyValid } from "@relayrtc/protocol/webhook-security";
 import { z } from "zod";
 
 export type ApiEnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -65,6 +66,13 @@ const environmentSchema = z
       "turn:localhost:3478?transport=tcp",
       "turns:localhost:5349?transport=tcp",
     ]),
+    WEBHOOK_SIGNING_ENCRYPTION_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .refine(webhookEncryptionKeyValid, "Use a base64-encoded 32-byte encryption key")
+        .optional(),
+    ),
   })
   .strict();
 
@@ -90,6 +98,7 @@ export interface ApiConfig {
   turnSharedSecret: string;
   turnStunUrls: readonly string[];
   turnUrls: readonly string[];
+  webhookSigningEncryptionKey?: string;
 }
 
 export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
@@ -124,6 +133,7 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
     TURN_SHARED_SECRET: source.TURN_SHARED_SECRET,
     TURN_STUN_URLS: source.TURN_STUN_URLS,
     TURN_URLS: source.TURN_URLS,
+    WEBHOOK_SIGNING_ENCRYPTION_KEY: source.WEBHOOK_SIGNING_ENCRYPTION_KEY,
   });
 
   if (!parsed.success) {
@@ -186,6 +196,9 @@ export const readApiEnvironment = (source: ApiEnvironmentSource): ApiConfig => {
       ? { requestLimits: readRequestLimits(source) }
       : {}),
     databaseUrl: parsed.data.DATABASE_URL,
+    ...(parsed.data.WEBHOOK_SIGNING_ENCRYPTION_KEY
+      ? { webhookSigningEncryptionKey: parsed.data.WEBHOOK_SIGNING_ENCRYPTION_KEY }
+      : {}),
     host: parsed.data.API_HOST,
     logLevel: parsed.data.API_LOG_LEVEL,
     nodeEnvironment: parsed.data.NODE_ENV,

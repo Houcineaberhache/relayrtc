@@ -31,14 +31,15 @@ type SessionState struct {
 }
 
 type RoomState struct {
-	Sequence    uint64
-	Events      []RuntimeEvent
-	MediaNodeID string
-	Generation  string
-	Allocating  bool
-	Ready       bool
-	Closing     bool
-	Sessions    map[string]*SessionState
+	Sequence             uint64
+	Events               []RuntimeEvent
+	PendingWebhookEvents []RuntimeEvent `json:"-"`
+	MediaNodeID          string
+	Generation           string
+	Allocating           bool
+	Ready                bool
+	Closing              bool
+	Sessions             map[string]*SessionState
 }
 
 type RuntimeEvent struct {

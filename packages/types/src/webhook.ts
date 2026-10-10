@@ -49,7 +49,8 @@ export interface WebhookEndpoint {
 }
 
 export interface StoredWebhookEndpoint extends WebhookEndpoint {
-  readonly hashedSigningSecret: string;
+  readonly encryptedSigningSecret: string;
+  readonly signingSecretVersion: number;
 }
 
 export interface WebhookEvent {
@@ -70,4 +71,54 @@ export interface WebhookDelivery {
   readonly nextAttemptAt: IsoDateTime | null;
   readonly deliveredAt: IsoDateTime | null;
   readonly createdAt: IsoDateTime;
+}
+
+export interface WebhookDeliveryRecord {
+  readonly id: WebhookDeliveryId;
+  readonly endpointId: WebhookEndpointId;
+  readonly eventId: WebhookEventId;
+  readonly projectId: ProjectId;
+  readonly environmentId: EnvironmentId;
+  readonly url: string;
+  readonly status: WebhookDeliveryStatus;
+  readonly attemptCount: number;
+  readonly runAttemptCount: number;
+  readonly replayCount: number;
+  readonly lastError: string | null;
+  readonly nextAttemptAt: IsoDateTime | null;
+  readonly deliveredAt: IsoDateTime | null;
+  readonly runStartedAt: IsoDateTime;
+  readonly createdAt: IsoDateTime;
+  readonly updatedAt: IsoDateTime;
+}
+
+export const webhookDeliveryAttemptStatuses = ["started", "succeeded", "failed", "abandoned"] as const;
+export type WebhookDeliveryAttemptStatus = (typeof webhookDeliveryAttemptStatuses)[number];
+
+export interface WebhookDeliveryAttempt {
+  readonly id: string;
+  readonly attemptNumber: number;
+  readonly replayCount: number;
+  readonly status: WebhookDeliveryAttemptStatus;
+  readonly signingSecretVersion: number;
+  readonly signatureTimestamp: number;
+  readonly httpStatus: number | null;
+  readonly errorCode: string | null;
+  readonly startedAt: IsoDateTime;
+  readonly finishedAt: IsoDateTime | null;
+}
+
+export interface WebhookDeliveryDetail extends WebhookDeliveryRecord {
+  readonly event: WebhookEvent;
+  readonly rawBody: string;
+  readonly attempts: readonly WebhookDeliveryAttempt[];
+}
+
+export interface WebhookDeliveryList {
+  readonly deliveries: readonly WebhookDeliveryRecord[];
+  readonly pagination: { readonly limit: number; readonly offset: number; readonly total: number };
+}
+
+export interface ReplayWebhookDeliveryInput {
+  readonly expectedReplayCount: number;
 }

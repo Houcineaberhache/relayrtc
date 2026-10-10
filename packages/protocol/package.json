@@ -17,6 +17,14 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./webhook-signature": {
+      "types": "./dist/webhook-signature.d.ts",
+      "import": "./dist/webhook-signature.js"
+    },
+    "./webhook-security": {
+      "types": "./dist/webhook-security.d.ts",
+      "import": "./dist/webhook-security.js"
+    },
     "./credential-policy": {
       "types": "./dist/credential-policy.d.ts",
       "import": "./dist/credential-policy.js"

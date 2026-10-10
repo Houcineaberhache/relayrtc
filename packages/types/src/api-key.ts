@@ -14,6 +14,7 @@ export const apiKeyScopes = [
   "recordings:create",
   "recordings:read",
   "webhooks:read",
+  "webhooks:write",
   "usage:read",
   "analytics:read",
 ] as const;

@@ -14,6 +14,7 @@ import {
   Settings,
   Settings2,
   ChartPie,
+  Webhook,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -63,6 +64,7 @@ function ProjectSidebar({ orgId, projectId, organizations, projects, user, canMa
     { label: 'Overview', href: base, icon: Home },
     { label: 'API keys', href: `${base}/api-keys`, icon: KeyRound },
     { label: 'Environments', href: `${base}/environments`, icon: Layers },
+    { label: 'Webhooks', href: `${base}/webhooks`, icon: Webhook },
     { label: 'Usage', href: `${base}/usage`, icon: ChartLine },
     { label: 'Analytics', href: `${base}/analytics`, icon: ChartPie },
     { label: 'Project Settings', href: `${base}/settings`, icon: Settings2 },

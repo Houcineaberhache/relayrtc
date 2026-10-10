@@ -15,6 +15,9 @@ const negotiationTimeout = time.Minute
 func appendEvent(state *RoomState, sessionID, requestID, kind string, payload map[string]any) {
 	state.Sequence++
 	state.Events = append(state.Events, RuntimeEvent{Sequence: state.Sequence, ID: "msg_" + newID(), SessionID: sessionID, RequestID: requestID, Type: kind, Payload: payload, SentAt: time.Now().UTC()})
+	if kind == "track.published" || kind == "track.unpublished" {
+		state.PendingWebhookEvents = append(state.PendingWebhookEvents, state.Events[len(state.Events)-1])
+	}
 	if len(state.Events) > 256 {
 		state.Events = state.Events[len(state.Events)-256:]
 	}
