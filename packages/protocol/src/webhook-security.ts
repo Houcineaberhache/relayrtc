@@ -5,9 +5,16 @@ import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 
 export class WebhookDestinationError extends Error {
-  constructor() {
+  constructor(readonly statusCode?: number) {
     super("Webhook destinations must resolve exclusively to public HTTP or HTTPS addresses");
     this.name = "WebhookDestinationError";
+  }
+}
+
+export class WebhookResolutionError extends Error {
+  constructor() {
+    super("Webhook destination DNS resolution is unavailable");
+    this.name = "WebhookResolutionError";
   }
 }
 
@@ -55,7 +62,7 @@ export type WebhookAddressResolver = (
 const resolveAddresses: WebhookAddressResolver = async (hostname) => {
   return new Promise((accept, reject) => {
     const timer = setTimeout(() => {
-      reject(new WebhookDestinationError());
+      reject(new WebhookResolutionError());
     }, 5000).unref();
     void lookup(hostname, { all: true, verbatim: true })
       .then(accept, reject)
@@ -96,7 +103,7 @@ export async function validateWebhookDestination(
   try {
     addresses = family ? [{ address: hostname, family }] : await resolve(hostname);
   } catch {
-    throw new WebhookDestinationError();
+    throw new WebhookResolutionError();
   }
   if (
     addresses.length === 0 ||
@@ -142,7 +149,7 @@ export async function postWebhookRequest(
       (response) => {
         const statusCode = response.statusCode ?? 0;
         response.destroy();
-        if (statusCode >= 300 && statusCode < 400) reject(new WebhookDestinationError());
+        if (statusCode >= 300 && statusCode < 400) reject(new WebhookDestinationError(statusCode));
         else accept({ statusCode });
       },
     );
