@@ -1,0 +1,49 @@
+import { webhookConfigurationSchema, revealedWebhookConfigurationSchema, webhookEventTypeSchema } from '@relayrtc/validation'
+import { z } from 'zod'
+
+export type WebhookConfiguration = z.infer<typeof webhookConfigurationSchema>
+export type RevealedWebhookConfiguration = z.infer<typeof revealedWebhookConfigurationSchema>
+export type WebhookEventType = z.infer<typeof webhookEventTypeSchema>
+export interface WebhookError { readonly code: string; readonly description: string }
+export type WebhookResult<T> = { data: T; error: null } | { data: null; error: WebhookError }
+export const unavailableWebhookError: WebhookError = {
+  code: 'WEBHOOKS_UNAVAILABLE',
+  description: 'Webhooks are temporarily unavailable. Please try again.',
+}
+export const eventGroups: readonly { label: string; events: readonly { value: WebhookEventType; label: string }[] }[] = [
+  { label: 'Rooms', events: [
+    { value: 'room.created', label: 'Room created' },
+    { value: 'room.started', label: 'Room started' },
+    { value: 'room.ended', label: 'Room ended' },
+  ] },
+  { label: 'Participants', events: [
+    { value: 'participant.joined', label: 'Participant joined' },
+    { value: 'participant.left', label: 'Participant left' },
+    { value: 'participant.reconnected', label: 'Participant reconnected' },
+  ] },
+  { label: 'Tracks', events: [
+    { value: 'track.published', label: 'Track published' },
+    { value: 'track.unpublished', label: 'Track unpublished' },
+  ] },
+  { label: 'Connections', events: [
+    { value: 'connection.degraded', label: 'Connection degraded' },
+    { value: 'connection.recovered', label: 'Connection recovered' },
+  ] },
+]
+export const webhookSignatureInfoSchema = z.object({
+  algorithm: z.string(),
+  signatureHeader: z.string(),
+  deliveryIdHeader: z.string(),
+  replayCountHeader: z.string(),
+  secretVersionHeader: z.string(),
+  signedContent: z.string(),
+  signatureFormat: z.string(),
+  secretEncoding: z.string(),
+  toleranceSeconds: z.number().int().positive(),
+  attemptsPerRun: z.number().int().positive(),
+  maximumExplicitReplays: z.number().int().positive(),
+  maximumRunAgeDays: z.number().int().positive(),
+  terminalRetentionDays: z.number().int().positive(),
+  backoffSeconds: z.array(z.number().int().positive()),
+})
+export type WebhookSignatureInfo = z.infer<typeof webhookSignatureInfoSchema>
