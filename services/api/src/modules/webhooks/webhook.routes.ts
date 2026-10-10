@@ -2,12 +2,18 @@ import type { RelayKitDatabase } from "@relayrtc/database";
 import {
   createWebhookInputSchema,
   listWebhookQuerySchema,
+  listWebhookDeliveriesQuerySchema,
   projectIdSchema,
   revealedWebhookConfigurationSchema,
+  replayWebhookDeliveryInputSchema,
   updateWebhookInputSchema,
   webhookConfigurationListSchema,
   webhookConfigurationSchema,
   webhookEndpointIdSchema,
+  webhookDeliveryIdSchema,
+  webhookDeliveryRecordSchema,
+  webhookDeliveryListSchema,
+  webhookDeliveryDetailSchema,
   webhookScopeQuerySchema,
 } from "@relayrtc/validation";
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
@@ -19,6 +25,7 @@ import { ApiError } from "../../http/errors/api-error.js";
 import { validate } from "../../http/validation/validate.js";
 import type { ConsoleSessionVerifier } from "../reporting/reporting.routes.js";
 import { createWebhookService, type WebhookPrincipal } from "./webhook.service.js";
+import { createWebhookDeliveryService } from "./webhook-delivery.service.js";
 
 interface WebhookRoutesOptions {
   database: RelayKitDatabase;
@@ -33,7 +40,7 @@ declare module "fastify" {
   }
 }
 const routeParams = z
-  .object({ projectId: projectIdSchema.optional(), endpointId: webhookEndpointIdSchema.optional() })
+  .object({ projectId: projectIdSchema.optional(), endpointId: webhookEndpointIdSchema.optional(), deliveryId: webhookDeliveryIdSchema.optional() })
   .strict();
 const noBody = z.object({}).strict();
 const response = (status: number, schema: z.ZodType) => ({
@@ -45,6 +52,7 @@ export const webhookRoutes: FastifyPluginCallback<WebhookRoutesOptions> = (app, 
     database: options.database,
     ...(options.encryptionKey ? { encryptionKey: options.encryptionKey } : {}),
   });
+  const deliveries = createWebhookDeliveryService(options.database);
   app.decorateRequest("webhookPrincipal", null);
   app.addHook("onRequest", async (request, reply) => {
     reply.header("cache-control", "private, no-store");
@@ -85,11 +93,13 @@ export const webhookRoutes: FastifyPluginCallback<WebhookRoutesOptions> = (app, 
       );
     request.webhookPrincipal = { type: "session", userId: session.userId };
   });
-  const context = (request: FastifyRequest, list = false) => {
+  const context = (request: FastifyRequest, list: boolean | "deliveries" = false) => {
     const principal = request.webhookPrincipal;
     if (!principal) throw new ApiError(401, "AUTHENTICATION_REQUIRED", "Provide valid credentials");
     const params = validate(routeParams, request.params);
-    const query = validate(list ? listWebhookQuerySchema : webhookScopeQuerySchema, request.query);
+    const query = list === "deliveries"
+      ? validate(listWebhookDeliveriesQuerySchema, request.query)
+      : list ? validate(listWebhookQuerySchema, request.query) : validate(webhookScopeQuerySchema, request.query);
     const projectId =
       params.projectId ??
       query.projectId ??
@@ -109,9 +119,30 @@ export const webhookRoutes: FastifyPluginCallback<WebhookRoutesOptions> = (app, 
         "PROJECT_SCOPE_MISMATCH",
         "The requested project scopes do not match",
       );
-    return { principal, scope: { projectId, environmentId }, endpointId: params.endpointId, query };
+    return { principal, scope: { projectId, environmentId }, endpointId: params.endpointId, deliveryId: params.deliveryId, query };
   };
   const base = options.projectRoutes ? "/projects/:projectId/webhooks" : "/webhooks";
+  app.get(`${base}/signature-contract`, async (request) => {
+    const { principal, scope } = context(request);
+    return deliveries.contract(principal, scope);
+  });
+  app.get(`${base}/:endpointId/deliveries`, { schema: response(200, webhookDeliveryListSchema) }, async (request) => {
+    const { principal, scope, endpointId } = context(request, "deliveries");
+    if (!endpointId) throw new ApiError(400, "INVALID_REQUEST", "Provide a webhook endpoint ID");
+    const query = validate(listWebhookDeliveriesQuerySchema, request.query);
+    return deliveries.list(principal, scope, endpointId, query);
+  });
+  app.get(`${base}/:endpointId/deliveries/:deliveryId`, { schema: response(200, webhookDeliveryDetailSchema) }, async (request) => {
+    const { principal, scope, endpointId, deliveryId } = context(request);
+    if (!endpointId || !deliveryId) throw new ApiError(400, "INVALID_REQUEST", "Provide webhook endpoint and delivery IDs");
+    return deliveries.get(principal, scope, endpointId, deliveryId);
+  });
+  app.post(`${base}/:endpointId/deliveries/:deliveryId/replay`, { schema: response(202, webhookDeliveryRecordSchema) }, async (request, reply) => {
+    const { principal, scope, endpointId, deliveryId } = context(request);
+    if (!endpointId || !deliveryId) throw new ApiError(400, "INVALID_REQUEST", "Provide webhook endpoint and delivery IDs");
+    const { expectedReplayCount } = validate(replayWebhookDeliveryInputSchema, request.body);
+    return reply.status(202).send(await deliveries.replay(principal, scope, endpointId, deliveryId, expectedReplayCount));
+  });
   app.get(base, { schema: response(200, webhookConfigurationListSchema) }, async (request) => {
     const { principal, scope } = context(request, true);
     const { limit, offset } = validate(listWebhookQuerySchema, request.query);
