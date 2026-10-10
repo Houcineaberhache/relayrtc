@@ -25,6 +25,20 @@ export const roomQualityModeSettings: Readonly<Record<RoomQualityMode, QualityMo
 };
 
 export interface ConnectionQualityEvent {
+  readonly source?: "media" | "connectivity" | undefined;
+  readonly eventId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly metrics?:
+    | {
+        readonly availableIncomingBitrate: number | null;
+        readonly incomingBitrate: number | null;
+        readonly jitter: number | null;
+        readonly roundTripTime: number | null;
+        readonly packetLossRatio: number | null;
+        readonly timestamp: number;
+        readonly stale: boolean;
+      }
+    | undefined;
   readonly occurredAt: IsoDateTime;
   readonly participantId: ParticipantId;
   readonly previousQuality: ConnectionQuality;
