@@ -8,6 +8,7 @@ import { healthRoutes } from "./routes/health.js";
 import { mediaRoutes } from "./routes/media.js";
 
 interface BuildAppOptions {
+  qualityDelivery?: () => Record<string, number>;
   config: MediaConfig;
   engine?: MediaEngine;
 }
@@ -44,6 +45,7 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   }
 
   void app.register(healthRoutes, {
+    ...(options.qualityDelivery ? { qualityDelivery: options.qualityDelivery } : {}),
     nodeId: options.config.nodeId,
     ...(options.engine ? { engine: options.engine } : {}),
   });

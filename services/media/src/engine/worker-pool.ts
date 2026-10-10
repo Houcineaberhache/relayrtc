@@ -43,16 +43,18 @@ import type {
 import type { MediasoupWorkerFactory } from "./mediasoup-factory.js";
 import type { QualityEventPublisher } from "../quality/quality-event-publisher.js";
 import { qualityEvent } from "../quality/quality-event-publisher.js";
+import { QualityObservationQueue } from "../quality/quality-event-outbox.js";
+import {
+  allocateSubscriberBudget,
+  availableVideoLayers,
+  qualityRank,
+  type BudgetTrack,
+  type VideoLayer,
+} from "./subscriber-budget.js";
 import type { QualityMetricsStore } from "../quality/quality-metrics-store.js";
 import type { MediaUsageMetric, MediaUsageMetricsStore } from "../usage/usage-metrics-store.js";
+import { classifyConnectionQuality, intervalNetworkStats } from "../quality/quality-model.js";
 import {
-  classifyConnectionQuality,
-  intervalNetworkStats,
-  qualityTransitionEvent,
-} from "../quality/quality-model.js";
-import {
-  preferredLayers,
-  selectVideoQuality,
   type MediaPriority,
   type SelectedVideoQuality,
   type SubscriberNetworkStats,
@@ -101,6 +103,10 @@ interface RoomState {
   participantQualities: Map<string, ConnectionQuality>;
   participantQualityPreferences: Map<string, SubscriberQualityMode>;
   participantStats: Map<string, SubscriberNetworkStats>;
+  statsReceived: Map<string, number>;
+  qualityOperations: Map<string, Promise<void>>;
+  publicParticipants: Map<string, string>;
+  qualityPublished: Map<string, number>;
   producers: Map<string, Producer>;
   producerUsage: Map<string, UsageSampleState>;
   router: Router;
@@ -116,6 +122,7 @@ export interface MediaQualityOptions {
   metricsStore?: QualityMetricsStore;
   usageMetricsStore?: MediaUsageMetricsStore;
   onUsageError?: (error: unknown) => void;
+  onQualityError?: (error: unknown) => void;
 }
 
 interface ConsumerState {
@@ -124,6 +131,9 @@ interface ConsumerState {
   participantId: string;
   quality: SubscriberQualityMode;
   selectedQuality: SelectedVideoQuality | null;
+  selectedLayer?: number;
+  upgradeCandidate?: string;
+  upgradeSamples?: number;
 }
 
 interface TransportState {
@@ -148,6 +158,7 @@ export class MediasoupWorkerPool implements MediaEngine {
   readonly #config: MediaConfig;
   readonly #createWorker: MediasoupWorkerFactory;
   readonly #quality: MediaQualityOptions;
+  readonly #qualityObservations: QualityObservationQueue;
   readonly #pendingRooms = new Map<string, Promise<void>>();
   readonly #rooms = new Map<string, RoomState>();
   readonly #terminalOperations = new Map<string, Promise<void>>();
@@ -172,6 +183,11 @@ export class MediasoupWorkerPool implements MediaEngine {
     this.#config = config;
     this.#createWorker = createWorker;
     this.#quality = quality;
+    this.#qualityObservations = new QualityObservationQueue(
+      quality.metricsStore,
+      quality.eventPublisher,
+      quality.onQualityError,
+    );
   }
 
   async start(): Promise<void> {
@@ -282,6 +298,7 @@ export class MediasoupWorkerPool implements MediaEngine {
     await Promise.allSettled(this.#pendingRooms.values());
     await this.#flushFailures();
     for (const room of this.#rooms.values()) room.router.close();
+    await this.#qualityObservations.close();
     await this.#retryRetiredSamples();
     if (this.#retiredSamples.size > 0)
       throw new Error("Media usage checkpoints remain pending during shutdown");
@@ -351,6 +368,10 @@ export class MediasoupWorkerPool implements MediaEngine {
       participantQualities: new Map(),
       participantQualityPreferences: new Map(),
       participantStats: new Map(),
+      statsReceived: new Map(),
+      qualityOperations: new Map(),
+      publicParticipants: new Map(),
+      qualityPublished: new Map(),
       producers: new Map(),
       producerUsage: new Map(),
       router,
@@ -468,7 +489,7 @@ export class MediasoupWorkerPool implements MediaEngine {
         priority:
           (producer.appData.priority as MediaPriority | undefined) ??
           room.participantPriorities.get(String(producer.appData.participantId)) ??
-          "normal",
+          (producer.appData.trackType === "screen_video" ? "high" : "normal"),
       })),
     );
   }
@@ -528,6 +549,7 @@ export class MediasoupWorkerPool implements MediaEngine {
           participantId: request.participantId,
           roomId: request.roomId,
           trackType: request.trackType,
+          ...(request.sourceHeight ? { sourceHeight: request.sourceHeight } : {}),
           ...(request.priority ? { priority: request.priority } : {}),
         },
         kind: request.kind,
@@ -555,7 +577,9 @@ export class MediasoupWorkerPool implements MediaEngine {
       participantId: request.participantId,
       trackType: request.trackType,
       priority:
-        request.priority ?? room.participantPriorities.get(request.participantId) ?? "normal",
+        request.priority ??
+        room.participantPriorities.get(request.participantId) ??
+        (request.trackType === "screen_video" ? "high" : "normal"),
     };
   }
 
@@ -608,10 +632,10 @@ export class MediasoupWorkerPool implements MediaEngine {
     const priority =
       (producer.appData.priority as MediaPriority | undefined) ??
       room.participantPriorities.get(String(producer.appData.participantId)) ??
-      "normal";
+      (producer.appData.trackType === "screen_video" ? "high" : "normal");
     const quality =
       request.quality ?? room.participantQualityPreferences.get(request.participantId) ?? "auto";
-    const selectedQuality = consumer.kind === "video" && quality !== "auto" ? quality : null;
+    const selectedQuality = consumer.kind === "video" ? "audio-only" : null;
     room.consumers.set(consumer.id, {
       consumer,
       participantId: request.participantId,
@@ -627,9 +651,6 @@ export class MediasoupWorkerPool implements MediaEngine {
     });
     try {
       await consumer.setPriority(priority === "high" ? 255 : priority === "low" ? 1 : 127);
-      if (selectedQuality && selectedQuality !== "audio-only") {
-        await consumer.setPreferredLayers(preferredLayers[selectedQuality]);
-      }
       const state = room.consumers.get(consumer.id);
       if (!state || !this.#resourceOpen(consumer)) {
         throw new MediaEngineError("NOT_FOUND", "The subscription closed during negotiation");
@@ -669,7 +690,10 @@ export class MediasoupWorkerPool implements MediaEngine {
     clearTimeout(state.negotiationTimer);
     delete state.negotiationTimer;
     try {
-      if (state.quality !== "audio-only" && state.consumer.paused) await state.consumer.resume();
+      if (state.consumer.kind === "audio" && state.consumer.paused) await state.consumer.resume();
+      await this.#serializeQuality(room, request.participantId, () =>
+        this.#adaptSubscriber(room, request.participantId),
+      );
     } catch (error) {
       state.consumer.close();
       throw error;
@@ -697,46 +721,48 @@ export class MediasoupWorkerPool implements MediaEngine {
 
   async ingestSubscriberStats(request: IngestSubscriberStatsRequest): Promise<void> {
     const room = this.#getRoom(request.roomId);
-    const previousStats = room.participantStats.get(request.participantId);
-    const stats = intervalNetworkStats(request.stats, previousStats);
-    room.participantStats.set(request.participantId, request.stats);
-    const quality = classifyConnectionQuality(stats);
-    await this.#quality.metricsStore?.record({
-      participantId: request.participantId,
-      quality,
-      roomId: request.roomId,
-      stats,
-    });
-    const previousQuality = room.participantQualities.get(request.participantId);
-    const eventType = qualityTransitionEvent(previousQuality, quality);
-    if (eventType && previousQuality) {
-      await this.#quality.eventPublisher?.publish(
-        eventType,
-        qualityEvent(request.roomId, request.participantId, previousQuality, quality),
-      );
-    }
-    room.participantQualities.set(request.participantId, quality);
-    for (const state of room.consumers.values()) {
+    await this.#serializeQuality(room, request.participantId, async () => {
+      const previous = room.participantStats.get(request.participantId);
       if (
-        state.participantId !== request.participantId ||
-        state.consumer.kind !== "video" ||
-        state.quality !== "auto"
+        !Number.isFinite(request.stats.timestamp) ||
+        request.stats.timestamp <= 0 ||
+        request.stats.timestamp > Date.now() + 30_000 ||
+        Date.now() - request.stats.timestamp > 30_000
       )
-        continue;
-      const producer = room.producers.get(state.consumer.producerId);
-      const priority =
-        (producer?.appData.priority as MediaPriority | undefined) ??
-        room.participantPriorities.get(String(producer?.appData.participantId)) ??
-        "normal";
-      const selected = selectVideoQuality(stats, priority);
-      if (selected === state.selectedQuality) {
-        if (selected === "audio-only" && !state.consumer.paused) await state.consumer.pause();
-        if (selected !== "audio-only" && state.consumer.paused) await state.consumer.resume();
-        continue;
+        throw new MediaEngineError(
+          "INVALID_REQUEST",
+          "Subscriber stats timestamp is stale or invalid",
+        );
+      if (previous && request.stats.timestamp <= previous.timestamp) return;
+      let sample = request.stats;
+      if (request.transportId) {
+        const transport = this.#getParticipantTransport(
+          room,
+          request.transportId,
+          request.participantId,
+          "receive",
+        );
+        const reports = await transport.getStats();
+        const estimate = reports[0]?.availableOutgoingBitrate;
+        if (estimate !== undefined && Number.isFinite(estimate) && estimate >= 0)
+          sample = {
+            ...sample,
+            availableIncomingBitrate:
+              sample.availableIncomingBitrate === null
+                ? estimate
+                : Math.min(estimate, sample.availableIncomingBitrate),
+          };
       }
-      await this.#applyQuality(state.consumer, selected);
-      state.selectedQuality = selected;
-    }
+      const stats = intervalNetworkStats(sample, previous);
+      room.participantStats.set(request.participantId, sample);
+      room.statsReceived.set(request.participantId, Date.now());
+      room.publicParticipants.set(
+        request.participantId,
+        request.publicParticipantId ?? request.participantId,
+      );
+      await this.#adaptSubscriber(room, request.participantId, stats);
+      this.#recordQuality(request.roomId, room, request.participantId, stats);
+    });
   }
 
   async setSubscriptionQuality(request: SetSubscriptionQualityRequest): Promise<void> {
@@ -750,38 +776,19 @@ export class MediasoupWorkerPool implements MediaEngine {
     if (state.participantId !== request.participantId)
       throw new MediaEngineError("FORBIDDEN", "The subscription belongs to another participant");
     state.quality = request.quality;
-    if (state.consumer.kind !== "video") return;
-    if (request.quality !== "auto") {
-      await this.#applyQuality(state.consumer, request.quality);
-      state.selectedQuality = request.quality;
-      return;
-    }
-    const producer = room.producers.get(state.consumer.producerId);
-    const priority =
-      (producer?.appData.priority as MediaPriority | undefined) ??
-      room.participantPriorities.get(String(producer?.appData.participantId)) ??
-      "normal";
-    const stats = room.participantStats.get(request.participantId);
-    const selected = stats ? selectVideoQuality(stats, priority) : "720p";
-    await this.#applyQuality(state.consumer, selected);
-    state.selectedQuality = selected;
+    await this.#serializeQuality(room, request.participantId, () =>
+      this.#adaptSubscriber(room, request.participantId),
+    );
   }
 
   async setParticipantQualityMode(request: SetParticipantQualityModeRequest): Promise<void> {
     const room = this.#getRoom(request.roomId);
     const quality = roomQualityModeSettings[request.mode].receive;
     room.participantQualityPreferences.set(request.participantId, quality);
-    await Promise.all(
-      [...room.consumers.entries()]
-        .filter(([, state]) => state.participantId === request.participantId)
-        .map(([subscriptionId]) =>
-          this.setSubscriptionQuality({
-            participantId: request.participantId,
-            quality,
-            roomId: request.roomId,
-            subscriptionId,
-          }),
-        ),
+    for (const state of room.consumers.values())
+      if (state.participantId === request.participantId) state.quality = quality;
+    await this.#serializeQuality(room, request.participantId, () =>
+      this.#adaptSubscriber(room, request.participantId),
     );
   }
 
@@ -896,6 +903,9 @@ export class MediasoupWorkerPool implements MediaEngine {
       room.participantQualities.delete(request.participantId);
       room.participantQualityPreferences.delete(request.participantId);
       room.participantStats.delete(request.participantId);
+      room.statsReceived.delete(request.participantId);
+      room.publicParticipants.delete(request.participantId);
+      room.qualityPublished.delete(request.participantId);
     } finally {
       const removing = (room.removingParticipants.get(request.participantId) ?? 1) - 1;
       if (removing > 0) room.removingParticipants.set(request.participantId, removing);
@@ -1076,13 +1086,173 @@ export class MediasoupWorkerPool implements MediaEngine {
     );
   }
 
-  async #applyQuality(consumer: Consumer, quality: SelectedVideoQuality): Promise<void> {
-    if (quality === "audio-only") {
+  #serializeQuality(
+    room: RoomState,
+    participantId: string,
+    task: () => Promise<void>,
+  ): Promise<void> {
+    const operation = (room.qualityOperations.get(participantId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(task);
+    room.qualityOperations.set(participantId, operation);
+    void operation
+      .finally(() => {
+        if (room.qualityOperations.get(participantId) === operation)
+          room.qualityOperations.delete(participantId);
+      })
+      .catch(() => undefined);
+    return operation;
+  }
+
+  async #adaptSubscriber(
+    room: RoomState,
+    participantId: string,
+    interval?: SubscriberNetworkStats,
+  ): Promise<void> {
+    if (room.closing || room.closingParticipants.has(participantId)) return;
+    const states = [...room.consumers.values()].filter(
+      (state) =>
+        state.participantId === participantId && !state.consumer.closed && !state.negotiationTimer,
+    );
+    const tracks: BudgetTrack[] = [];
+    for (const state of states) {
+      if (state.consumer.kind !== "video") continue;
+      const producer = room.producers.get(state.consumer.producerId);
+      if (!producer || producer.closed) continue;
+      tracks.push({
+        id: state.consumer.id,
+        preference: state.quality,
+        current: state.selectedQuality,
+        screen: producer.appData.trackType === "screen_video",
+        priority:
+          (producer.appData.priority as MediaPriority | undefined) ??
+          room.participantPriorities.get(String(producer.appData.participantId)) ??
+          (producer.appData.trackType === "screen_video" ? "high" : "normal"),
+        layers: availableVideoLayers(producer, state.consumer),
+      });
+    }
+    const cumulative = room.participantStats.get(participantId);
+    const stale = (room.statsReceived.get(participantId) ?? 0) + 10_000 < Date.now();
+    const stats =
+      interval ??
+      (cumulative ? { ...cumulative, packetsLost: 0, packetsReceived: 0, stale } : undefined);
+    const allocation = allocateSubscriberBudget(
+      tracks,
+      stats,
+      states.filter((state) => state.consumer.kind === "audio").length,
+    );
+    // Apply every downgrade first so temporary upgrades cannot overspend the connection budget.
+    const choices = states
+      .filter((state) => state.consumer.kind === "video")
+      .map((state) => ({ state, layer: allocation.get(state.consumer.id) ?? null }));
+    choices.sort(
+      (left, right) =>
+        Number((left.layer?.spatialLayer ?? -1) > (left.state.selectedLayer ?? -1)) -
+        Number((right.layer?.spatialLayer ?? -1) > (right.state.selectedLayer ?? -1)),
+    );
+    for (const { state, layer } of choices) {
+      const selected = layer?.quality ?? "audio-only";
+      const upgrading =
+        qualityRank[selected] > qualityRank[state.selectedQuality ?? "audio-only"] ||
+        (layer?.spatialLayer ?? -1) > (state.selectedLayer ?? -1);
+      if (upgrading && state.selectedQuality !== null && cumulative) {
+        const candidate = `${selected}:${String(layer?.spatialLayer)}`;
+        if (state.upgradeCandidate !== candidate) {
+          state.upgradeCandidate = candidate;
+          state.upgradeSamples = 0;
+        }
+        if (interval) state.upgradeSamples = (state.upgradeSamples ?? 0) + 1;
+        if ((state.upgradeSamples ?? 0) < 3) continue;
+      } else {
+        delete state.upgradeCandidate;
+        delete state.upgradeSamples;
+      }
+      if (state.consumer.closed || state.negotiationTimer) continue;
+      await this.#applyQuality(state.consumer, layer);
+      state.selectedQuality = selected;
+      if (layer) state.selectedLayer = layer.spatialLayer;
+      else delete state.selectedLayer;
+    }
+  }
+
+  #recordQuality(
+    roomId: string,
+    room: RoomState,
+    sessionId: string,
+    stats: SubscriberNetworkStats,
+  ): void {
+    const quality = classifyConnectionQuality(stats);
+    const previous = room.participantQualities.get(sessionId);
+    room.participantQualities.set(sessionId, quality);
+    const participantId = room.publicParticipants.get(sessionId) ?? sessionId;
+    const publish =
+      previous !== quality || (room.qualityPublished.get(sessionId) ?? 0) + 10_000 <= Date.now();
+    const event = publish
+      ? {
+          ...qualityEvent(roomId, participantId, previous ?? quality, quality),
+          sessionId,
+          metrics: {
+            availableIncomingBitrate: stats.availableIncomingBitrate,
+            incomingBitrate: stats.incomingBitrate ?? null,
+            jitter: stats.jitter,
+            roundTripTime: stats.roundTripTime,
+            packetLossRatio: stats.packetLossRatio ?? null,
+            timestamp: stats.timestamp,
+            stale: stats.stale ?? false,
+          },
+        }
+      : undefined;
+    if (publish) room.qualityPublished.set(sessionId, Date.now());
+    this.#qualityObservations.record(
+      { roomId, participantId, quality, stats },
+      event ? { type: "connection.quality.changed", event } : undefined,
+    );
+  }
+
+  async checkQuality(): Promise<void> {
+    for (const [roomId, room] of this.#rooms) {
+      for (const [participantId, receivedAt] of room.statsReceived) {
+        if (receivedAt + 10_000 > Date.now()) continue;
+        const old = room.participantStats.get(participantId);
+        if (!old) continue;
+        await this.#serializeQuality(room, participantId, async () => {
+          if ((room.statsReceived.get(participantId) ?? 0) + 10_000 > Date.now()) return;
+          const stats = {
+            ...old,
+            timestamp: Date.now(),
+            stale: true,
+            availableIncomingBitrate: null,
+            packetsReceived: 0,
+            packetsLost: 0,
+            incomingBitrate: null,
+            packetLossRatio: null,
+          };
+          await this.#adaptSubscriber(room, participantId, stats);
+          if (room.participantQualities.get(participantId) !== "lost")
+            this.#recordQuality(roomId, room, participantId, stats);
+        });
+      }
+    }
+  }
+
+  get qualityDelivery(): { pendingObservations: number; expiredObservations: number } {
+    return {
+      pendingObservations: this.#qualityObservations.backlog,
+      expiredObservations: this.#qualityObservations.expired,
+    };
+  }
+
+  async #applyQuality(consumer: Consumer, layer: VideoLayer | null): Promise<void> {
+    if (!layer) {
       if (!consumer.paused) await consumer.pause();
       return;
     }
+    if (consumer.type === "simulcast" || consumer.type === "svc")
+      await consumer.setPreferredLayers({
+        spatialLayer: layer.spatialLayer,
+        temporalLayer: layer.temporalLayer,
+      });
     if (consumer.paused) await consumer.resume();
-    await consumer.setPreferredLayers(preferredLayers[quality]);
   }
 
   async #setProducerConsumerPriorities(

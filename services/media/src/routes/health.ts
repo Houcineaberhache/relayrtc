@@ -3,6 +3,7 @@ import type { FastifyPluginCallback } from "fastify";
 import type { MediaEngine } from "../engine/media-engine.js";
 
 interface HealthRoutesOptions {
+  qualityDelivery?: () => Record<string, number>;
   engine?: MediaEngine;
   nodeId: string;
 }
@@ -12,6 +13,7 @@ const healthResponseSchema = {
   additionalProperties: false,
   required: ["nodeId", "service", "status"],
   properties: {
+    qualityDelivery: { type: "object", additionalProperties: { type: "number" } },
     nodeId: { type: "string" },
     service: { type: "string" },
     status: { type: "string" },
@@ -19,11 +21,12 @@ const healthResponseSchema = {
 } as const;
 
 export const healthRoutes: FastifyPluginCallback<HealthRoutesOptions> = (app, options, done) => {
-  app.get(
-    "/health",
-    { schema: { response: { 200: healthResponseSchema } } },
-    () => ({ nodeId: options.nodeId, service: "relayrtc-media", status: "ok" }),
-  );
+  app.get("/health", { schema: { response: { 200: healthResponseSchema } } }, () => ({
+    nodeId: options.nodeId,
+    service: "relayrtc-media",
+    status: "ok",
+    ...(options.qualityDelivery ? { qualityDelivery: options.qualityDelivery() } : {}),
+  }));
 
   app.get(
     "/ready",
