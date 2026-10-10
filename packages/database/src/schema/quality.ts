@@ -4,6 +4,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -12,6 +13,52 @@ import {
 
 import { participant } from "./participant.js";
 import { room } from "./room.js";
+export const rtcQualitySampleReceipt = pgTable(
+  "rtc_quality_sample_receipt",
+  {
+    id: text("id").primaryKey(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("rtc_quality_sample_receipt_recorded_idx").on(table.recordedAt)],
+);
+
+export const rtcQualityEventOutbox = pgTable(
+  "rtc_quality_event_outbox",
+  {
+    id: text("id").primaryKey(),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => room.id, { onDelete: "cascade" }),
+    participantId: text("participant_id")
+      .notNull()
+      .references(() => participant.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull(),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    expiredAt: timestamp("expired_at", { withTimezone: true }),
+    lastError: text("last_error"),
+  },
+  (table) => [
+    index("rtc_quality_event_pending_idx")
+      .on(table.nextAttemptAt)
+      .where(sql`${table.deliveredAt} is null and ${table.expiredAt} is null`),
+    index("rtc_quality_event_stream_idx").on(
+      table.roomId,
+      table.sessionId,
+      table.occurredAt,
+      table.id,
+    ),
+    check(
+      "rtc_quality_event_type_check",
+      sql`${table.eventType} in ('connection.quality.changed', 'connection.degraded', 'connection.recovered')`,
+    ),
+  ],
+);
 
 export const rtcQualityMetric = pgTable(
   "rtc_quality_metric",
