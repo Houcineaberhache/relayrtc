@@ -3,6 +3,14 @@ import { connectionQualityEventSchema } from "@relayrtc/validation";
 
 import type { ProtocolEvent } from "./envelope.js";
 import { protocolEventSchema } from "./envelope.js";
+export type ConnectionQualityChangedEvent = ProtocolEvent<
+  "connection.quality.changed",
+  ConnectionQualityEvent
+>;
+export const connectionQualityChangedEventSchema = protocolEventSchema(
+  "connection.quality.changed",
+  connectionQualityEventSchema,
+);
 
 export type ConnectionDegradedEvent = ProtocolEvent<"connection.degraded", ConnectionQualityEvent>;
 export type ConnectionRecoveredEvent = ProtocolEvent<
