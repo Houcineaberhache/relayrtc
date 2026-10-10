@@ -51,6 +51,7 @@ const description = (
 };
 
 export class RtcConnection {
+  #previousStats: import("./quality.js").RtcQualityStats | undefined;
   readonly #connection: RTCPeerConnection;
   readonly #connectionListeners = new Set<RtcConnectionListener>();
   readonly #iceCandidateListeners = new Set<RtcIceCandidateListener>();
@@ -105,7 +106,9 @@ export class RtcConnection {
 
   async getStats(): Promise<import("./quality.js").RtcQualityStats> {
     this.#assertOpen();
-    return normalizeRtcStats(await this.#connection.getStats());
+    const stats = normalizeRtcStats(await this.#connection.getStats(), this.#previousStats);
+    this.#previousStats = stats;
+    return stats;
   }
 
   collectStats(options: RtcStatsCollectorOptions): () => void {
