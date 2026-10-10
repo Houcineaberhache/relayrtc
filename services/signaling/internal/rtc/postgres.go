@@ -144,11 +144,23 @@ func (room *postgresRoom) Save(ctx context.Context, state *RoomState) error {
 	if err != nil || len(encoded) > 8_388_608 {
 		return ErrUnavailable
 	}
-	_, err = room.connection.Exec(ctx, `INSERT INTO rtc_runtime (room_id, state) VALUES ($1, $2::jsonb)
- ON CONFLICT (room_id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`, room.roomID, string(encoded))
+	webhookEvents := []byte("[]")
+	if len(state.PendingWebhookEvents) > 0 {
+		webhookEvents, err = json.Marshal(state.PendingWebhookEvents)
+		if err != nil {
+			return ErrUnavailable
+		}
+	}
+	_, err = room.connection.Exec(ctx, `WITH saved AS (
+ INSERT INTO rtc_runtime (room_id, state) VALUES ($1, $2::jsonb)
+ ON CONFLICT (room_id) DO UPDATE SET state = EXCLUDED.state, updated_at = now() RETURNING room_id
+ ) SELECT publish_webhook_event('rtc:' || saved.room_id || ':' || (e.value->>'ID'), saved.room_id, e.value->>'Type',
+ (e.value->>'SentAt')::timestamptz, coalesce(e.value->'Payload', '{}'::jsonb) || jsonb_build_object('roomId', saved.room_id))
+ FROM saved CROSS JOIN jsonb_array_elements($3::jsonb) e`, room.roomID, string(encoded), string(webhookEvents))
 	if err != nil {
 		return ErrUnavailable
 	}
+	state.PendingWebhookEvents = nil
 	return nil
 }
 
