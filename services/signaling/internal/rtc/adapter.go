@@ -115,6 +115,21 @@ func (adapter *Adapter) Handle(ctx context.Context, claims auth.Claims, sessionI
 			}}
 			return nil
 		}
+		if command.Request.Operation == "stats.report" {
+			// Stats do not allocate resources or consume the lifetime negotiation receipt budget.
+			if _, err := adapter.media.Execute(ctx, command); err != nil {
+				return err
+			}
+			response = Response{Type: command.ResponseType, Payload: map[string]any{"roomId": scope.RoomID, "sessionId": scope.SessionID}}
+			return nil
+		}
+		if command.Request.Operation == "subscription.quality" {
+			if _, err := adapter.media.Execute(ctx, command); err != nil {
+				return err
+			}
+			response = Response{Type: command.ResponseType, Payload: map[string]any{"roomId": scope.RoomID, "sessionId": scope.SessionID, "subscriptionId": command.Metadata["subscriptionId"], "quality": command.Request.Body["quality"]}}
+			return nil
+		}
 		if len(session.Receipts) >= 4096 || (command.Request.Operation == "transport.create" && len(session.Transports) >= 128) || (command.Request.Operation == "track.publish" && len(session.Tracks) >= 256) || (command.Request.Operation == "track.subscribe" && len(session.Subscriptions) >= 512) {
 			return ErrUnavailable
 		}
