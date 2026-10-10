@@ -12,6 +12,7 @@ import type { RoomRuntimeService } from "../../modules/rooms/room-runtime.servic
 import { turnCredentialRoutes } from "../../modules/turn-credentials/turn-credential.routes.js";
 import type { TurnCredentialIssuer } from "../../modules/turn-credentials/turn-credential.service.js";
 import { usageRoutes } from "../../modules/usage/usage.routes.js";
+import { webhookRoutes } from "../../modules/webhooks/webhook.routes.js";
 
 interface V1RoutesOptions {
   database: RelayKitDatabase;
@@ -20,6 +21,7 @@ interface V1RoutesOptions {
   runtimeConfig: RoomTerminationConfig;
   turnCredentialIssuer: TurnCredentialIssuer;
   usageRetentionDays?: number;
+  webhookSigningEncryptionKey?: string;
 }
 
 const contextResponseSchema = {
@@ -49,6 +51,12 @@ export const v1Routes: FastifyPluginCallback<V1RoutesOptions> = (app, options, d
     runtimeConfig: options.runtimeConfig,
   });
   void app.register(turnCredentialRoutes, { issuer: options.turnCredentialIssuer });
+  void app.register(webhookRoutes, {
+    database: options.database,
+    ...(options.webhookSigningEncryptionKey
+      ? { encryptionKey: options.webhookSigningEncryptionKey }
+      : {}),
+  });
   void app.register(usageRoutes, {
     database: options.database,
     ...(options.usageRetentionDays === undefined

@@ -15,6 +15,7 @@ import { registerTurnAllocationCollector } from "./modules/turn-credentials/turn
 import { healthRoutes } from "./routes/health.js";
 import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
+import { webhookRoutes } from "./modules/webhooks/webhook.routes.js";
 import { registerRuntimeOperationWorker } from "./runtime/runtime-operation-worker.js";
 import { registerUsageRetention } from "./modules/reporting/usage-retention-worker.js";
 import { registerUsageAggregation } from "./modules/reporting/usage-aggregation-worker.js";
@@ -118,6 +119,23 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   });
 
   void app.register(healthRoutes, { database: options.database });
+  void app.register(webhookRoutes, {
+    database: options.database,
+    projectRoutes: true,
+    ...(options.config.webhookSigningEncryptionKey
+      ? { encryptionKey: options.config.webhookSigningEncryptionKey }
+      : {}),
+    ...(options.config.consoleAuth
+      ? {
+          consoleOrigin: new URL(options.config.consoleAuth.baseUrl).origin,
+          verifyConsoleSession: createRelayKitSessionVerifier({
+            database: options.database,
+            ...options.config.consoleAuth,
+          }),
+        }
+      : {}),
+    prefix: "/v1",
+  });
   void app.register(reportingRoutes, {
     database: options.database,
     ...(options.config.consoleAuth
@@ -132,6 +150,9 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
   });
   void app.register(v1Routes, {
     database: options.database,
+    ...(options.config.webhookSigningEncryptionKey
+      ? { webhookSigningEncryptionKey: options.config.webhookSigningEncryptionKey }
+      : {}),
     ...(options.usageRetentionDays === undefined
       ? {}
       : { usageRetentionDays: options.usageRetentionDays }),
