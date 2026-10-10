@@ -47,7 +47,7 @@ const endpointFilter = (scope: WebhookScope, id?: string) =>
     id === undefined ? undefined : eq(schema.webhookEndpoint.id, id),
   );
 
-async function authorize(
+export async function authorizeWebhookScope(
   transaction: Transaction,
   principal: WebhookPrincipal,
   scope: WebhookScope,
@@ -140,7 +140,7 @@ export function createWebhookService(options: {
     options.database.transaction(async (transaction) => {
       await transaction.execute(sql`set local statement_timeout = '15s'`);
       await transaction.execute(sql`set local lock_timeout = '5s'`);
-      await authorize(transaction, principal, scope, writing);
+      await authorizeWebhookScope(transaction, principal, scope, writing);
       return operation(transaction);
     });
   const lockedEndpoint = async (transaction: Transaction, scope: WebhookScope, id: string) => {
