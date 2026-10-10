@@ -1,4 +1,4 @@
-import type { Track } from "@relayrtc/types";
+import { videoQualityPreferences, type Track, type VideoQualityPreference } from "@relayrtc/types";
 import { RoomError } from "./room-errors.js";
 import type { RoomEventEmitter } from "./room-events.js";
 import type { RoomRemoteTrack, RemoteTrackSubscriptionState } from "./room-remote.js";
@@ -14,6 +14,31 @@ export class RemoteTrack implements RoomRemoteTrack {
   #version = 0;
   #desired = false;
   #autoAllowed = true;
+  #preference: VideoQualityPreference | undefined;
+
+  async setQuality(quality: VideoQualityPreference): Promise<void> {
+    this.assertActive();
+    if (
+      this.#state === "closed" ||
+      (this.#info.type !== "camera_video" && this.#info.type !== "screen_video")
+    )
+      throw new RoomError(
+        "MEDIA_SUBSCRIBE_FAILED",
+        "Quality preferences require a published video track",
+      );
+    if (!videoQualityPreferences.includes(quality))
+      throw new RoomError("INVALID_CONFIGURATION", "Provide a supported video quality preference");
+    this.#preference = quality;
+    const version = this.#version;
+    await this.#pending;
+    this.assertActive();
+    if (version !== this.#version)
+      throw new RoomError(
+        "MEDIA_OPERATION_CANCELLED",
+        "The subscription changed during quality selection",
+      );
+    if (this.#subscription) await this.rtc.setSubscriptionQuality(this.#subscription.id, quality);
+  }
 
   get wantsSubscription(): boolean {
     return this.#desired;
@@ -94,15 +119,19 @@ export class RemoteTrack implements RoomRemoteTrack {
 
   async #receive(version: number): Promise<MediaStreamTrack> {
     try {
-      const subscription = await this.rtc.consume(this.#info, (error) => {
-        if (!this.#subscription) return;
-        this.#subscription = undefined;
-        this.#stream = null;
-        this.detach();
-        this.#state = "unsubscribed";
-        this.events.emit("trackUnsubscribed", this);
-        if (error.code !== "MEDIA_OPERATION_CANCELLED") this.#report(error);
-      });
+      const subscription = await this.rtc.consume(
+        this.#info,
+        (error) => {
+          if (!this.#subscription) return;
+          this.#subscription = undefined;
+          this.#stream = null;
+          this.detach();
+          this.#state = "unsubscribed";
+          this.events.emit("trackUnsubscribed", this);
+          if (error.code !== "MEDIA_OPERATION_CANCELLED") this.#report(error);
+        },
+        this.#preference,
+      );
       if (version !== this.#version) {
         await subscription.close();
         throw new RoomError("MEDIA_OPERATION_CANCELLED", "Remote subscription was cancelled");

@@ -22,6 +22,10 @@ export interface RoomReconnectOptions {
 }
 
 export interface RoomEvents {
+  readonly connectionQualityChanged: ConnectionQualityEvent;
+  readonly connectionDegraded: ConnectionQualityEvent;
+  readonly connectionRecovered: ConnectionQualityEvent;
+  readonly qualityStatsUpdated: RtcQualityStats;
   readonly connectionStateChanged: RoomConnectionState;
   readonly error: RoomError;
   readonly messageReceived: RoomTextMessage;
@@ -53,6 +57,9 @@ export interface RoomEvents {
 }
 
 export interface Room extends RoomLocalMedia {
+  readonly quality: ConnectionQuality | null;
+  readonly qualityStats: RtcQualityStats | null;
+  readonly participantQualities: ReadonlyMap<string, ConnectionQualityEvent>;
   readonly id: string;
   readonly info: RoomInfo;
   readonly localParticipant: RoomLocalParticipant;
@@ -83,3 +90,5 @@ export interface RelayClientOptions extends RoomCredentialOptions {
 export interface JoinOptions {
   readonly signal?: AbortSignal;
 }
+import type { ConnectionQuality, ConnectionQualityEvent } from "@relayrtc/types";
+import type { RtcQualityStats } from "./quality.js";

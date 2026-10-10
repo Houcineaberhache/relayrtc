@@ -7,6 +7,7 @@ import type { Participant } from "@relayrtc/types";
 import { RoomError } from "./room-errors.js";
 import { RoomEventEmitter } from "./room-events.js";
 import { RoomRtc } from "./room-rtc.js";
+import { RoomQuality } from "./room-quality.js";
 import { LocalRoomMedia } from "./room-local-media.js";
 import { RemoteRoomRegistry } from "./room-participants.js";
 import type { RoomLocalParticipant } from "./room-media.js";
@@ -31,6 +32,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   #leaving: Promise<void> | undefined;
   #stopSetup: ((error: RoomError) => void) | undefined;
   readonly #rtc = new RoomRtc();
+  readonly #quality: RoomQuality;
   readonly #signaling: SignalingClient;
   readonly #localMedia: LocalRoomMedia;
   readonly #remote: RemoteRoomRegistry;
@@ -49,6 +51,22 @@ export class RoomSession extends RoomEventEmitter implements Room {
     readonly onEnded: () => void,
   ) {
     super();
+    this.#quality = new RoomQuality(
+      this.#rtc,
+      () =>
+        this.#joined
+          ? {
+              roomId: this.#joined.room.id,
+              participantId: this.#joined.localParticipant.id,
+              sessionId: this.#joined.session.id,
+            }
+          : undefined,
+      () => !this.#ended && !this.#exiting && this.#state === "connected",
+      (event, value) => {
+        this.emit(event, value);
+        this.clientEvents.emit(event, value);
+      },
+    );
     this.#remote = new RemoteRoomRegistry(
       this.#rtc,
       {
@@ -186,6 +204,16 @@ export class RoomSession extends RoomEventEmitter implements Room {
     return this.#refresh.refresh();
   }
 
+  get quality(): Room["quality"] {
+    return this.#quality.quality;
+  }
+  get qualityStats(): Room["qualityStats"] {
+    return this.#quality.stats;
+  }
+  get participantQualities(): Room["participantQualities"] {
+    return this.#quality.participants;
+  }
+
   async start(
     token: string,
     scope: { roomId: string; participantId: string },
@@ -244,6 +272,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
       this.#remote.ready();
       this.#refresh.start();
       this.#watchNetwork();
+      this.#quality.start();
     } catch (error) {
       const failure =
         error instanceof RoomError
@@ -577,6 +606,8 @@ export class RoomSession extends RoomEventEmitter implements Room {
   #finish(state: RoomConnectionState, error?: RoomError, reportError = false): void {
     if (this.#ended) return;
     this.#ended = true;
+    this.#quality.lost();
+    this.#quality.dispose();
     this.#stopRecovery();
     this.#refresh.dispose();
     this.#messaging.dispose();
@@ -598,6 +629,8 @@ export class RoomSession extends RoomEventEmitter implements Room {
 
   #setState(state: RoomConnectionState): void {
     this.#state = state;
+    if (state === "reconnecting" || state === "failed" || state === "disconnected")
+      this.#quality.lost();
     this.emit("connectionStateChanged", state);
     this.clientEvents.emit("connectionStateChanged", state);
   }
@@ -668,6 +701,11 @@ export class RoomSession extends RoomEventEmitter implements Room {
       participants: payload.participants,
       tracks: payload.tracks,
     };
+    this.#quality.reconcile(
+      payload.participants
+        .filter((participant) => participant.leftAt === null)
+        .map((participant) => participant.id),
+    );
     this.#remote.reconcile(payload, {
       roomId: payload.roomId,
       participantId: payload.session.participantId,
@@ -680,6 +718,7 @@ export class RoomSession extends RoomEventEmitter implements Room {
   readonly #onMessage = (message: ServerProtocolMessage): void => {
     if (this.#ended || this.#exiting) return;
     try {
+      this.#quality.handle(message);
       if (
         message.type === "rtc.subscription.closed" &&
         message.payload.reason === "runtime_reset" &&

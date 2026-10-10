@@ -1,8 +1,8 @@
 import { Device, type types } from "mediasoup-client";
 import type { RtcSessionScope } from "@relayrtc/protocol";
-import type { Track } from "@relayrtc/types";
+import type { Track, VideoQualityPreference } from "@relayrtc/types";
 import type { RoomLocalTrackType } from "./room-media.js";
-import { simulcastEncodings } from "./quality.js";
+import { simulcastEncodings, normalizeRtcStats, type RtcQualityStats } from "./quality.js";
 import { RoomError } from "./room-errors.js";
 import type { RelayClientOptions } from "./room.js";
 import type { SignalingClient } from "./signaling-client.js";
@@ -31,6 +31,7 @@ interface PendingSubscription {
 }
 
 interface PublicationData extends types.AppData {
+  sourceHeight?: number;
   trackType: RoomLocalTrackType;
   publication?: Track;
 }
@@ -57,6 +58,56 @@ export class RoomRtc {
   #iceOperation = Promise.resolve();
   readonly #deferredTracks = new Map<string, Track>();
   readonly #deferredSubscriptions = new Set<string>();
+  #receiveStats: RtcQualityStats | undefined;
+  #sendStats: RtcQualityStats | undefined;
+
+  async getQualityStats(): Promise<RtcQualityStats> {
+    this.#assertOpen();
+    if (!this.#receiveTransport || !this.#sendTransport)
+      throw new RoomError("NOT_CONNECTED", "Media transports are unavailable");
+    const [receive, send] = await Promise.all([
+      this.#receiveTransport.getStats(),
+      this.#sendTransport.getStats(),
+    ]);
+    this.#assertOpen();
+    this.#receiveStats = normalizeRtcStats(receive, this.#receiveStats);
+    this.#sendStats = normalizeRtcStats(send, this.#sendStats);
+    return {
+      ...this.#receiveStats,
+      timestamp: Math.max(this.#receiveStats.timestamp, this.#sendStats.timestamp),
+      stale: this.#receiveStats.stale === true && this.#sendStats.stale === true,
+      bytesSent: this.#sendStats.bytesSent,
+      outgoingBitrate: this.#sendStats.outgoingBitrate ?? null,
+      availableOutgoingBitrate: this.#sendStats.availableOutgoingBitrate,
+      streams: [...(this.#receiveStats.streams ?? []), ...(this.#sendStats.streams ?? [])],
+    };
+  }
+
+  async reportQualityStats(stats: RtcQualityStats): Promise<void> {
+    this.#assertOpen();
+    const scope = this.#scope;
+    if (!this.#signaling || !this.#receiveTransport || !scope || stats.timestamp <= 0) return;
+    const accepted = await this.#signaling.request(
+      "rtc.stats.report",
+      {
+        ...scope,
+        transportId: this.#receiveTransport.id,
+        stats: {
+          availableIncomingBitrate: stats.availableIncomingBitrate,
+          incomingBitrate: stats.incomingBitrate ?? null,
+          jitter: stats.jitter,
+          packetsLost: stats.packetsLost,
+          packetsReceived: stats.packetsReceived,
+          packetLossRatio: stats.packetLossRatio ?? null,
+          roundTripTime: stats.roundTripTime,
+          timestamp: stats.timestamp,
+          stale: stats.stale ?? false,
+        },
+      },
+      "rtc.stats.accepted",
+    );
+    this.#checkScope(accepted, scope);
+  }
 
   async initialize(
     signaling: SignalingClient,
@@ -115,7 +166,7 @@ export class RoomRtc {
                 transportId: transport.id,
                 trackType: data.trackType,
                 rtpParameters,
-                metadata: {},
+                metadata: data.sourceHeight ? { sourceHeight: data.sourceHeight } : {},
               },
               "rtc.track.publish.accepted",
             )
@@ -314,7 +365,29 @@ export class RoomRtc {
     });
   }
 
-  async consume(info: Track, onClosed: (error: RoomError) => void): Promise<RemoteSubscription> {
+  async setSubscriptionQuality(
+    subscriptionId: string,
+    quality: VideoQualityPreference,
+  ): Promise<void> {
+    this.#assertOpen();
+    const scope = this.#scope;
+    if (!this.#signaling || !scope)
+      throw new RoomError("NOT_CONNECTED", "Media signaling is unavailable");
+    const accepted = await this.#signaling.request(
+      "rtc.subscription.quality",
+      { ...scope, subscriptionId, quality },
+      "rtc.subscription.quality.accepted",
+    );
+    this.#checkScope(accepted, scope);
+    if (accepted.subscriptionId !== subscriptionId || accepted.quality !== quality)
+      throw new RoomError("PROTOCOL_ERROR", "The quality response does not match the subscription");
+  }
+
+  async consume(
+    info: Track,
+    onClosed: (error: RoomError) => void,
+    quality?: VideoQualityPreference,
+  ): Promise<RemoteSubscription> {
     this.#assertOpen();
     const transport = this.#receiveTransport;
     const device = this.#device;
@@ -339,6 +412,7 @@ export class RoomRtc {
           transportId: transport.id,
           trackId: info.id,
           rtpCapabilities: device.recvRtpCapabilities,
+          ...(quality ? { quality } : {}),
         },
         "rtc.track.subscribe.accepted",
       );
@@ -553,7 +627,8 @@ export class RoomRtc {
     this.#assertOpen();
     const transport = this.#sendTransport;
     if (!transport) throw new RoomError("NOT_CONNECTED", "The room media transport is unavailable");
-    const data: PublicationData = { trackType };
+    const height = track.getSettings().height;
+    const data: PublicationData = { trackType, ...(height ? { sourceHeight: height } : {}) };
     let producer: types.Producer | undefined;
     try {
       producer = await transport.produce({
