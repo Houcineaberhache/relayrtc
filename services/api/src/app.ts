@@ -16,6 +16,7 @@ import { healthRoutes } from "./routes/health.js";
 import { reportingRoutes } from "./modules/reporting/reporting.routes.js";
 import { v1Routes } from "./routes/v1/index.js";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes.js";
+import { registerWebhookDeliveryWorker } from "./modules/webhooks/webhook-worker.js";
 import { registerRuntimeOperationWorker } from "./runtime/runtime-operation-worker.js";
 import { registerUsageRetention } from "./modules/reporting/usage-retention-worker.js";
 import { registerUsageAggregation } from "./modules/reporting/usage-aggregation-worker.js";
@@ -110,7 +111,11 @@ export const buildApp = (options: BuildAppOptions): FastifyInstance => {
         options.config.turnAccountingMetricsUrl,
       )
     : undefined;
+  const stopWebhookDeliveries = options.config.webhookSigningEncryptionKey
+    ? registerWebhookDeliveryWorker(app, options.database, options.config.webhookSigningEncryptionKey)
+    : undefined;
   app.addHook("onClose", async () => {
+    await stopWebhookDeliveries?.();
     await stopTurnAccounting?.();
     await stopRuntimeOperations();
     await stopUsageAggregation?.();
