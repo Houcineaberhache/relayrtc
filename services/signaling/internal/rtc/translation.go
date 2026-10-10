@@ -3,6 +3,7 @@ package rtc
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"unicode"
@@ -90,15 +91,17 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 	}
 	allowed := map[string]bool{"roomId": true, "sessionId": true}
 	fields := map[string][]string{
-		"rtc.capabilities.get":    {},
-		"rtc.transport.create":    {"direction"},
-		"rtc.transport.connect":   {"transportId", "dtlsParameters"},
-		"rtc.ice.restart":         {"transportId"},
-		"rtc.track.publish":       {"transportId", "trackType", "rtpParameters", "metadata"},
-		"rtc.track.subscribe":     {"transportId", "trackId", "rtpCapabilities"},
-		"rtc.track.control":       {"trackId", "action"},
-		"rtc.subscription.resume": {"subscriptionId"},
-		"rtc.subscription.close":  {"subscriptionId"},
+		"rtc.capabilities.get":     {},
+		"rtc.transport.create":     {"direction"},
+		"rtc.transport.connect":    {"transportId", "dtlsParameters"},
+		"rtc.ice.restart":          {"transportId"},
+		"rtc.track.publish":        {"transportId", "trackType", "rtpParameters", "metadata"},
+		"rtc.track.subscribe":      {"transportId", "trackId", "rtpCapabilities", "quality"},
+		"rtc.subscription.quality": {"subscriptionId", "quality"},
+		"rtc.track.control":        {"trackId", "action"},
+		"rtc.subscription.resume":  {"subscriptionId"},
+		"rtc.subscription.close":   {"subscriptionId"},
+		"rtc.stats.report":         {"transportId", "stats"},
 	}
 	keys, supported := fields[request.Type]
 	if !supported {
@@ -147,7 +150,7 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		command.Request = Operation{Operation: "track.remove"}
 		return command, nil
 	}
-	if request.Type == "rtc.subscription.resume" || request.Type == "rtc.subscription.close" {
+	if request.Type == "rtc.subscription.resume" || request.Type == "rtc.subscription.close" || request.Type == "rtc.subscription.quality" {
 		subscription := resources.Subscription
 		if subscription == nil && request.Type == "rtc.subscription.close" {
 			subscriptionID := valueString(payload, "subscriptionId")
@@ -163,6 +166,17 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		if subscription == nil || subscription.ID != valueString(payload, "subscriptionId") || subscription.RoomID != scope.RoomID || subscription.SessionID != scope.SessionID || subscription.MediaNodeID != scope.MediaNodeID || subscription.Generation != scope.Generation || !identifier(subscription.MediaID, 256) {
 			return Command{}, ErrForbidden
 		}
+		if request.Type == "rtc.subscription.quality" {
+			quality := valueString(payload, "quality")
+			if !validVideoQuality(quality) {
+				return Command{}, ErrInvalidRequest
+			}
+			command.Method, command.Path, command.ResponseType = "PATCH", base+"/subscriptions/"+url.PathEscape(subscription.MediaID)+"/quality", "rtc.subscription.quality.accepted"
+			command.Request.Operation = "subscription.quality"
+			command.Request.Body["quality"] = quality
+			command.Metadata["subscriptionId"] = subscription.ID
+			return command, nil
+		}
 		command.Method, command.Path, command.ResponseType = "PATCH", base+"/subscriptions/"+url.PathEscape(subscription.MediaID)+"/resume", "rtc.subscription.resumed"
 		command.Request.Operation = "subscription.resume"
 		if request.Type == "rtc.subscription.close" {
@@ -176,6 +190,18 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		return Command{}, ErrForbidden
 	}
 	switch request.Type {
+	case "rtc.stats.report":
+		if transport.Direction != "receive" {
+			return Command{}, ErrForbidden
+		}
+		stats, ok := object(payload, "stats")
+		if !ok || !validSubscriberStats(stats) {
+			return Command{}, ErrInvalidRequest
+		}
+		command.Method, command.Path, command.ResponseType = "POST", base+"/stats", "rtc.stats.accepted"
+		command.Request.Operation = "stats.report"
+		command.Request.Body["stats"], command.Request.Body["publicParticipantId"] = stats, scope.ParticipantID
+		command.Request.Body["transportId"] = transport.MediaID
 	case "rtc.transport.connect":
 		dtls, ok := object(payload, "dtlsParameters")
 		if !ok || !validDTLS(dtls) {
@@ -224,6 +250,9 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		command.Method, command.Path, command.ResponseType = "POST", base+"/tracks", "rtc.track.publish.accepted"
 		command.Request.Operation = "track.publish"
 		command.Request.Body["kind"], command.Request.Body["trackType"], command.Request.Body["rtpParameters"], command.Request.Body["transportId"] = kind, trackType, rtp, transport.MediaID
+		if height, ok := command.Metadata["sourceHeight"].(float64); ok && height > 0 && height <= 16384 {
+			command.Request.Body["sourceHeight"] = height
+		}
 	case "rtc.track.subscribe":
 		if transport.Direction != "receive" {
 			return Command{}, ErrForbidden
@@ -239,8 +268,60 @@ func Plan(request SignalRequest, claims auth.Claims, scope Scope, resources Reso
 		command.Method, command.Path, command.ResponseType = "POST", base+"/subscriptions", "rtc.track.subscribe.accepted"
 		command.Request.Operation = "track.subscribe"
 		command.Request.Body["trackId"], command.Request.Body["transportId"], command.Request.Body["rtpCapabilities"] = track.MediaID, transport.MediaID, rtp
+		if quality, exists := payload["quality"]; exists {
+			value, ok := quality.(string)
+			if !ok || !validVideoQuality(value) {
+				return Command{}, ErrInvalidRequest
+			}
+			command.Request.Body["quality"] = value
+		}
 	}
 	return command, nil
+}
+
+func validVideoQuality(quality string) bool {
+	switch quality {
+	case "auto", "1080p", "720p", "360p", "audio-only":
+		return true
+	default:
+		return false
+	}
+}
+
+func validSubscriberStats(stats map[string]any) bool {
+	required := map[string]bool{"availableIncomingBitrate": true, "jitter": true, "roundTripTime": true, "packetsLost": true, "packetsReceived": true, "timestamp": true}
+	for key, raw := range stats {
+		switch key {
+		case "stale":
+			if _, ok := raw.(bool); !ok {
+				return false
+			}
+			continue
+		case "availableIncomingBitrate", "incomingBitrate", "jitter", "roundTripTime", "packetLossRatio":
+			if raw == nil {
+				delete(required, key)
+				continue
+			}
+		case "packetsLost", "packetsReceived", "timestamp":
+		default:
+			return false
+		}
+		value, ok := raw.(float64)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return false
+		}
+		if key == "packetLossRatio" && value > 1 {
+			return false
+		}
+		if (key == "packetsLost" || key == "packetsReceived") && (math.Trunc(value) != value || value > 9007199254740991) {
+			return false
+		}
+		if key == "timestamp" && value <= 0 {
+			return false
+		}
+		delete(required, key)
+	}
+	return len(required) == 0
 }
 
 func LifecycleCommand(operation string, scope Scope, requestID string) (Command, error) {

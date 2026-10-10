@@ -11,3 +11,4 @@ export * from "./rtc-runtime.js";
 export * from "./session.js";
 export * from "./track.js";
 export * from "./version.js";
+export * from "./quality-stats.js";

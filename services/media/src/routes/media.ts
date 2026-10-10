@@ -39,6 +39,7 @@ interface TransportParameters extends RoomParameters {
 }
 
 interface PublishTrackBody {
+  sourceHeight?: number;
   kind: MediaKind;
   participantId: string;
   rtpParameters: Readonly<Record<string, unknown>>;
@@ -75,8 +76,13 @@ interface QualityModeBody {
   mode: RoomQualityMode;
 }
 interface StatsBody {
+  transportId?: string;
+  publicParticipantId?: string;
   participantId: string;
   stats: {
+    packetLossRatio?: number | null;
+    incomingBitrate?: number | null;
+    stale?: boolean;
     availableIncomingBitrate: number | null;
     jitter: number | null;
     packetsLost: number;
@@ -242,6 +248,7 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
             transportId: { type: "string", minLength: 1, maxLength: 256 },
             trackType: { enum: ["audio", "camera_video", "screen_audio", "screen_video"] },
             priority: { enum: ["high", "normal", "low"] },
+            sourceHeight: { type: "number", minimum: 1, maximum: 16384 },
           },
         },
         params: roomParametersSchema,
@@ -293,6 +300,8 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
           additionalProperties: false,
           required: ["participantId", "stats"],
           properties: {
+            transportId: { type: "string", minLength: 1, maxLength: 256 },
+            publicParticipantId: { type: "string", minLength: 1, maxLength: 128 },
             participantId: { type: "string", minLength: 1, maxLength: 128 },
             stats: {
               type: "object",
@@ -312,6 +321,9 @@ export const mediaRoutes: FastifyPluginCallback<MediaRoutesOptions> = (app, opti
                 packetsReceived: { type: "number", minimum: 0 },
                 roundTripTime: { type: ["number", "null"], minimum: 0 },
                 timestamp: { type: "number", minimum: 0 },
+                incomingBitrate: { type: ["number", "null"], minimum: 0 },
+                packetLossRatio: { type: ["number", "null"], minimum: 0, maximum: 1 },
+                stale: { type: "boolean" },
                 turnBytesReceived: { type: "number", minimum: 0 },
                 turnBytesSent: { type: "number", minimum: 0 },
               },

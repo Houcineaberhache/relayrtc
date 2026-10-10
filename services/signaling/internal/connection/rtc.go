@@ -12,15 +12,17 @@ import (
 var ErrRTCNotAvailable = errors.New("RTC media service is not available")
 
 var rtcResponseTypes = map[string]string{
-	"rtc.capabilities.get":    "rtc.capabilities",
-	"rtc.transport.create":    "rtc.transport.created",
-	"rtc.transport.connect":   "rtc.transport.connected",
-	"rtc.ice.restart":         "rtc.ice.restarted",
-	"rtc.track.publish":       "rtc.track.publish.accepted",
-	"rtc.track.control":       "rtc.track.control.accepted",
-	"rtc.track.subscribe":     "rtc.track.subscribe.accepted",
-	"rtc.subscription.resume": "rtc.subscription.resumed",
-	"rtc.subscription.close":  "rtc.subscription.close.accepted",
+	"rtc.subscription.quality": "rtc.subscription.quality.accepted",
+	"rtc.stats.report":         "rtc.stats.accepted",
+	"rtc.capabilities.get":     "rtc.capabilities",
+	"rtc.transport.create":     "rtc.transport.created",
+	"rtc.transport.connect":    "rtc.transport.connected",
+	"rtc.ice.restart":          "rtc.ice.restarted",
+	"rtc.track.publish":        "rtc.track.publish.accepted",
+	"rtc.track.control":        "rtc.track.control.accepted",
+	"rtc.track.subscribe":      "rtc.track.subscribe.accepted",
+	"rtc.subscription.resume":  "rtc.subscription.resumed",
+	"rtc.subscription.close":   "rtc.subscription.close.accepted",
 }
 
 type RTCSignalRequest struct {

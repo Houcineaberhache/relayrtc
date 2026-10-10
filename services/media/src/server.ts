@@ -7,6 +7,7 @@ import { createMediasoupWorker } from "./engine/mediasoup-factory.js";
 import { MediasoupWorkerPool } from "./engine/worker-pool.js";
 import { createHttpQualityEventPublisher } from "./quality/quality-event-publisher.js";
 import { createQualityMetricsStore } from "./quality/quality-metrics-store.js";
+import { QualityEventOutbox } from "./quality/quality-event-outbox.js";
 import { createMediaUsageMetricsStore } from "./usage/usage-metrics-store.js";
 
 const start = async (): Promise<void> => {
@@ -20,6 +21,16 @@ const start = async (): Promise<void> => {
     throw error;
   }
   const lifecycle: { app?: FastifyInstance } = {};
+  const publisher = createHttpQualityEventPublisher({
+    internalSecret: config.internalSecret,
+    signalingUrl: config.signalingInternalUrl,
+  });
+  const qualityError = (): void => {
+    console.error(
+      "Quality persistence or event delivery failed; queued observations will retry or expire",
+    );
+  };
+  const qualityOutbox = new QualityEventOutbox(database.db, publisher, qualityError);
   const engine = new MediasoupWorkerPool(config, createMediasoupWorker, {
     roomRuntimeStore,
     onWorkerError: () => {
@@ -30,10 +41,8 @@ const start = async (): Promise<void> => {
       console.error("Media worker replacement budget exhausted; stopping media service");
       if (lifecycle.app) void lifecycle.app.close();
     },
-    eventPublisher: createHttpQualityEventPublisher({
-      internalSecret: config.internalSecret,
-      signalingUrl: config.signalingInternalUrl,
-    }),
+    eventPublisher: publisher,
+    onQualityError: qualityError,
     metricsStore: createQualityMetricsStore(database.db),
     usageMetricsStore: createMediaUsageMetricsStore(database.db),
     onUsageError: (error) => {
@@ -51,11 +60,36 @@ const start = async (): Promise<void> => {
   }
   const usageTimer = setInterval(() => void engine.flushUsage(), 2_000);
   usageTimer.unref();
-  const app = buildApp({ config, engine });
+  let checkingQuality = false;
+  const qualityTimer = setInterval(() => {
+    if (checkingQuality) return;
+    checkingQuality = true;
+    void engine
+      .checkQuality()
+      .catch(qualityError)
+      .finally(() => {
+        checkingQuality = false;
+      });
+  }, 2000);
+  qualityTimer.unref();
+  qualityOutbox.start();
+  const app = buildApp({
+    config,
+    engine,
+    qualityDelivery: () => ({
+      ...engine.qualityDelivery,
+      pendingEvents: qualityOutbox.pending,
+      expiredEvents: qualityOutbox.expired,
+      deliveredEvents: qualityOutbox.delivered,
+      failedAttempts: qualityOutbox.failed,
+    }),
+  });
   lifecycle.app = app;
   app.addHook("onClose", async () => {
     clearInterval(usageTimer);
+    clearInterval(qualityTimer);
     await engine.close();
+    await qualityOutbox.close();
     await database.close();
   });
 

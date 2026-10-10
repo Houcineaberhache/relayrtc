@@ -1,4 +1,16 @@
 import { z } from "zod";
+import type {
+  RtcSubscriptionQualityRequest,
+  RtcSubscriptionQualityAcceptedResponse,
+} from "./quality-stats.js";
+import {
+  rtcSubscriptionQualityRequestSchema,
+  rtcSubscriptionQualityAcceptedResponseSchema,
+} from "./quality-stats.js";
+import type { RtcStatsReportRequest, RtcStatsAcceptedResponse } from "./quality-stats.js";
+import { rtcStatsReportRequestSchema, rtcStatsAcceptedResponseSchema } from "./quality-stats.js";
+import type { ConnectionQualityChangedEvent } from "./quality.js";
+import { connectionQualityChangedEventSchema } from "./quality.js";
 
 import type { ProtocolErrorMessage } from "./error.js";
 import { protocolErrorMessageSchema } from "./error.js";
@@ -116,6 +128,8 @@ import {
 } from "./track.js";
 
 export const protocolRequestTypes = [
+  "rtc.subscription.quality",
+  "rtc.stats.report",
   "heartbeat.ping",
   "message.send",
   "event.emit",
@@ -136,6 +150,8 @@ export const protocolRequestTypes = [
 ] as const;
 
 export const protocolResponseTypes = [
+  "rtc.subscription.quality.accepted",
+  "rtc.stats.accepted",
   "heartbeat.pong",
   "message.sent",
   "event.emitted",
@@ -156,6 +172,7 @@ export const protocolResponseTypes = [
 ] as const;
 
 export const protocolEventTypes = [
+  "connection.quality.changed",
   "room.ended",
   "message.received",
   "event.received",
@@ -173,6 +190,8 @@ export const protocolEventTypes = [
 ] as const;
 
 export type ProtocolRequestMessage =
+  | RtcSubscriptionQualityRequest
+  | RtcStatsReportRequest
   | HeartbeatPingRequest
   | TextMessageSendRequest
   | CustomEventEmitRequest
@@ -192,6 +211,8 @@ export type ProtocolRequestMessage =
   | SessionRefreshRequest;
 
 export type ProtocolResponseMessage =
+  | RtcSubscriptionQualityAcceptedResponse
+  | RtcStatsAcceptedResponse
   | HeartbeatPongResponse
   | TextMessageSentResponse
   | CustomEventEmittedResponse
@@ -211,6 +232,7 @@ export type ProtocolResponseMessage =
   | SessionRefreshAcceptedResponse;
 
 export type ProtocolEventMessage =
+  | ConnectionQualityChangedEvent
   | RoomEndedEvent
   | TextMessageReceivedEvent
   | CustomEventReceivedEvent
@@ -244,6 +266,11 @@ export const protocolMessageTypes = [
 ] as const satisfies readonly ProtocolMessageType[];
 
 export const protocolMessageSchema: z.ZodType<ProtocolMessage> = z.discriminatedUnion("type", [
+  rtcSubscriptionQualityRequestSchema,
+  rtcSubscriptionQualityAcceptedResponseSchema,
+  rtcStatsReportRequestSchema,
+  rtcStatsAcceptedResponseSchema,
+  connectionQualityChangedEventSchema,
   sessionRefreshRequestSchema,
   sessionRefreshAcceptedResponseSchema,
   heartbeatPingRequestSchema,

@@ -80,6 +80,8 @@ func (media *MediaHTTP) Execute(ctx context.Context, command Command) (map[strin
 	defer response.Body.Close()
 	status := http.StatusNoContent
 	switch command.Request.Operation {
+	case "stats.report":
+		status = http.StatusAccepted
 	case "room.create", "transport.create", "track.publish", "track.subscribe":
 		status = http.StatusCreated
 	case "capabilities.get", "tracks.list", "ice.restart", "node.ready", "node.health":

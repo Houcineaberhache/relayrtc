@@ -53,6 +53,7 @@ export interface MediaEngineHealth {
 }
 
 export interface PublishTrackRequest extends MediaRoomRequest {
+  sourceHeight?: number;
   kind: MediaKind;
   participantId: string;
   rtpParameters: Readonly<Record<string, unknown>>;
@@ -98,7 +99,9 @@ export interface TrackSubscription {
 }
 
 export interface IngestSubscriberStatsRequest extends MediaRoomRequest {
+  transportId?: string;
   participantId: string;
+  publicParticipantId?: string;
   stats: SubscriberNetworkStats;
 }
 

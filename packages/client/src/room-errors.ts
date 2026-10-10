@@ -1,6 +1,7 @@
 import type { MediaErrorCode } from "./errors.js";
 
 export type RoomErrorCode =
+  | "QUALITY_STATS_FAILED"
   | MediaErrorCode
   | "MEDIA_OPERATION_PENDING"
   | "MEDIA_OPERATION_CANCELLED"

@@ -1,10 +1,18 @@
-import type { Metadata, RoomId, SessionId, Track, TrackId } from "@relayrtc/types";
+import type {
+  Metadata,
+  RoomId,
+  SessionId,
+  Track,
+  TrackId,
+  VideoQualityPreference,
+} from "@relayrtc/types";
 import {
   metadataSchema,
   roomIdSchema,
   sessionIdSchema,
   trackIdSchema,
   trackSchema,
+  videoQualityPreferenceSchema,
 } from "@relayrtc/validation";
 import { z } from "zod";
 
@@ -116,6 +124,7 @@ export interface RtcTrackControlledPayload extends RtcSessionScope {
   readonly track: Track;
 }
 export interface RtcTrackSubscribePayload extends RtcSessionScope {
+  readonly quality?: VideoQualityPreference | undefined;
   readonly transportId: string;
   readonly trackId: TrackId;
   readonly rtpCapabilities: Readonly<Record<string, unknown>>;
@@ -245,6 +254,7 @@ export const rtcTrackSubscribeRequestSchema = protocolRequestSchema(
       transportId: rtcIdentifierSchema,
       trackId: trackIdSchema,
       rtpCapabilities: rtcParametersSchema,
+      quality: videoQualityPreferenceSchema.optional(),
     })
     .strict(),
 );

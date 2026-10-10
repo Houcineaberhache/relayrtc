@@ -197,6 +197,13 @@
       "when": 1791583200014,
       "tag": "0027_webhook_delivery",
       "breakpoints": false
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791583200015,
+      "tag": "0028_quality_event_outbox",
+      "breakpoints": false
     }
   ]
 }

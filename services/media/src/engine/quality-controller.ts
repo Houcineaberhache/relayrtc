@@ -12,6 +12,9 @@ export interface SubscriberNetworkStats {
   packetsReceived: number;
   roundTripTime: number | null;
   timestamp: number;
+  packetLossRatio?: number | null;
+  incomingBitrate?: number | null;
+  stale?: boolean;
   turnBytesReceived?: number;
   turnBytesSent?: number;
 }
@@ -43,7 +46,7 @@ export const selectVideoQuality = (
   priority: MediaPriority,
 ): SelectedVideoQuality => {
   const totalPackets = stats.packetsLost + stats.packetsReceived;
-  const loss = totalPackets === 0 ? 0 : stats.packetsLost / totalPackets;
+  const loss = stats.packetLossRatio ?? (totalPackets === 0 ? 0 : stats.packetsLost / totalPackets);
   const bitrate = stats.availableIncomingBitrate;
   if (totalPackets === 0) return "720p";
   if (loss >= 0.2 || (stats.roundTripTime ?? 0) >= 1 || (bitrate !== null && bitrate < 80_000))

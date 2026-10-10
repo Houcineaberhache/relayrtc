@@ -1,4 +1,4 @@
-import type { Participant, Track } from "@relayrtc/types";
+import type { Participant, Track, VideoQualityPreference } from "@relayrtc/types";
 
 export type RemoteTrackSubscriptionState =
   "unsubscribed" | "subscribing" | "subscribed" | "failed" | "closed";
@@ -13,6 +13,7 @@ export interface RoomRemoteTrack {
   readonly stream: MediaStream | null;
   subscribe(): Promise<MediaStreamTrack>;
   unsubscribe(): Promise<void>;
+  setQuality(quality: VideoQualityPreference): Promise<void>;
   attach(element: HTMLMediaElement): Promise<HTMLMediaElement>;
   detach(element?: HTMLMediaElement): void;
 }
