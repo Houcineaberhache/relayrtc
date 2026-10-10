@@ -1,5 +1,6 @@
 import {
   webhookDeliveryStatuses,
+  webhookDeliveryAttemptStatuses,
   webhookEndpointStatuses,
   webhookEventTypes,
   type StoredWebhookEndpoint,
@@ -116,6 +117,47 @@ export const webhookConfigurationListSchema = z
 export type CreateWebhookInput = z.infer<typeof createWebhookInputSchema>;
 export type UpdateWebhookInput = z.infer<typeof updateWebhookInputSchema>;
 
+export const listWebhookDeliveriesQuerySchema = listWebhookQuerySchema.extend({
+  status: webhookDeliveryStatusSchema.optional(),
+});
+export const replayWebhookDeliveryInputSchema = z.object({
+  expectedReplayCount: z.number().int().min(0).max(99),
+}).strict();
+export const webhookDeliveryRecordSchema = z.object({
+  id: webhookDeliveryIdSchema,
+  endpointId: webhookEndpointIdSchema,
+  eventId: webhookEventIdSchema,
+  projectId: projectIdSchema,
+  environmentId: environmentIdSchema,
+  url: webhookUrlSchema,
+  status: webhookDeliveryStatusSchema,
+  attemptCount: nonNegativeIntegerSchema,
+  runAttemptCount: z.number().int().min(0).max(8),
+  replayCount: z.number().int().min(0).max(100),
+  lastError: z.string().nullable(),
+  nextAttemptAt: isoDateTimeSchema.nullable(),
+  deliveredAt: isoDateTimeSchema.nullable(),
+  runStartedAt: isoDateTimeSchema,
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+}).strict();
+export const webhookDeliveryAttemptSchema = z.object({
+  id: z.string().min(1),
+  attemptNumber: z.number().int().positive(),
+  replayCount: z.number().int().min(0).max(100),
+  status: z.enum(webhookDeliveryAttemptStatuses),
+  signingSecretVersion: z.number().int().positive(),
+  signatureTimestamp: z.number().int().positive(),
+  httpStatus: z.number().int().min(100).max(599).nullable(),
+  errorCode: z.string().nullable(),
+  startedAt: isoDateTimeSchema,
+  finishedAt: isoDateTimeSchema.nullable(),
+}).strict();
+export const webhookDeliveryListSchema = z.object({
+  deliveries: z.array(webhookDeliveryRecordSchema).max(100),
+  pagination: z.object({ limit: z.number().int().positive(), offset: nonNegativeIntegerSchema, total: nonNegativeIntegerSchema }).strict(),
+}).strict();
+
 export const webhookEventSchema: z.ZodType<WebhookEvent> = z
   .object({
     id: webhookEventIdSchema,
@@ -139,3 +181,9 @@ export const webhookDeliverySchema: z.ZodType<WebhookDelivery> = z
     createdAt: isoDateTimeSchema,
   })
   .strict();
+
+export const webhookDeliveryDetailSchema = webhookDeliveryRecordSchema.extend({
+  event: webhookEventSchema,
+  rawBody: z.string().max(1_048_576),
+  attempts: z.array(webhookDeliveryAttemptSchema).max(808),
+});
