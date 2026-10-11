@@ -3,7 +3,7 @@ FROM node:24-alpine AS dependencies
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/dashboard/package.json apps/dashboard/package.json
+COPY apps/console/package.json apps/console/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/protocol/package.json packages/protocol/package.json

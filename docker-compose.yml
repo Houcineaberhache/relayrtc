@@ -63,51 +63,6 @@ services:
         max-file: "3"
         max-size: 10m
 
-  dashboard:
-    build:
-      context: .
-      dockerfile: infrastructure/docker/dashboard.Dockerfile
-      target: runner
-    restart: unless-stopped
-    environment:
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env}
-      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID must be set in .env}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET must be set in .env}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID must be set in .env}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in .env}
-      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY must be set in .env}
-      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL must be set in .env}
-      RELAYRTC_API_HEALTH_URL: http://api:8080/ready
-      RELAYRTC_INTERNAL_SECRET: ${RELAYRTC_INTERNAL_SECRET:?RELAYRTC_INTERNAL_SECRET must be set in .env}
-      RELAYRTC_MEDIA_INTERNAL_URL: http://media:8082/internal/v1
-      RELAYRTC_SIGNALING_INTERNAL_URL: http://signaling:8081/internal/v1
-      RELAYRTC_MEDIA_HEALTH_URL: http://media:8082/ready
-      RELAYRTC_PROMETHEUS_HEALTH_URL: http://prometheus:9090/-/ready
-      RELAYRTC_PROMETHEUS_URL: http://prometheus:9090
-      RELAYRTC_SIGNALING_HEALTH_URL: http://signaling:8081/ready
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    ports:
-      - 127.0.0.1:${DASHBOARD_PORT:-3001}:3001
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - wget --quiet --spider http://127.0.0.1:3001/api/health
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - relayrtc
-    logging: *default-logging
-
   console:
     build:
       context: .
@@ -116,7 +71,7 @@ services:
     restart: unless-stopped
     environment:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env}
-      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3002,http://127.0.0.1:3002}
       BETTER_AUTH_URL: ${CONSOLE_AUTH_URL:-http://localhost:3002}
       DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID must be set in .env}
@@ -157,7 +112,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: infrastructure/docker/dashboard.Dockerfile
+      dockerfile: infrastructure/docker/migrate.Dockerfile
       target: migrator
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-relaykit}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-relaykit}
@@ -196,7 +151,7 @@ services:
       RELAYRTC_SIGNALING_LIMIT_TRACKED_SCOPES: ${RELAYRTC_SIGNALING_LIMIT_TRACKED_SCOPES:-10000}
       RELAYRTC_SIGNALING_MESSAGES_PER_NODE_PER_SECOND: ${RELAYRTC_SIGNALING_MESSAGES_PER_NODE_PER_SECOND:-10000}
       RELAYRTC_SIGNALING_NODE_ID: signaling-1
-      RELAYRTC_SIGNALING_ALLOWED_ORIGINS: ${RELAYRTC_SIGNALING_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3005,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3005}
+      RELAYRTC_SIGNALING_ALLOWED_ORIGINS: ${RELAYRTC_SIGNALING_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3002,http://localhost:3005,http://127.0.0.1:3000,http://127.0.0.1:3002,http://127.0.0.1:3005}
       RELAYRTC_TRUSTED_PROXY_CIDRS: ${RELAYRTC_TRUSTED_PROXY_CIDRS:-}
       RELAYRTC_STORE_PARTICIPANT_IP: ${RELAYRTC_STORE_PARTICIPANT_IP:-false}
       RELAYRTC_LOCATION_RETENTION: ${RELAYRTC_LOCATION_RETENTION:-168h}

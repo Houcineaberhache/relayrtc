@@ -1,14 +1,14 @@
 # @relayrtc/auth
 
-Shared Better Auth configuration for RelayRTC.com dashboard/app accounts
+Shared Better Auth configuration for RelayRTC console accounts
 
 ## Required environment
 
 ```text
 DATABASE_URL=postgresql://relaykit:password@localhost:5432/relaykit
 BETTER_AUTH_SECRET=a-random-secret-containing-at-least-32-characters
-BETTER_AUTH_URL=http://localhost:3001
-BETTER_AUTH_TRUSTED_ORIGINS=https://dashboard.example.com
+BETTER_AUTH_URL=http://localhost:3002
+BETTER_AUTH_TRUSTED_ORIGINS=https://console.example.com
 GITHUB_CLIENT_ID=github-client-id
 GITHUB_CLIENT_SECRET=github-client-secret
 GOOGLE_CLIENT_ID=google-client-id
@@ -22,6 +22,6 @@ GOOGLE_CLIENT_SECRET=google-client-secret
 Register these exact local callback URLs in the provider consoles:
 
 ```text
-http://localhost:3001/api/auth/callback/github
-http://localhost:3001/api/auth/callback/google
+http://localhost:3002/api/auth/callback/github
+http://localhost:3002/api/auth/callback/google
 ```

@@ -46,13 +46,9 @@ jobs:
             context: .
             dockerfile: infrastructure/docker/console.Dockerfile
             target: runner
-          - name: dashboard
-            context: .
-            dockerfile: infrastructure/docker/dashboard.Dockerfile
-            target: runner
           - name: migrate
             context: .
-            dockerfile: infrastructure/docker/dashboard.Dockerfile
+            dockerfile: infrastructure/docker/migrate.Dockerfile
             target: migrator
           - name: coturn
             context: .

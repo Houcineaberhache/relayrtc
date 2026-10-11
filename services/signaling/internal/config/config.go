@@ -122,7 +122,7 @@ func load(lookup func(string) (string, bool)) (Config, error) {
 	allowedOrigins := splitList(valueOrDefault(
 		lookup,
 		"RELAYRTC_SIGNALING_ALLOWED_ORIGINS",
-		"http://localhost:3000,http://localhost:3001",
+		"http://localhost:3000,http://localhost:3002",
 	))
 	if len(allowedOrigins) == 0 {
 		return Config{}, fmt.Errorf("RELAYRTC_SIGNALING_ALLOWED_ORIGINS must contain at least one origin")

@@ -7,8 +7,6 @@ services:
     image: ghcr.io/relayrtc/media:${RELAYRTC_VERSION:-0.1.0}
   console:
     image: ghcr.io/relayrtc/console:${RELAYRTC_VERSION:-0.1.0}
-  dashboard:
-    image: ghcr.io/relayrtc/dashboard:${RELAYRTC_VERSION:-0.1.0}
   migrate:
     image: ghcr.io/relayrtc/migrate:${RELAYRTC_VERSION:-0.1.0}
   coturn:

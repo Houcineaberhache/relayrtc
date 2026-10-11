@@ -28,7 +28,7 @@ Set `DATABASE_URL` to the same PostgreSQL user, password, port, and database con
 
 `TURN_PUBLIC_IP=127.0.0.1` supports browser clients running on the same host. Use the host's reachable LAN address for testing from other devices. A public deployment requires its public IP and one-to-one forwarding for ports `3478/UDP`, `3478/TCP`, `5349/TCP`, and the configured UDP relay range.
 
-The coturn image includes a self-signed `relayrtc.local` certificate for local TLS testing. Public deployments must bind-mount a certificate and private key trusted for the public TURN hostname, then set `TURN_TLS_CERT_FILE` and `TURN_TLS_PRIVATE_KEY_FILE` to their container paths. The coturn process runs as `nobody`, so both mounted files must be readable by UID `65534` while the private key remains inaccessible to other users.
+The coturn container generates a self-signed `relayrtc.local` certificate for local TLS testing. Public deployments must bind-mount a certificate and private key trusted for the public TURN hostname, then set `TURN_TLS_CERT_FILE` and `TURN_TLS_PRIVATE_KEY_FILE` to their container paths. The coturn process runs as `nobody`, so both mounted files must be readable by UID `65534` while the private key remains inaccessible to other users.
 
 Supported ICE server URLs are:
 
@@ -50,7 +50,7 @@ pnpm docker:logs
 ```
 
 `docker:up` builds the application images, waits for PostgreSQL, applies all committed Drizzle
-migrations, starts the dashboard and signaling service, and waits for service health checks.
+migrations, starts the console, API, media and signaling services, and waits for service health checks.
 Migration failure prevents the application containers from starting.
 
 Use `pnpm infra:up` when you only need PostgreSQL, TURN, Prometheus, and Grafana for host-based
@@ -60,7 +60,7 @@ Local endpoints:
 
 | Service    | Endpoint                          |
 | ---------- | --------------------------------- |
-| Dashboard  | `http://localhost:3001`           |
+| Console    | `http://localhost:3002`           |
 | Signaling  | `ws://localhost:8081/v1/connect`  |
 | PostgreSQL | `localhost:5433`                  |
 | STUN       | `localhost:3478` over UDP         |
