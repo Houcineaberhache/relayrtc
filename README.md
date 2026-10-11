@@ -39,9 +39,23 @@ pnpm format:check
 pnpm test:e2e
 ```
 
-## Project status
+## Available SDKs
 
-RelayRTC is under active development and does not yet expose a stable public API/SDK's.
+| SDK | Package | GitHub | Documentation |
+| --- | --- | --- | --- |
+| React | [@relayrtc/react](https://www.npmjs.com/package/@relayrtc/react) | [react-sdk](https://github.com/relayrtc/react-sdk) | [React SDK](https://docs.relayrtc.com/reference/sdk/client/react/overview) |
+| Node.js | [@relayrtc/node](https://www.npmjs.com/package/@relayrtc/node) | [node-sdk](https://github.com/relayrtc/node-sdk) | [Node SDK](https://docs.relayrtc.com/reference/sdk/server/node/overview) |
+| JavaScript browser client | [@relayrtc/client](https://www.npmjs.com/package/@relayrtc/client) | [packages/client](https://github.com/relayrtc/relayrtc/tree/main/packages/client) | [Browser SDK](https://docs.relayrtc.com/reference/sdk/client/javascript/overview) |
+
+## Supporting packages
+
+| Package | Purpose | GitHub |
+| --- | --- | --- |
+| [@relayrtc/types](https://www.npmjs.com/package/@relayrtc/types) | Shared TypeScript domain contracts. | [packages/types](https://github.com/relayrtc/relayrtc/tree/main/packages/types) |
+| [@relayrtc/validation](https://www.npmjs.com/package/@relayrtc/validation) | Runtime validation schemas for domain contracts. | [packages/validation](https://github.com/relayrtc/relayrtc/tree/main/packages/validation) |
+| [@relayrtc/protocol](https://www.npmjs.com/package/@relayrtc/protocol) | Versioned realtime wire contracts. | [packages/protocol](https://github.com/relayrtc/relayrtc/tree/main/packages/protocol) |
+
+See the [installation guide](https://docs.relayrtc.com/installation) and [quickstart](https://docs.relayrtc.com/quickstart) to build your first call.
 
 ## Contributing and security
 
