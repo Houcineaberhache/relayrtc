@@ -1,0 +1,100 @@
+name: Publish container images
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publishing ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: api
+            context: .
+            dockerfile: infrastructure/docker/api.Dockerfile
+            target: runner
+          - name: signaling
+            context: ./services/signaling
+            dockerfile: services/signaling/Dockerfile
+            target: ''
+          - name: media
+            context: .
+            dockerfile: infrastructure/docker/media.Dockerfile
+            target: runner
+          - name: console
+            context: .
+            dockerfile: infrastructure/docker/console.Dockerfile
+            target: runner
+          - name: dashboard
+            context: .
+            dockerfile: infrastructure/docker/dashboard.Dockerfile
+            target: runner
+          - name: migrate
+            context: .
+            dockerfile: infrastructure/docker/dashboard.Dockerfile
+            target: migrator
+          - name: coturn
+            context: .
+            dockerfile: infrastructure/docker/coturn.Dockerfile
+            target: ''
+          - name: prometheus
+            context: .
+            dockerfile: infrastructure/docker/prometheus.Dockerfile
+            target: ''
+          - name: grafana
+            context: .
+            dockerfile: infrastructure/docker/grafana.Dockerfile
+            target: ''
+    steps:
+      - name: Checking out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Signing into GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Building and publishing
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          BUILD_CONTEXT: ${{ matrix.context }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Expected a release tag such as v0.1.0\n' >&2
+            exit 1
+          fi
+          image="ghcr.io/relayrtc/${IMAGE_NAME}:${version}"
+          build_args=()
+          if [ -n "$BUILD_TARGET" ]; then
+            build_args+=(--target "$BUILD_TARGET")
+          fi
+          docker build \
+            --pull \
+            "${build_args[@]}" \
+            --file "$DOCKERFILE" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$version" \
+            --tag "$image" \
+            "$BUILD_CONTEXT"
+          docker push "$image"
