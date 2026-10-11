@@ -1,6 +1,13 @@
 name: Publish container images
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image version to publish from the selected branch
+        required: true
+        default: '0.1.0'
+        type: string
   push:
     tags:
       - 'v*.*.*'
@@ -76,9 +83,10 @@ jobs:
           BUILD_CONTEXT: ${{ matrix.context }}
           DOCKERFILE: ${{ matrix.dockerfile }}
           BUILD_TARGET: ${{ matrix.target }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_VERSION:-${GITHUB_REF_NAME#v}}"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             printf 'Expected a release tag such as v0.1.0\n' >&2
             exit 1
